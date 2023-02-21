@@ -1,0 +1,16 @@
+---
+threads: 1
+ticker_sec: 10
+ping_file: ping.json
+curl_file: curl.json
+jdcloud:
+  ak: "4107B314B15BCE99A1C781DFCF119F59"
+  sk: "8877CD432EB5738EFF0FA01F630201C9"
+  region: cn-north-1
+  s3_endpoint: "http://s3.cn-north-1.jdcloud-oss.com"
+task_config:
+  threads: 1
+  ticker_sec: 1 
+  task_desc_local_path: "taskcfg"
+  task_desc_s3_bucket: pingdata
+  task_desc_s3_prefix: pingdata/098f6bcd4621d373cade4e832627b4f6/
