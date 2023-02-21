@@ -1348,34 +1348,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1aab8fc367588b89dcee83ab0fd66b72b50b72fa1904d7095045ace2b0c81c35"
 
 [[package]]
-name = "jd_oss_pipe"
-version = "0.1.0"
-dependencies = [
- "aliyun-oss-client",
- "anyhow",
- "aws-config",
- "aws-credential-types",
- "aws-sdk-s3",
- "aws-types",
- "clap",
- "fork",
- "futures",
- "http",
- "jdcloud_signer",
- "lazy_static",
- "log",
- "log4rs",
- "oss-rust-sdk",
- "reqwest",
- "rustyline",
- "serde",
- "serde_json",
- "serde_yaml 0.9.17",
- "sysinfo",
- "tokio",
-]
-
-[[package]]
 name = "jdcloud_signer"
 version = "0.1.0"
 source = "git+https://github.com/shijunLee/jdcloud-sdk-rust-signer#831748b1902db6ae7d9ce90920dd72e227a334bc"
@@ -1698,6 +1670,34 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "oss_pipe"
+version = "0.1.0"
+dependencies = [
+ "aliyun-oss-client",
+ "anyhow",
+ "aws-config",
+ "aws-credential-types",
+ "aws-sdk-s3",
+ "aws-types",
+ "clap",
+ "fork",
+ "futures",
+ "http",
+ "jdcloud_signer",
+ "lazy_static",
+ "log",
+ "log4rs",
+ "oss-rust-sdk",
+ "reqwest",
+ "rustyline",
+ "serde",
+ "serde_json",
+ "serde_yaml 0.9.17",
+ "sysinfo",
+ "tokio",
 ]
 
 [[package]]
