@@ -14,11 +14,10 @@ use tokio::runtime::Runtime;
 // // }
 
 // fn async_get_object_demo() {
-//     // LTAI5t8QwychjXPe1AoTTx3P
-//     // JhXIzDXRRnHoTKeEZK0aqVSZesFYto
+
 //     let oss_instance = OSS::new(
-//         "LTAI5t8QwychjXPe1AoTTx3P",
-//         "JhXIzDXRRnHoTKeEZK0aqVSZesFYto",
+//         "LTAI5t8QwychjAoTTx3P",
+//         "JhXIzDXRRnHZK0aqVSZesFYto",
 //         "oss-cn-beijing.aliyuncs.com",
 //         "ali-oss-jsw",
 //     );
@@ -37,8 +36,8 @@ use tokio::runtime::Runtime;
 fn async_get_object_demo() {
     let bucket = BucketName::new("ali-oss-jsw").unwrap();
     let oss_instance = Client::new(
-        "LTAI5t8QwychjXPe1AoTTx3P".into(),
-        "JhXIzDXRRnHoTKeEZK0aqVSZesFYto".into(),
+        "LTAI5t8QwychjXPe1AoTP".into(),
+        "JhXIzDXRRnHoTKeEZK0esFYto".into(),
         "oss-cn-beijing.aliyuncs.com".into(),
         bucket,
     );
