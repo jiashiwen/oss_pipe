@@ -97,8 +97,8 @@ mod test {
         let shared_config = rt.block_on(async {
             let client = JdS3Client::new(
                 "http://s3.cn-north-1.jdcloud-oss.com".to_string(),
-                "4107B314B15BCE99A1C781DFCF119F59".to_string(),
-                "8877CD432EB5738EFF0FA01F630201C9".to_string(),
+                "4107B314B15BCE99A1C781DFCF11".to_string(),
+                "8877CD432EB5738EFF0FA01F6302".to_string(),
                 "cn-north-1".to_string(),
             )
             .await;
@@ -119,8 +119,8 @@ mod test {
         rt.block_on(async {
             let client = JdS3Client::new(
                 "http://s3.cn-north-1.jdcloud-oss.com".to_string(),
-                "4107B314B15BCE99A1C781DFCF119F59".to_string(),
-                "8877CD432EB5738EFF0FA01F630201C9".to_string(),
+                "4107B314B15BCE99A1C781DFCF11".to_string(),
+                "8877CD432EB5738EFF0FA01F6302".to_string(),
                 "cn-north-1".to_string(),
             )
             .await;
