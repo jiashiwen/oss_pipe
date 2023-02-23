@@ -3,6 +3,7 @@ use std::process::Command;
 use std::str::FromStr;
 use std::{env, fs, thread};
 
+use aws_credential_types::provider;
 use clap::Command as Clap_Command;
 use clap::{Arg, ArgMatches};
 use fork::{daemon, Fork};
@@ -11,11 +12,14 @@ use sysinfo::{Pid, ProcessExt, ProcessRefreshKind, RefreshKind, System, SystemEx
 use tokio::runtime;
 
 use crate::checkers::check_local_desc_path;
-use crate::cmd::{new_config_cmd, new_start_cmd, new_stop_cmd};
+use crate::cmd::{new_config_cmd, new_osscfg_cmd, new_start_cmd, new_stop_cmd};
+use crate::commons::yamlutile::struct_to_yml_file;
 use crate::commons::CommandCompleter;
 use crate::commons::SubCmd;
 use crate::configure::{generate_default_config, set_config_file_path};
 use crate::configure::{get_config, get_config_file_path, get_current_config_yml, set_config};
+use crate::s3::oss::OSSDescription;
+use crate::s3::oss::OssProvider;
 
 lazy_static! {
     static ref CLIAPP: Clap_Command = Clap_Command::new("agent")
@@ -29,7 +33,6 @@ lazy_static! {
                 .long("config")
                 .value_name("FILE")
                 .help("Sets a custom config file")
-                // .takes_value(true)
         )
         .arg(
             Arg::new("interact")
@@ -46,7 +49,8 @@ lazy_static! {
             )
         )
         .subcommand(new_stop_cmd())
-        .subcommand(new_config_cmd());
+        .subcommand(new_config_cmd())
+        .subcommand(new_osscfg_cmd());
     static ref SUBCMDS: Vec<SubCmd> = subcommands();
 }
 
@@ -209,6 +213,28 @@ fn cmd_match(matches: &ArgMatches) {
                 file.push_str("config_default.yml")
             }
             if let Err(e) = generate_default_config(file.as_str()) {
+                log::error!("{}", e);
+                return;
+            };
+            println!("{} created!", file);
+        }
+    }
+
+    if let Some(osscfg) = matches.subcommand_matches("osscfg") {
+        if let Some(gen) = osscfg.subcommand_matches("gendefault") {
+            println!("gen osscfg file");
+            let mut file = String::from("");
+            if let Some(path) = gen.get_one::<String>("filepath") {
+                file.push_str(path);
+            } else {
+                file.push_str("osscfg_default.yml")
+            }
+            let oss_jd = OSSDescription::default();
+            let mut oss_ali = OSSDescription::default();
+            oss_ali.provider = OssProvider::Ali;
+            oss_ali.endpoint = "oss-cn-beijing.aliyuncs.com".to_string();
+            let vec_oss = vec![oss_jd, oss_ali];
+            if let Err(e) = struct_to_yml_file(&vec_oss, file.as_str()) {
                 log::error!("{}", e);
                 return;
             };
