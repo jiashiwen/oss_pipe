@@ -5,8 +5,6 @@
 // use tokio::runtime::Runtime;
 
 use aliyun_oss_client::{file::File, BucketName, Client, Query, QueryKey};
-use futures::{pin_mut, StreamExt};
-use http::response;
 use tokio::runtime::Runtime;
 
 // // pub struct AliOssClient {

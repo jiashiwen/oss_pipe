@@ -1,13 +1,11 @@
+use crate::configure::config_error::{ConfigError, ConfigErrorType};
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use serde_yaml::from_str;
 use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
 use std::sync::RwLock;
-
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
-use serde_yaml::from_str;
-
-use crate::configure::config_error::{ConfigError, ConfigErrorType};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct JdCloud {
@@ -27,7 +25,6 @@ impl JdCloud {
         }
     }
 }
-
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TaskConfig {
@@ -49,7 +46,6 @@ impl TaskConfig {
         }
     }
 }
-
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
