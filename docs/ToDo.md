@@ -4,3 +4,4 @@
 - [ ] 实现基础的jd s3 client
 - [ ] 实现基础的 阿里云 s3 client
 - [ ] 实现 aws client
+- [ ] 抽象各个厂商的oss client 形成统一的产生函数
