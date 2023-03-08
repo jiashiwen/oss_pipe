@@ -1,120 +1,150 @@
-// use std::collections::HashMap;
+use aliyun_oss_client::QueryKey;
+use aliyun_oss_client::{file::File, object::ObjectList, BucketName, Client, Query};
+use anyhow::anyhow;
+use anyhow::Result;
+use async_trait::async_trait;
 
-// use oss_rust_sdk::async_object::*;
-// use oss_rust_sdk::oss::OSS;
-// use tokio::runtime::Runtime;
+use super::OSSClient;
+use super::{OSSActions, OssObjectsList};
 
-use aliyun_oss_client::{file::File, BucketName, Client, Query, QueryKey};
-use tokio::runtime::Runtime;
+impl OSSClient {
+    pub async fn ali_get_objects_list(self, query: Query) -> Result<ObjectList> {
+        if let Some(ali) = self.ali_client {
+            let list = ali
+                .get_object_list(query)
+                .await
+                .map_err(|e| anyhow!(e.to_string()))?;
+            Ok(list)
+        } else {
+            Err(anyhow!("not ali client"))
+        }
+    }
 
-// // pub struct AliOssClient {
-// //     pub ali_oss_client: OSS,
-// // }
-
-// fn async_get_object_demo() {
-
-//     let oss_instance = OSS::new(
-//         "LTAI5t8QwychjAoTTx3P",
-//         "JhXIzDXRRnHZK0aqVSZesFYto",
-//         "oss-cn-beijing.aliyuncs.com",
-//         "ali-oss-jsw",
-//     );
-
-//     let rt = Runtime::new().expect("failed to start runtime");
-
-//     rt.block_on(async move {
-//         let r = oss_instance
-//             .get_object("test/Cargo.toml", None::<HashMap<&str, &str>>, None)
-//             .await
-//             .unwrap();
-//         println!("buffer = {:?}", String::from_utf8(r.to_vec()));
-//     });
-// }
-
-fn async_get_object_demo() {
-    let bucket = BucketName::new("ali-oss-jsw").unwrap();
-    let oss_instance = Client::new(
-        "LTAI5t8QwychjXPe1AoTP".into(),
-        "JhXIzDXRRnHoTKeEZK0esFYto".into(),
-        "oss-cn-beijing.aliyuncs.com".into(),
-        bucket,
-    );
-
-    let rt = Runtime::new().expect("failed to start runtime");
-
-    rt.block_on(async move {
-        let r = oss_instance
-            .get_object("test/Cargo.toml", ..)
-            .await
-            .unwrap();
-        println!("{:?}", String::from_utf8(r).unwrap());
-    });
+    pub async fn ali_get_object(self, object_path: &str) -> Result<Vec<u8>> {
+        if let Some(ali) = self.ali_client {
+            let r = &ali.get_object(object_path, ..).await?;
+            Ok(r.clone())
+        } else {
+            Err(anyhow!("not ali client"))
+        }
+    }
 }
 
-fn get_obj_list_demo() {
-    let bucket = BucketName::new("ali-oss-jsw").unwrap();
-    let client = Client::new(
-        "LTAI5t8QwychjXPe1AoTTx3P".into(),
-        "JhXIzDXRRnHoTKeEZK0aqVSZesFYto".into(),
-        "oss-cn-beijing.aliyuncs.com".into(),
-        bucket,
-    );
+pub struct OssAliClient {
+    pub client: Client,
+}
 
-    let rt = Runtime::new().expect("failed to start runtime");
-    rt.block_on(async move {
-        let mut query = Query::new();
-        query.insert("max-keys", 3u16);
-        // query.insert(QueryKey::Prefix, "test/");
-        // let object_list = client.get_object_list(query).await.unwrap();
+#[async_trait]
+impl OSSActions for OssAliClient {
+    async fn list_objects(
+        &self,
+        bucket: String,
+        prefix: Option<String>,
+        max_keys: i32,
+        token: Option<String>,
+    ) -> Result<super::OssObjectsList> {
+        let mut q = Query::new();
+        q.insert("max-keys", max_keys.to_string());
+        if let Some(p) = prefix {
+            q.insert(QueryKey::Prefix, p);
+        };
 
-        // let object_list = client
-        //     .get_bucket_info()
-        //     .await
-        //     .unwrap()
-        //     .get_object_list(query)
-        //     .await;
+        if let Some(t) = token {
+            q.insert(QueryKey::ContinuationToken, t);
+        };
 
-        // for item in object_list.into_iter() {
-        //     println!("{:?}", item);
-        // }
-        let response = client
-            .get_object_list([(QueryKey::MaxKeys, 5u8.into())])
+        let list = self
+            .client
+            .clone()
+            .get_object_list(q)
             .await
-            .unwrap();
-        for item in response.object_iter() {
-            println!("objects list: {:?}", item.path_string());
+            .map_err(|e| anyhow!(e.to_string()))?;
+
+        let token = list.next_continuation_token().clone();
+
+        let mut obj_list = None;
+
+        let mut vec = vec![];
+        for item in list.object_iter() {
+            vec.push(item.path_string());
         }
-        // println!("objects list: {:?}", response);
-        // println!(
-        //     "list: {:?}, token: {:?}",
-        //     object_list,
-        //     object_list.next_continuation_token()
-        // );
-        // let stream = object_list.into_stream();
+        if vec.len() > 0 {
+            obj_list = Some(vec);
+        }
 
-        // pin_mut!(stream);
-
-        // let second_list = stream.next().await;
-        // let third_list = stream.next().await;
-
-        // println!("second_list: {:?}", second_list);
-        // println!("third_list: {:?}", third_list);
-    });
+        let oss_list = OssObjectsList {
+            object_list: obj_list,
+            next_token: token,
+        };
+        Ok(oss_list)
+    }
 }
 
 #[cfg(test)]
 mod test {
-    use super::{async_get_object_demo, get_obj_list_demo};
 
-    //cargo test s3::ali_oss::test::test_async_get_object_demo -- --nocapture
+    use aliyun_oss_client::{Query, QueryKey};
+
+    use crate::{
+        commons::read_yaml_file,
+        s3::{OSSDescription, OssProvider},
+    };
+
+    //cargo test s3::ali_oss::test::test_async_get_object -- --nocapture
     #[test]
-    fn test_async_get_object_demo() {
-        async_get_object_demo();
+    fn test_async_get_object() {
+        let vec_oss = read_yaml_file::<Vec<OSSDescription>>("osscfg.yml").unwrap();
+        let mut oss_ali = OSSDescription::default();
+        for item in vec_oss.iter() {
+            if item.provider == OssProvider::Ali {
+                oss_ali = item.clone();
+            }
+        }
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let client = oss_ali.gen_oss_client();
+            let filevec = client.ali_get_object("test/men.rs").await.unwrap();
+            std::fs::write("/tmp/test", filevec).unwrap();
+        })
     }
 
-    //cargo test s3::ali_oss::test::test_get_obj_list_demo -- --nocapture
+    //cargo test s3::ali_oss::test::test_ali_get_objects_list -- --nocapture
     #[test]
-    fn test_get_obj_list_demo() {
-        get_obj_list_demo();
+    fn test_ali_get_objects_list() {
+        let vec_oss = read_yaml_file::<Vec<OSSDescription>>("osscfg.yml").unwrap();
+        let mut oss_ali = OSSDescription::default();
+        for item in vec_oss.iter() {
+            if item.provider == OssProvider::Ali {
+                oss_ali = item.clone();
+            }
+        }
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let client = &oss_ali.gen_oss_client();
+            let mut query = Query::new();
+            query.insert("max-keys", 3u16);
+
+            let res = client
+                .clone()
+                .ali_get_objects_list(query.clone())
+                .await
+                .unwrap();
+
+            let mut value = res.next_continuation_token().clone();
+            for item in res.object_iter() {
+                println!("objects list: {:?}", item.path_string());
+            }
+
+            while value.clone() != None {
+                let v = value.clone().unwrap();
+                let mut q = query.clone();
+                q.insert(QueryKey::ContinuationToken, v.to_owned());
+                let res1 = client.clone().ali_get_objects_list(q).await.unwrap();
+                value = res1.next_continuation_token().clone();
+                for item in res1.object_iter() {
+                    println!("objects list1: {:?}", item.path_string());
+                }
+            }
+        });
     }
 }

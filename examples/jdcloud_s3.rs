@@ -3,12 +3,9 @@ extern crate core;
 use std::fs::File;
 use std::io::Write;
 
-use aws_sdk_s3::{Client, Endpoint};
 use aws_types::region::Region;
 // use aws_types::{Credentials, SdkConfig};
 use aws_credential_types::Credentials;
-use aws_types::SdkConfig;
-use http::Uri;
 
 // use aws_types::region::Region;
 

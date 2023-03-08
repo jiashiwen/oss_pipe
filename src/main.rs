@@ -6,11 +6,12 @@ mod cmd;
 mod commons;
 mod configure;
 mod httpquerry;
+mod interact;
 mod logger;
+mod osstask;
 mod s3;
 
-#[tokio::main]
-async fn main() {
+fn main() {
     init_log();
     cmd::run_app();
 }
