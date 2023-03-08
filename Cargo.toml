@@ -9,7 +9,10 @@ edition = "2021"
 anyhow = "^1"
 tokio = { version = "^1", features = ["full"] }
 clap = "4.1.6"
-rustyline = "11.0.0"
+# rustyline = "11.0.0"
+rustyline = "9.1.2"
+rustyline-derive = "0.8.0"
+shellwords = "1.1.0"
 lazy_static = "1.4.0"
 fork = "0.1"
 sysinfo = "0.28.0"
@@ -20,6 +23,8 @@ log = "0.4.17"
 log4rs = "1.2.0"
 reqwest = { version = "0.11.14", features = ["json"] }
 http = "0.2.9"
+rs-snowflake = "0.6.0"
+async-trait = "0.1.66"
 
 # jd and aws oss
 jdcloud_signer = { git = "https://github.com/shijunLee/jdcloud-sdk-rust-signer" }
@@ -29,10 +34,10 @@ aws-types = { version = "0.54.1", feature = ["hardcoded-credentials"] }
 aws-credential-types = "0.54.1"
 
 # aliyun oss
-oss-rust-sdk = "0.7.1"
+# oss-rust-sdk = "0.7.1"
 aliyun-oss-client = "0.10.1"
 
-futures = "0.3"
+# futures = "0.3"
 
 
 [profile.release]

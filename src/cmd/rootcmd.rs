@@ -3,26 +3,29 @@ use std::process::Command;
 use std::str::FromStr;
 use std::{env, fs, thread};
 
-use aws_credential_types::provider;
-use clap::Command as Clap_Command;
 use clap::{Arg, ArgMatches};
+use clap::{ArgAction, Command as Clap_Command};
 use fork::{daemon, Fork};
 use lazy_static::lazy_static;
 use sysinfo::{Pid, ProcessExt, ProcessRefreshKind, RefreshKind, System, SystemExt};
 use tokio::runtime;
 
 use crate::checkers::check_local_desc_path;
+use crate::cmd::osstaskcmd::new_osstask_cmd;
 use crate::cmd::{new_config_cmd, new_osscfg_cmd, new_start_cmd, new_stop_cmd};
 use crate::commons::yamlutile::struct_to_yml_file;
-use crate::commons::CommandCompleter;
-use crate::commons::SubCmd;
+use crate::commons::{read_lines, read_yaml_file, SubCmd};
+use crate::commons::{struct_to_yaml_string, CommandCompleter};
 use crate::configure::{generate_default_config, set_config_file_path};
 use crate::configure::{get_config, get_config_file_path, get_current_config_yml, set_config};
+use crate::interact;
+use crate::osstask::{task_id_generator, TaskDownload, TaskTransfer};
 use crate::s3::oss::OSSDescription;
 use crate::s3::oss::OssProvider;
 
+pub const APP_NAME: &'static str = "oss_pipe";
 lazy_static! {
-    static ref CLIAPP: Clap_Command = Clap_Command::new("agent")
+    static ref CLIAPP: Clap_Command = Clap_Command::new(APP_NAME)
         .version("1.0")
         .author("Shiwen Jia. <jiashiwen@gmail.com>")
         .about("RustBoot")
@@ -38,6 +41,7 @@ lazy_static! {
             Arg::new("interact")
                 .short('i')
                 .long("interact")
+                .action(ArgAction::SetTrue)
                 .help("run as interact mod")
         )
         .subcommand(
@@ -48,6 +52,7 @@ lazy_static! {
                     .help("run as daemon")
             )
         )
+        .subcommand(new_osstask_cmd())
         .subcommand(new_stop_cmd())
         .subcommand(new_config_cmd())
         .subcommand(new_osscfg_cmd());
@@ -109,6 +114,11 @@ fn cmd_match(matches: &ArgMatches) {
         set_config(&get_config_file_path());
     } else {
         set_config("");
+    }
+
+    if matches.get_flag("interact") {
+        interact::run();
+        return;
     }
 
     if let Some(ref matches) = matches.subcommand_matches("start") {
@@ -217,6 +227,94 @@ fn cmd_match(matches: &ArgMatches) {
                 return;
             };
             println!("{} created!", file);
+        }
+    }
+
+    if let Some(osstask) = matches.subcommand_matches("osstask") {
+        if let Some(transfer) = osstask.subcommand_matches("transfer") {}
+        if let Some(download) = osstask.subcommand_matches("download") {
+            if let Some(f) = download.get_one::<String>("filepath") {
+                let download = read_yaml_file::<TaskDownload>(f);
+
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                let async_req = async {
+                    match download {
+                        Ok(d) => {
+                            let c = d.source.gen_oss_client();
+                            // 生成文件清单，文件清单默认文件存储在文件存储目录下 .objlist
+                            let object_list_file = d.local_path.clone() + "/.objlist";
+                            let _ = fs::remove_file(object_list_file.clone());
+                            let r = c
+                                .jd_object_list_to_file(
+                                    None,
+                                    d.source.bucket.clone(),
+                                    object_list_file.clone(),
+                                    d.bach_size,
+                                    None,
+                                )
+                                .await;
+                            println!("{:?}", r);
+
+                            // 根据清单下载文件
+                            let lines = read_lines(object_list_file.clone()).unwrap();
+                            for line in lines {
+                                if let Ok(f) = line {
+                                    let r = c
+                                        .jd_download_object_to_dir(
+                                            d.source.bucket.clone(),
+                                            f.clone(),
+                                            d.local_path.clone(),
+                                        )
+                                        .await;
+                                    println!("{:?}", r);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("{}", e.to_string())
+                        }
+                    }
+                };
+                rt.block_on(async_req);
+            }
+        }
+
+        if let Some(template) = osstask.subcommand_matches("template") {
+            let task_id = task_id_generator();
+            if let Some(_) = template.subcommand_matches("download") {
+                let task_download = TaskDownload {
+                    task_id: task_id.to_string(),
+                    description: "download task".to_string(),
+                    source: OSSDescription::default(),
+                    local_path: "/tmp".to_string(),
+                    bach_size: 100,
+                };
+                let yml = struct_to_yaml_string(&task_download);
+                match yml {
+                    Ok(str) => println!("{}", str),
+                    Err(e) => eprintln!("{}", e.to_string()),
+                }
+            }
+
+            if let Some(_) = template.subcommand_matches("transfer") {
+                let task_id = task_id_generator();
+                let mut oss_ali = OSSDescription::default();
+                oss_ali.provider = OssProvider::Ali;
+                oss_ali.endpoint = "oss-cn-beijing.aliyuncs.com".to_string();
+
+                let task_transfer = TaskTransfer {
+                    task_id: task_id.to_string(),
+                    description: "transfer task".to_string(),
+                    source: oss_ali,
+                    target: OSSDescription::default(),
+                    bach_size: 100,
+                };
+                let yml = struct_to_yaml_string(&task_transfer);
+                match yml {
+                    Ok(str) => println!("{}", str),
+                    Err(e) => eprintln!("{}", e.to_string()),
+                }
+            }
         }
     }
 
