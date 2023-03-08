@@ -12,6 +12,14 @@ where
     Ok(())
 }
 
+pub fn struct_to_yaml_string<T>(value: &T) -> Result<String>
+where
+    T: ?Sized + serde::Serialize,
+{
+    let yml = serde_yaml::to_string(value)?;
+    Ok(yml)
+}
+
 pub fn read_yaml_file<T>(path: &str) -> Result<T>
 where
     T: for<'a> Deserialize<'a>,
