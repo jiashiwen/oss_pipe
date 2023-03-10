@@ -1,5 +1,5 @@
-task_id: '7038781312286724097'
-description: download task
+# task_id: '7038781312286724097'
+# description: download task
 source:
   provider: JD
   access_key_id: 4107B314B15BCE99A1C781DFCF119F59
@@ -7,7 +7,7 @@ source:
   endpoint: http://s3.cn-north-1.jdcloud-oss.com
   region: cn-north-1
   bucket: jsw-bucket
-local_path: /tmp
+local_path: /tmp/jddownload
 bach_size: 100
 
 

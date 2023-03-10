@@ -1,34 +1,15 @@
+use std::fs::OpenOptions;
+use std::io::{LineWriter, Write};
+use std::path::Path;
+
 use aliyun_oss_client::QueryKey;
-use aliyun_oss_client::{file::File, object::ObjectList, BucketName, Client, Query};
+use aliyun_oss_client::{file::File, Client, Query};
 use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::OSSClient;
+use super::OssProvider;
 use super::{OSSActions, OssObjectsList};
-
-impl OSSClient {
-    pub async fn ali_get_objects_list(self, query: Query) -> Result<ObjectList> {
-        if let Some(ali) = self.ali_client {
-            let list = ali
-                .get_object_list(query)
-                .await
-                .map_err(|e| anyhow!(e.to_string()))?;
-            Ok(list)
-        } else {
-            Err(anyhow!("not ali client"))
-        }
-    }
-
-    pub async fn ali_get_object(self, object_path: &str) -> Result<Vec<u8>> {
-        if let Some(ali) = self.ali_client {
-            let r = &ali.get_object(object_path, ..).await?;
-            Ok(r.clone())
-        } else {
-            Err(anyhow!("not ali client"))
-        }
-    }
-}
 
 pub struct OssAliClient {
     pub client: Client,
@@ -36,9 +17,12 @@ pub struct OssAliClient {
 
 #[async_trait]
 impl OSSActions for OssAliClient {
+    fn oss_client_type(&self) -> OssProvider {
+        OssProvider::Ali
+    }
     async fn list_objects(
         &self,
-        bucket: String,
+        _bucket: String,
         prefix: Option<String>,
         max_keys: i32,
         token: Option<String>,
@@ -78,73 +62,134 @@ impl OSSActions for OssAliClient {
         };
         Ok(oss_list)
     }
+
+    async fn append_object_list_to_file(
+        &self,
+        _bucket: String,
+        prefix: Option<String>,
+        batch: i32,
+        token: Option<String>,
+        file_path: String,
+    ) -> Result<Option<String>> {
+        let mut q = Query::new();
+        q.insert("max-keys", batch.to_string());
+
+        if let Some(p) = prefix {
+            q.insert(QueryKey::Prefix, p);
+        };
+
+        if let Some(t) = token {
+            q.insert(QueryKey::ContinuationToken, t);
+        };
+
+        let list = self
+            .client
+            .clone()
+            .get_object_list(q)
+            .await
+            .map_err(|e| anyhow!(e.to_string()))?;
+
+        let token = list.next_continuation_token().clone();
+
+        let store_path = Path::new(file_path.as_str());
+        let path = std::path::Path::new(store_path);
+
+        if let Some(p) = path.parent() {
+            std::fs::create_dir_all(p)?;
+        };
+
+        //写入文件
+        let file_ref = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .append(true)
+            .open(file_path.clone())?;
+        let mut file = LineWriter::new(file_ref);
+
+        for item in list.object_iter() {
+            let _ = file.write_all(item.path_string().as_bytes());
+            let _ = file.write_all("\n".as_bytes());
+        }
+        file.flush()?;
+
+        Ok(token)
+    }
+
+    async fn append_all_object_list_to_file(
+        &self,
+        bucket: String,
+        prefix: Option<String>,
+        batch: i32,
+        file_path: String,
+    ) -> Result<()> {
+        let resp = self
+            .list_objects(bucket.clone(), prefix.clone(), batch, None)
+            .await?;
+        let mut token = resp.next_token;
+
+        let store_path = Path::new(file_path.as_str());
+        let path = std::path::Path::new(store_path);
+
+        if let Some(p) = path.parent() {
+            std::fs::create_dir_all(p)?;
+        };
+
+        //写入文件
+        let file_ref = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .append(true)
+            .open(file_path.clone())?;
+        let mut file = LineWriter::new(file_ref);
+        if let Some(objects) = resp.object_list {
+            for item in objects.iter() {
+                let _ = file.write_all(item.as_bytes());
+                let _ = file.write_all("\n".as_bytes());
+            }
+            file.flush()?;
+        }
+
+        while !token.is_none() {
+            let resp = self
+                .list_objects(bucket.clone(), prefix.clone(), batch, token.clone())
+                .await?;
+            if let Some(objects) = resp.object_list {
+                for item in objects.iter() {
+                    let _ = file.write_all(item.as_bytes());
+                    let _ = file.write_all("\n".as_bytes());
+                }
+                file.flush()?;
+            }
+            token = resp.next_token;
+        }
+
+        Ok(())
+    }
+
+    async fn download_object_to_dir(&self, bucket: String, key: String, dir: String) -> Result<()> {
+        let resp = &self.client.get_object(key.clone(), ..).await?;
+
+        let mut store = dir.clone();
+        store.push_str("/");
+        store.push_str(&key);
+
+        let store_path = Path::new(store.as_str());
+        let path = std::path::Path::new(store_path);
+
+        if let Some(p) = path.parent() {
+            std::fs::create_dir_all(p)?;
+        };
+
+        let mut file = OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .create(true)
+            .open(store_path)?;
+        let _ = file.write(&*resp);
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
-mod test {
-
-    use aliyun_oss_client::{Query, QueryKey};
-
-    use crate::{
-        commons::read_yaml_file,
-        s3::{OSSDescription, OssProvider},
-    };
-
-    //cargo test s3::ali_oss::test::test_async_get_object -- --nocapture
-    #[test]
-    fn test_async_get_object() {
-        let vec_oss = read_yaml_file::<Vec<OSSDescription>>("osscfg.yml").unwrap();
-        let mut oss_ali = OSSDescription::default();
-        for item in vec_oss.iter() {
-            if item.provider == OssProvider::Ali {
-                oss_ali = item.clone();
-            }
-        }
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            let client = oss_ali.gen_oss_client();
-            let filevec = client.ali_get_object("test/men.rs").await.unwrap();
-            std::fs::write("/tmp/test", filevec).unwrap();
-        })
-    }
-
-    //cargo test s3::ali_oss::test::test_ali_get_objects_list -- --nocapture
-    #[test]
-    fn test_ali_get_objects_list() {
-        let vec_oss = read_yaml_file::<Vec<OSSDescription>>("osscfg.yml").unwrap();
-        let mut oss_ali = OSSDescription::default();
-        for item in vec_oss.iter() {
-            if item.provider == OssProvider::Ali {
-                oss_ali = item.clone();
-            }
-        }
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            let client = &oss_ali.gen_oss_client();
-            let mut query = Query::new();
-            query.insert("max-keys", 3u16);
-
-            let res = client
-                .clone()
-                .ali_get_objects_list(query.clone())
-                .await
-                .unwrap();
-
-            let mut value = res.next_continuation_token().clone();
-            for item in res.object_iter() {
-                println!("objects list: {:?}", item.path_string());
-            }
-
-            while value.clone() != None {
-                let v = value.clone().unwrap();
-                let mut q = query.clone();
-                q.insert(QueryKey::ContinuationToken, v.to_owned());
-                let res1 = client.clone().ali_get_objects_list(q).await.unwrap();
-                value = res1.next_continuation_token().clone();
-                for item in res1.object_iter() {
-                    println!("objects list1: {:?}", item.path_string());
-                }
-            }
-        });
-    }
-}
+mod test {}

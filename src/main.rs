@@ -1,4 +1,3 @@
-use crate::configure::set_config;
 use crate::logger::init_log;
 
 mod checkers;

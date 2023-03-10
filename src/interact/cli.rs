@@ -100,7 +100,7 @@ pub fn run() {
     // let mut rl = Editor::<()>::new();
     rl.set_helper(Some(h));
 
-    if rl.load_history("/tmp/history").is_err() {
+    if rl.load_history("./.history").is_err() {
         println!("No previous history.");
     }
 
@@ -143,7 +143,7 @@ pub fn run() {
             }
         }
     }
-    rl.append_history("/tmp/history")
+    rl.append_history("./.history")
         .map_err(|err| error!("{}", err))
         .ok();
 }

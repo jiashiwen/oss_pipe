@@ -240,35 +240,57 @@ fn cmd_match(matches: &ArgMatches) {
                 let async_req = async {
                     match download {
                         Ok(d) => {
-                            let c = d.source.gen_oss_client();
-                            // 生成文件清单，文件清单默认文件存储在文件存储目录下 .objlist
-                            let object_list_file = d.local_path.clone() + "/.objlist";
-                            let _ = fs::remove_file(object_list_file.clone());
-                            let r = c
-                                .jd_object_list_to_file(
-                                    None,
-                                    d.source.bucket.clone(),
-                                    object_list_file.clone(),
-                                    d.bach_size,
-                                    None,
-                                )
-                                .await;
+                            let r = d.execute().await;
                             println!("{:?}", r);
+                            // let client = d.source.gen_oss_client_ref();
 
-                            // 根据清单下载文件
-                            let lines = read_lines(object_list_file.clone()).unwrap();
-                            for line in lines {
-                                if let Ok(f) = line {
-                                    let r = c
-                                        .jd_download_object_to_dir(
-                                            d.source.bucket.clone(),
-                                            f.clone(),
-                                            d.local_path.clone(),
-                                        )
-                                        .await;
-                                    println!("{:?}", r);
-                                }
-                            }
+                            // match client {
+                            //     Ok(c) => {
+                            //         // 生成文件清单，文件清单默认文件存储在文件存储目录下 .objlist
+                            //         let object_list_file = d.local_path.clone() + "/.objlist";
+                            //         let _ = fs::remove_file(object_list_file.clone());
+                            //         let r = c
+                            //             .append_all_object_list_to_file(
+                            //                 d.source.bucket.clone(),
+                            //                 None,
+                            //                 d.bach_size,
+                            //                 object_list_file.clone(),
+                            //             )
+                            //             .await;
+
+                            //         if let Err(e) = r {
+                            //             log::error!("{}", e);
+                            //         };
+
+                            //         // 根据清单下载文件
+                            //         let lines = read_lines(object_list_file.clone());
+
+                            //         if let Err(e) = lines {
+                            //             log::error!("{}", e);
+                            //             return;
+                            //         };
+
+                            //         for line in lines.unwrap() {
+                            //             if let Ok(f) = line {
+                            //                 if !f.ends_with("/") {
+                            //                     let r = c
+                            //                         .download_object_to_dir(
+                            //                             d.source.bucket.clone(),
+                            //                             f.clone(),
+                            //                             d.local_path.clone(),
+                            //                         )
+                            //                         .await;
+                            //                     if let Err(e) = r {
+                            //                         log::error!("{}", e);
+                            //                     };
+                            //                 }
+                            //             }
+                            //         }
+                            //     }
+                            //     Err(e) => {
+                            //         eprintln!("{}", e.to_string())
+                            //     }
+                            // }
                         }
                         Err(e) => {
                             eprintln!("{}", e.to_string())
