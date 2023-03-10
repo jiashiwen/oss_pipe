@@ -84,3 +84,41 @@
 2023-03-08T13:56:46.513481+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 134.658µs)
 2023-03-08T13:56:50.721497+08:00 - lazy_load_credentials
 2023-03-08T13:56:50.721548+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 102.73µs)
+2023-03-10T11:15:42.295842+08:00 - lazy_load_credentials
+2023-03-10T11:15:42.295911+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 289.344µs)
+2023-03-10T11:38:37.230871+08:00 - lazy_load_credentials
+2023-03-10T11:38:37.230945+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 281.493µs)
+2023-03-10T11:46:25.992909+08:00 - lazy_load_credentials
+2023-03-10T11:46:25.992990+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 278.998µs)
+2023-03-10T13:56:59.211660+08:00 - lazy_load_credentials
+2023-03-10T13:56:59.212586+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 1.077193ms)
+2023-03-10T13:57:31.745417+08:00 - lazy_load_credentials
+2023-03-10T13:57:31.745495+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 135.285µs)
+2023-03-10T13:59:03.782562+08:00 - lazy_load_credentials
+2023-03-10T13:59:03.782728+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 345.11µs)
+2023-03-10T14:01:47.110092+08:00 - lazy_load_credentials
+2023-03-10T14:01:47.110170+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 137.767µs)
+2023-03-10T14:08:37.670346+08:00 - lazy_load_credentials
+2023-03-10T14:08:37.671136+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 982.576µs)
+2023-03-10T14:33:26.725234+08:00 - lazy_load_credentials
+2023-03-10T14:33:26.725303+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 313.596µs)
+2023-03-10T18:14:18.308116+08:00 - lazy_load_credentials
+2023-03-10T18:14:18.308189+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 263.95µs)
+2023-03-10T18:14:19.770735+08:00 - Is a directory (os error 21)
+2023-03-10T18:14:21.096568+08:00 - Is a directory (os error 21)
+2023-03-10T18:25:02.815711+08:00 - lazy_load_credentials
+2023-03-10T18:25:02.815789+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 247.547µs)
+2023-03-10T18:25:21.466583+08:00 - lazy_load_credentials
+2023-03-10T18:25:21.466662+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 147.839µs)
+2023-03-10T18:50:03.524095+08:00 - lazy_load_credentials
+2023-03-10T18:50:03.524234+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 338.625µs)
+2023-03-10T19:32:56.929420+08:00 - lazy_load_credentials
+2023-03-10T19:32:56.929480+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 248.56µs)
+2023-03-10T19:38:13.618246+08:00 - lazy_load_credentials
+2023-03-10T19:38:13.618307+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 255.478µs)
+2023-03-10T19:38:26.335995+08:00 - lazy_load_credentials
+2023-03-10T19:38:26.336073+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 134.508µs)
+2023-03-10T19:38:39.370572+08:00 - lazy_load_credentials
+2023-03-10T19:38:39.370649+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 137.039µs)
+2023-03-10T19:38:51.746003+08:00 - lazy_load_credentials
+2023-03-10T19:38:51.746083+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 144.432µs)
