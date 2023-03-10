@@ -1,5 +1,8 @@
-use crate::s3::OSSDescription;
+use std::fs;
+
+use crate::{commons::read_lines, s3::OSSDescription};
 use anyhow::{Ok, Result};
+use clap::builder::Str;
 use serde::{Deserialize, Serialize};
 use snowflake::SnowflakeIdGenerator;
 
@@ -13,8 +16,11 @@ pub struct TaskTransfer {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "lowercase")]
 pub struct TaskDownload {
+    #[serde(default = "TaskDownload::task_id_default")]
     pub task_id: String,
+    #[serde(default = "TaskDownload::task_description_default")]
     pub description: String,
     pub source: OSSDescription,
     pub local_path: String,
@@ -22,89 +28,56 @@ pub struct TaskDownload {
 }
 
 impl TaskDownload {
-    // 获取文件列表
-    pub async fn get_object_list_to_file(self, prefix: Option<String>, file: &str) -> Result<()> {
-        return match self.source.provider {
-            crate::s3::OssProvider::JD => {
-                let client = self.source.gen_oss_client();
-
-                let mut token = client
-                    .jd_object_list_to_file(
-                        prefix.clone(),
-                        self.source.bucket.clone(),
-                        file.to_string(),
-                        self.bach_size,
-                        None,
-                    )
-                    .await?;
-
-                while token.is_some() {
-                    token = client
-                        .jd_object_list_to_file(
-                            prefix.clone(),
-                            self.source.bucket.clone(),
-                            file.to_string(),
-                            self.bach_size,
-                            token,
-                        )
-                        .await?;
-                }
-
-                Ok(())
-            }
-            crate::s3::OssProvider::Ali => todo!(),
-            crate::s3::OssProvider::AWS => todo!(),
-        };
+    fn task_id_default() -> String {
+        task_id_generator().to_string()
     }
+    fn task_description_default() -> String {
+        String::from("download")
+    }
+    pub async fn execute(&self) -> Result<()> {
+        let client = self.source.gen_oss_client_ref()?;
 
-    // 按批次切分
+        // 生成文件清单，文件清单默认文件存储在文件存储目录下 .objlist
+        let object_list_file = self.local_path.clone() + "/.objlist";
+        let _ = fs::remove_file(object_list_file.clone());
+        let r = client
+            .append_all_object_list_to_file(
+                self.source.bucket.clone(),
+                None,
+                self.bach_size,
+                object_list_file.clone(),
+            )
+            .await;
 
-    // 下载文件到本地
+        if let Err(e) = r {
+            log::error!("{}", e);
+        };
+
+        // 根据清单下载文件
+        let lines = read_lines(object_list_file.clone())?;
+        for line in lines {
+            if let Result::Ok(f) = line {
+                if !f.ends_with("/") {
+                    let r = client
+                        .download_object_to_dir(
+                            self.source.bucket.clone(),
+                            f.clone(),
+                            self.local_path.clone(),
+                        )
+                        .await;
+                    if let Err(e) = r {
+                        log::error!("{}", e);
+                    };
+                }
+            };
+        }
+
+        Ok(())
+    }
 }
 
 pub fn task_id_generator() -> i64 {
     let mut id_generator_generator = SnowflakeIdGenerator::new(1, 1);
     let id = id_generator_generator.real_time_generate();
     id
-}
-
-#[cfg(test)]
-mod test {
-    use crate::{
-        commons::read_yaml_file,
-        osstask::task::TaskDownload,
-        s3::{OSSDescription, OssProvider},
-    };
-
-    //cargo test osstask::task::test::test_TaskDownload_get_object_list_to_file -- --nocapture
-    #[test]
-    fn test_TaskDownload_get_object_list_to_file() {
-        println!("test_jdcloud_s3_client");
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let vec_oss = read_yaml_file::<Vec<OSSDescription>>("osscfg.yml").unwrap();
-        let mut oss_jd = OSSDescription::default();
-        for item in vec_oss.iter() {
-            if item.provider == OssProvider::JD {
-                oss_jd = item.clone();
-            }
-        }
-
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        // 使用 block_on 调用 async 函数
-        let _shared_config = rt.block_on(async {
-            let td = TaskDownload {
-                task_id: "xxxx".to_string(),
-                source: oss_jd,
-                local_path: "./".to_string(),
-                bach_size: 3,
-                description: "".to_string(),
-            };
-
-            println!("download task is : {:?}", td);
-
-            let list = td.get_object_list_to_file(None, "/tmp/obj_list.txt").await;
-
-            // println!("list write result: {:?}", list);
-        });
-    }
 }

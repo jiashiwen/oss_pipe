@@ -11,13 +11,38 @@ use super::{ali_oss::OssAliClient, jd_s3::OssJdClient};
 
 #[async_trait]
 pub trait OSSActions {
+    fn oss_client_type(&self) -> OssProvider;
+
+    // 按批次获取对象列表，token为next token
     async fn list_objects(
         &self,
         bucket: String,
         prefix: Option<String>,
         max_keys: i32,
-        token: Option<String>,
+        continuation_token: Option<String>,
     ) -> Result<OssObjectsList>;
+
+    //向文件添加对象列表，
+    async fn append_object_list_to_file(
+        &self,
+        bucket: String,
+        prefix: Option<String>,
+        batch: i32,
+        continuation_token: Option<String>,
+        file_path: String,
+    ) -> Result<Option<String>>;
+
+    // 按批次向文件添加所有描述的对象列表
+    async fn append_all_object_list_to_file(
+        &self,
+        bucket: String,
+        prefix: Option<String>,
+        batch: i32,
+        file_path: String,
+    ) -> Result<()>;
+
+    // 下载文件到目录
+    async fn download_object_to_dir(&self, bucket: String, key: String, dir: String) -> Result<()>;
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -32,21 +57,6 @@ pub struct OssObjectsList {
     pub next_token: Option<String>,
 }
 
-#[derive(Clone)]
-pub struct OSSClient {
-    pub jd_client: Option<aws_sdk_s3::Client>,
-    pub ali_client: Option<aliyun_oss_client::Client>,
-    // AWSClient(aws_sdk_s3::Client),
-}
-
-impl Default for OSSClient {
-    fn default() -> Self {
-        Self {
-            jd_client: None,
-            ali_client: None,
-        }
-    }
-}
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct OSSDescription {
     pub provider: OssProvider,
@@ -89,7 +99,7 @@ impl OSSDescription {
         }
     }
 
-    pub fn get_oss(&self) -> Result<Box<dyn OSSActions>> {
+    pub fn gen_oss_client_ref(&self) -> Result<Box<dyn OSSActions>> {
         match self.provider {
             OssProvider::JD => {
                 let shared_config = SdkConfig::builder()
@@ -117,48 +127,8 @@ impl OSSDescription {
                     self.endpoint.clone().into(),
                     bucket,
                 );
-                // let mut client = OSSClient::default();
                 let ali_client = OssAliClient { client };
                 Ok(Box::new(ali_client))
-                // client.ali_client = Some(ali_client);
-                // client
-            }
-            OssProvider::AWS => todo!(),
-        }
-    }
-
-    pub fn gen_oss_client(&self) -> OSSClient {
-        match self.provider {
-            OssProvider::JD => {
-                let shared_config = SdkConfig::builder()
-                    .credentials_provider(SharedCredentialsProvider::new(Credentials::new(
-                        self.access_key_id.clone(),
-                        self.secret_access_key.clone(),
-                        None,
-                        None,
-                        "Static",
-                    )))
-                    .endpoint_url(self.endpoint.clone())
-                    .region(Region::new(self.region.clone()))
-                    .build();
-
-                let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
-                let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
-                let mut jd_client = OSSClient::default();
-                jd_client.jd_client = Some(client);
-                jd_client
-            }
-            OssProvider::Ali => {
-                let bucket = BucketName::new(self.bucket.clone()).unwrap();
-                let ali_client = aliyun_oss_client::Client::new(
-                    self.access_key_id.clone().into(),
-                    self.secret_access_key.clone().into(),
-                    self.endpoint.clone().into(),
-                    bucket,
-                );
-                let mut client = OSSClient::default();
-                client.ali_client = Some(ali_client);
-                client
             }
             OssProvider::AWS => todo!(),
         }
@@ -170,11 +140,11 @@ mod test {
     use crate::commons::read_yaml_file;
 
     use super::{OSSDescription, OssProvider};
+    fn print_type_of<T>(_: T) {
+        println!("{}", std::any::type_name::<T>())
+    }
 
-    //cargo test s3::oss::test::test_ossaction -- --nocapture
-    #[test]
-    fn test_ossaction() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
+    fn get_jd_oss_description() -> OSSDescription {
         let vec_oss = read_yaml_file::<Vec<OSSDescription>>("osscfg.yml").unwrap();
         let mut oss_jd = OSSDescription::default();
         for item in vec_oss.iter() {
@@ -182,17 +152,114 @@ mod test {
                 oss_jd = item.clone();
             }
         }
-        let jd = oss_jd.get_oss();
+        oss_jd
+    }
+
+    //cargo test s3::oss::test::test_ossaction_jd_list_objects -- --nocapture
+    #[test]
+    fn test_ossaction_jd_list_objects() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let oss_jd = get_jd_oss_description();
+        let jd = oss_jd.gen_oss_client_ref();
         rt.block_on(async {
             let client = jd.unwrap();
             let r = client
                 .list_objects("jsw-bucket".to_string(), None, 10, None)
                 .await;
-            println!("{:?}", r);
+
+            if let Err(e) = r {
+                println!("{}", e.to_string());
+                return;
+            }
+
             let r1 = client
-                .list_objects("jsw-bucket".to_string(), None, 10, r.unwrap().next_token)
+                .list_objects("jsw-bucket".to_string(), None, 5, r.unwrap().next_token)
                 .await;
             println!("{:?}", r1);
         });
+        println!("test finish!!!!!!")
+    }
+
+    //cargo test s3::oss::test::test_ossaction_jd_append_object_list_to_file -- --nocapture
+    #[test]
+    fn test_ossaction_jd_append_object_list_to_file() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let oss_jd = get_jd_oss_description();
+        let jd = oss_jd.gen_oss_client_ref();
+
+        rt.block_on(async {
+            let client = jd.unwrap();
+            let r = client
+                .append_object_list_to_file(
+                    "jsw-bucket".to_string(),
+                    None,
+                    5,
+                    None,
+                    "/tmp/jd_obj_list".to_string(),
+                )
+                .await;
+
+            if let Err(e) = r {
+                println!("{}", e.to_string());
+                return;
+            }
+        });
+    }
+
+    //cargo test s3::oss::test::test_ossaction_jd_append_all_object_list_to_file -- --nocapture
+    #[test]
+    fn test_ossaction_jd_append_all_object_list_to_file() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let oss_jd = get_jd_oss_description();
+        let jd = oss_jd.gen_oss_client_ref();
+
+        rt.block_on(async {
+            let client = jd.unwrap();
+            let r = client
+                .append_all_object_list_to_file(
+                    "jsw-bucket".to_string(),
+                    None,
+                    5,
+                    "/tmp/jd_all_obj_list".to_string(),
+                )
+                .await;
+
+            if let Err(e) = r {
+                println!("{}", e.to_string());
+                return;
+            }
+        });
+    }
+
+    //cargo test s3::oss::test::test_ossaction_ali_list_objects -- --nocapture
+    #[test]
+    fn test_ossaction_ali_list_objects() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let vec_oss = read_yaml_file::<Vec<OSSDescription>>("osscfg.yml").unwrap();
+        let mut oss_ali = OSSDescription::default();
+        for item in vec_oss.iter() {
+            if item.provider == OssProvider::Ali {
+                oss_ali = item.clone();
+            }
+        }
+        let ali = oss_ali.gen_oss_client_ref();
+        rt.block_on(async {
+            let client = ali.unwrap();
+            let r = client
+                .list_objects("jsw-bucket".to_string(), None, 10, None)
+                .await;
+
+            if let Err(e) = r {
+                println!("{}", e.to_string());
+                return;
+            }
+            println!("{:?}", r);
+
+            let r1 = client
+                .list_objects("jsw-bucket".to_string(), None, 5, r.unwrap().next_token)
+                .await;
+            println!("{:?}", r1);
+        });
+        println!("test finish!!!!!!")
     }
 }
