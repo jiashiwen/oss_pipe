@@ -14,12 +14,12 @@ use crate::checkers::check_local_desc_path;
 use crate::cmd::osstaskcmd::new_osstask_cmd;
 use crate::cmd::{new_config_cmd, new_osscfg_cmd, new_start_cmd, new_stop_cmd};
 use crate::commons::yamlutile::struct_to_yml_file;
-use crate::commons::{read_lines, read_yaml_file, SubCmd};
+use crate::commons::{read_yaml_file, SubCmd};
 use crate::commons::{struct_to_yaml_string, CommandCompleter};
 use crate::configure::{generate_default_config, set_config_file_path};
 use crate::configure::{get_config, get_config_file_path, get_current_config_yml, set_config};
 use crate::interact;
-use crate::osstask::{task_id_generator, TaskDownload, TaskTransfer};
+use crate::osstask::{task_id_generator, TaskDownload, TaskTransfer, TaskUpLoad};
 use crate::s3::oss::OSSDescription;
 use crate::s3::oss::OssProvider;
 
@@ -161,9 +161,7 @@ fn cmd_match(matches: &ArgMatches) {
                 .build()
                 .unwrap();
 
-            rt.block_on(async {
-                // start_ping_agent(c.ticker_sec, c.ping_file.as_str()).await;
-            });
+            rt.block_on(async {});
         });
         let cfg = get_config().unwrap();
         let task_curl_handle = thread::spawn(move || {
@@ -231,69 +229,50 @@ fn cmd_match(matches: &ArgMatches) {
     }
 
     if let Some(osstask) = matches.subcommand_matches("osstask") {
-        if let Some(transfer) = osstask.subcommand_matches("transfer") {}
+        if let Some(_transfer) = osstask.subcommand_matches("transfer") {}
         if let Some(download) = osstask.subcommand_matches("download") {
             if let Some(f) = download.get_one::<String>("filepath") {
                 let download = read_yaml_file::<TaskDownload>(f);
-
                 let rt = tokio::runtime::Runtime::new().unwrap();
                 let async_req = async {
                     match download {
                         Ok(d) => {
+                            log::info!("execute download task {:?} begin", d.clone());
                             let r = d.execute().await;
-                            println!("{:?}", r);
-                            // let client = d.source.gen_oss_client_ref();
-
-                            // match client {
-                            //     Ok(c) => {
-                            //         // 生成文件清单，文件清单默认文件存储在文件存储目录下 .objlist
-                            //         let object_list_file = d.local_path.clone() + "/.objlist";
-                            //         let _ = fs::remove_file(object_list_file.clone());
-                            //         let r = c
-                            //             .append_all_object_list_to_file(
-                            //                 d.source.bucket.clone(),
-                            //                 None,
-                            //                 d.bach_size,
-                            //                 object_list_file.clone(),
-                            //             )
-                            //             .await;
-
-                            //         if let Err(e) = r {
-                            //             log::error!("{}", e);
-                            //         };
-
-                            //         // 根据清单下载文件
-                            //         let lines = read_lines(object_list_file.clone());
-
-                            //         if let Err(e) = lines {
-                            //             log::error!("{}", e);
-                            //             return;
-                            //         };
-
-                            //         for line in lines.unwrap() {
-                            //             if let Ok(f) = line {
-                            //                 if !f.ends_with("/") {
-                            //                     let r = c
-                            //                         .download_object_to_dir(
-                            //                             d.source.bucket.clone(),
-                            //                             f.clone(),
-                            //                             d.local_path.clone(),
-                            //                         )
-                            //                         .await;
-                            //                     if let Err(e) = r {
-                            //                         log::error!("{}", e);
-                            //                     };
-                            //                 }
-                            //             }
-                            //         }
-                            //     }
-                            //     Err(e) => {
-                            //         eprintln!("{}", e.to_string())
-                            //     }
-                            // }
+                            match r {
+                                Ok(_) => log::info!("download task {} execute ok!", d.task_id),
+                                Err(e) => {
+                                    log::error!("{}", e);
+                                }
+                            }
                         }
                         Err(e) => {
-                            eprintln!("{}", e.to_string())
+                            log::error!("{}", e);
+                        }
+                    }
+                };
+                rt.block_on(async_req);
+            }
+        }
+
+        if let Some(upload) = osstask.subcommand_matches("upload") {
+            if let Some(f) = upload.get_one::<String>("filepath") {
+                let upload = read_yaml_file::<TaskUpLoad>(f);
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                let async_req = async {
+                    match upload {
+                        Ok(u) => {
+                            log::info!("execute upload task: {:?}", u.clone());
+                            let r = u.execute().await;
+                            match r {
+                                Ok(_) => log::info!("upload task {} execute ok!", u.task_id),
+                                Err(e) => {
+                                    log::error!("{}", e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("{}", e);
                         }
                     }
                 };
@@ -310,6 +289,7 @@ fn cmd_match(matches: &ArgMatches) {
                     source: OSSDescription::default(),
                     local_path: "/tmp".to_string(),
                     bach_size: 100,
+                    task_threads: 1,
                 };
                 let yml = struct_to_yaml_string(&task_download);
                 match yml {
@@ -330,6 +310,7 @@ fn cmd_match(matches: &ArgMatches) {
                     source: oss_ali,
                     target: OSSDescription::default(),
                     bach_size: 100,
+                    task_threads: 1,
                 };
                 let yml = struct_to_yaml_string(&task_transfer);
                 match yml {

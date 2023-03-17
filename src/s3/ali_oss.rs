@@ -1,11 +1,14 @@
+use bytes::Bytes;
+use infer::Infer;
 use std::fs::OpenOptions;
 use std::io::{LineWriter, Write};
 use std::path::Path;
 
+use aliyun_oss_client::file::Files;
 use aliyun_oss_client::QueryKey;
-use aliyun_oss_client::{file::File, Client, Query};
-use anyhow::anyhow;
+use aliyun_oss_client::{Client, Query};
 use anyhow::Result;
+use anyhow::{anyhow, Ok};
 use async_trait::async_trait;
 
 use super::OssProvider;
@@ -20,6 +23,7 @@ impl OSSActions for OssAliClient {
     fn oss_client_type(&self) -> OssProvider {
         OssProvider::Ali
     }
+
     async fn list_objects(
         &self,
         _bucket: String,
@@ -166,9 +170,13 @@ impl OSSActions for OssAliClient {
         Ok(())
     }
 
-    async fn download_object_to_dir(&self, bucket: String, key: String, dir: String) -> Result<()> {
+    async fn download_object_to_local(
+        &self,
+        _bucket: String,
+        key: String,
+        dir: String,
+    ) -> Result<()> {
         let resp = &self.client.get_object(key.clone(), ..).await?;
-
         let mut store = dir.clone();
         store.push_str("/");
         store.push_str(&key);
@@ -189,7 +197,36 @@ impl OSSActions for OssAliClient {
 
         Ok(())
     }
-}
 
-#[cfg(test)]
-mod test {}
+    async fn upload_object_from_local(
+        &self,
+        _bucket: String,
+        key: String,
+        file_path: String,
+    ) -> Result<()> {
+        let _ = self.client.put_file(file_path.clone(), key).await?;
+        Ok(())
+    }
+
+    async fn get_object_bytes(&self, _bucket: String, key: String) -> Result<Bytes> {
+        let resp = &self.client.get_object(key.clone(), ..).await?;
+        let bytes = Bytes::from(resp.clone());
+        Ok(bytes)
+    }
+
+    async fn upload_object_bytes(
+        &self,
+        _bucket: String,
+        key: String,
+        content: Bytes,
+    ) -> Result<()> {
+        let get_content_type =
+            |content: &Vec<u8>| Infer::new().get(content).map(|con| con.mime_type());
+
+        self.client
+            .put_content(content.to_vec(), key, get_content_type)
+            .await?;
+
+        Ok(())
+    }
+}

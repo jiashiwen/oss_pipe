@@ -1,10 +1,8 @@
 use crate::logger::init_log;
-
 mod checkers;
 mod cmd;
 mod commons;
 mod configure;
-mod httpquerry;
 mod interact;
 mod logger;
 mod osstask;
