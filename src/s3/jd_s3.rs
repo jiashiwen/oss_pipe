@@ -1,13 +1,14 @@
+use anyhow::{Ok, Result};
+use async_trait::async_trait;
+use aws_sdk_s3::types::ByteStream;
+use aws_sdk_s3::Client;
+use bytes::Bytes;
 use std::fs::OpenOptions;
 use std::io::{LineWriter, Write};
 use std::path::Path;
 
-use anyhow::{anyhow, Error, Ok, Result};
-use async_trait::async_trait;
-use aws_sdk_s3::output::{ListObjectsOutput, ListObjectsV2Output};
-use aws_sdk_s3::Client;
-
-use super::{OSSActions, OssObjectsList, OssProvider};
+use super::OSSActions;
+use super::{OssObjectsList, OssProvider};
 
 pub struct OssJdClient {
     pub client: Client,
@@ -167,7 +168,12 @@ impl OSSActions for OssJdClient {
         Ok(())
     }
 
-    async fn download_object_to_dir(&self, bucket: String, key: String, dir: String) -> Result<()> {
+    async fn download_object_to_local(
+        &self,
+        bucket: String,
+        key: String,
+        dir: String,
+    ) -> Result<()> {
         let resp = self
             .client
             .get_object()
@@ -182,7 +188,6 @@ impl OSSActions for OssJdClient {
         store.push_str(&key);
 
         let store_path = Path::new(store.as_str());
-
         let path = std::path::Path::new(store_path);
 
         if let Some(p) = path.parent() {
@@ -195,10 +200,49 @@ impl OSSActions for OssJdClient {
             .create(true)
             .open(store_path)?;
         let _ = file.write(&*bytes);
-        // file.flush()?;
+        file.flush()?;
+        Ok(())
+    }
+
+    async fn upload_object_from_local(
+        &self,
+        bucket: String,
+        key: String,
+        file_path: String,
+    ) -> Result<()> {
+        let body = ByteStream::from_path(Path::new(&file_path)).await?;
+        self.client
+            .put_object()
+            .bucket(bucket)
+            .key(key)
+            .body(body)
+            .send()
+            .await?;
+        Ok(())
+    }
+
+    async fn get_object_bytes(&self, bucket: String, key: String) -> Result<Bytes> {
+        let resp = self
+            .client
+            .get_object()
+            .bucket(bucket)
+            .key(key.clone())
+            .send()
+            .await?;
+        let data = resp.body.collect().await?;
+        let bytes = data.into_bytes();
+        Ok(bytes)
+    }
+
+    async fn upload_object_bytes(&self, bucket: String, key: String, content: Bytes) -> Result<()> {
+        let body = ByteStream::from(content);
+        self.client
+            .put_object()
+            .bucket(bucket)
+            .key(key)
+            .body(body)
+            .send()
+            .await?;
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod test {}

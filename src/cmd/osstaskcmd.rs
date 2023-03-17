@@ -5,6 +5,7 @@ pub fn new_osstask_cmd() -> Command {
         .about("osstask")
         .subcommand(osstask_transfer())
         .subcommand(osstask_download())
+        .subcommand(osstask_upload())
         .subcommand(osstask_template())
 }
 
@@ -21,6 +22,16 @@ fn osstask_transfer() -> Command {
 fn osstask_download() -> Command {
     clap::Command::new("download")
         .about("execute download task")
+        .args(&[Arg::new("filepath")
+            .value_name("filepath")
+            .required(true)
+            .index(1)
+            .help("download task description file")])
+}
+
+fn osstask_upload() -> Command {
+    clap::Command::new("upload")
+        .about("execute upload task")
         .args(&[Arg::new("filepath")
             .value_name("filepath")
             .required(true)

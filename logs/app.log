@@ -122,3 +122,333 @@
 2023-03-10T19:38:39.370649+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 137.039µs)
 2023-03-10T19:38:51.746003+08:00 - lazy_load_credentials
 2023-03-10T19:38:51.746083+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 144.432µs)
+2023-03-10T19:49:52.389740+08:00 - lazy_load_credentials
+2023-03-10T19:49:52.390090+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 558.418µs)
+2023-03-10T19:54:24.692923+08:00 - lazy_load_credentials
+2023-03-10T19:54:24.692987+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 257.657µs)
+2023-03-10T19:54:27.967852+08:00 - download task 7039926463218454529 execute ok!
+2023-03-13T09:15:27.492182+08:00 - lazy_load_credentials
+2023-03-13T09:15:27.492672+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 621.452µs)
+2023-03-13T09:15:31.178489+08:00 - download task 7040852828805533697 execute ok!
+2023-03-13T09:18:06.035504+08:00 - execute download task TaskDownload { task_id: "7040853495393685505", description: "download", source: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100 } begin
+2023-03-13T09:18:06.391346+08:00 - lazy_load_credentials
+2023-03-13T09:18:06.391405+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 90.03µs)
+2023-03-13T09:18:08.531928+08:00 - download task 7040853495393685505 execute ok!
+2023-03-13T09:18:23.087025+08:00 - execute download task TaskDownload { task_id: "7040853566914957313", description: "download", source: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100 } begin
+2023-03-13T09:18:23.108529+08:00 - lazy_load_credentials
+2023-03-13T09:18:23.108593+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 101.085µs)
+2023-03-13T09:18:24.952742+08:00 - download task 7040853566914957313 execute ok!
+2023-03-13T09:27:48.536061+08:00 - missing field `task_threads` at line 3 column 1
+2023-03-13T09:28:15.548845+08:00 - execute download task TaskDownload { task_id: "7040856051876499457", description: "download", source: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-13T09:28:15.929881+08:00 - lazy_load_credentials
+2023-03-13T09:28:15.929984+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 132.751µs)
+2023-03-13T09:28:18.018317+08:00 - download task 7040856051876499457 execute ok!
+2023-03-13T09:34:31.993442+08:00 - No such file or directory (os error 2)
+2023-03-13T09:35:11.679966+08:00 - execute download task TaskDownload { task_id: "7040857797260611585", description: "download", source: OSSDescription { provider: JD, access_key_id: "LTAI5tRSSbKW95VJ3R7F7kbm", secret_access_key: "2modg1UjUaypkm3BUW18STBVVFFSoL", endpoint: "oss-cn-beijing.aliyuncs.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/ali_download", bach_size: 100, task_threads: 1 } begin
+2023-03-13T09:35:12.023852+08:00 - failed to construct request
+2023-03-13T09:35:12.024264+08:00 - No such file or directory (os error 2)
+2023-03-13T09:42:48.784206+08:00 - execute download task TaskDownload { task_id: "7040859714493747201", description: "download", source: OSSDescription { provider: Ali, access_key_id: "LTAI5tRSSbKW95VJ3R7F7kbm", secret_access_key: "2modg1UjUaypkm3BUW18STBVVFFSoL", endpoint: "oss-cn-beijing.aliyuncs.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/ali_download", bach_size: 100, task_threads: 1 } begin
+2023-03-13T09:42:49.807754+08:00 - download task 7040859714493747201 execute ok!
+2023-03-16T09:56:05.248650+08:00 - execute download task TaskDownload { task_id: "7041950218702688257", description: "download", source: OSSDescription { provider: Ali, access_key_id: "LTAI5tRSSbKW95VJ3R7F7kbm", secret_access_key: "2modg1UjUaypkm3BUW18STBVVFFSoL", endpoint: "oss-cn-beijing.aliyuncs.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/ali_download", bach_size: 100, task_threads: 1 } begin
+2023-03-16T09:56:06.040989+08:00 - download task 7041950218702688257 execute ok!
+2023-03-16T16:52:43.897397+08:00 - execute upload task TaskUpLoad { task_id: "7042055070636183553", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T16:52:43.974616+08:00 - upload task 7042055070636183553 execute ok!
+2023-03-16T16:57:17.326651+08:00 - execute upload task TaskUpLoad { task_id: "7042056217480531969", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T16:57:17.683436+08:00 - upload task 7042056217480531969 execute ok!
+2023-03-16T17:00:07.876350+08:00 - execute upload task TaskUpLoad { task_id: "7042056932819079169", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T17:00:08.223894+08:00 - upload task 7042056932819079169 execute ok!
+2023-03-16T17:01:40.414097+08:00 - execute upload task TaskUpLoad { task_id: "7042057320947388417", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T17:01:40.786191+08:00 - upload task 7042057320947388417 execute ok!
+2023-03-16T17:02:50.794511+08:00 - execute upload task TaskUpLoad { task_id: "7042057616146698241", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T17:02:51.129755+08:00 - upload task 7042057616146698241 execute ok!
+2023-03-16T17:04:49.414806+08:00 - execute upload task TaskUpLoad { task_id: "7042058113679233025", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T17:04:49.436617+08:00 - upload task 7042058113679233025 execute ok!
+2023-03-16T17:05:10.430777+08:00 - execute upload task TaskUpLoad { task_id: "7042058201822531585", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "~/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T17:05:10.451615+08:00 - upload task 7042058201822531585 execute ok!
+2023-03-16T17:05:49.656723+08:00 - execute upload task TaskUpLoad { task_id: "7042058366348300289", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "~/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T17:05:49.675278+08:00 - upload task 7042058366348300289 execute ok!
+2023-03-16T17:07:03.698635+08:00 - execute upload task TaskUpLoad { task_id: "7042058676902957057", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "../../jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T17:07:03.717751+08:00 - upload task 7042058676902957057 execute ok!
+2023-03-16T17:14:51.203589+08:00 - execute upload task TaskUpLoad { task_id: "7042060637761048577", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "../../jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T17:14:51.551453+08:00 - upload task 7042060637761048577 execute ok!
+2023-03-16T17:26:31.572028+08:00 - execute upload task TaskUpLoad { task_id: "7042063575317352449", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "../../jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T17:26:31.921312+08:00 - upload task 7042063575317352449 execute ok!
+2023-03-16T17:31:20.225798+08:00 - execute upload task TaskUpLoad { task_id: "7042064786019979265", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "../../jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T17:31:20.593030+08:00 - upload task 7042064786019979265 execute ok!
+2023-03-16T17:32:02.570009+08:00 - execute upload task TaskUpLoad { task_id: "7042064963623587841", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "../../jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T17:32:02.937508+08:00 - upload task 7042064963623587841 execute ok!
+2023-03-16T17:33:21.462405+08:00 - execute upload task TaskUpLoad { task_id: "7042065294524813313", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "../../jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T17:33:21.822042+08:00 - upload task 7042065294524813313 execute ok!
+2023-03-16T17:44:10.642704+08:00 - execute upload task TaskUpLoad { task_id: "7042068017383084033", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "../../jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T17:44:10.996240+08:00 - IO error
+2023-03-16T17:44:57.204535+08:00 - execute upload task TaskUpLoad { task_id: "7042068212678266881", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "../../jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T17:44:57.553132+08:00 - IO error
+2023-03-16T17:46:25.855615+08:00 - execute upload task TaskUpLoad { task_id: "7042068584507510785", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "../../jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T17:46:26.208167+08:00 - IO error
+2023-03-16T17:47:03.773764+08:00 - execute upload task TaskUpLoad { task_id: "7042068743547129857", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T17:47:03.797221+08:00 - IO error
+2023-03-16T17:48:00.567985+08:00 - execute upload task TaskUpLoad { task_id: "7042068981758431233", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T17:48:00.943559+08:00 - IO error
+2023-03-16T17:49:23.864976+08:00 - execute upload task TaskUpLoad { task_id: "7042069331131371521", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T17:49:24.229012+08:00 - IO error
+2023-03-16T17:49:24.229267+08:00 - IO error
+2023-03-16T17:49:24.229476+08:00 - IO error
+2023-03-16T17:49:24.229740+08:00 - IO error
+2023-03-16T17:49:24.230468+08:00 - IO error
+2023-03-16T17:49:24.230571+08:00 - IO error
+2023-03-16T17:49:24.230690+08:00 - IO error
+2023-03-16T17:49:24.230814+08:00 - IO error
+2023-03-16T17:49:24.230930+08:00 - IO error
+2023-03-16T17:49:24.231208+08:00 - IO error
+2023-03-16T17:49:24.231380+08:00 - IO error
+2023-03-16T17:49:24.231573+08:00 - IO error
+2023-03-16T17:49:24.231779+08:00 - IO error
+2023-03-16T17:49:24.231934+08:00 - IO error
+2023-03-16T17:49:24.232102+08:00 - IO error
+2023-03-16T17:49:24.232221+08:00 - IO error
+2023-03-16T17:49:24.232390+08:00 - IO error
+2023-03-16T17:49:24.232532+08:00 - IO error
+2023-03-16T17:49:24.232679+08:00 - IO error
+2023-03-16T17:49:24.232962+08:00 - IO error
+2023-03-16T17:49:24.233096+08:00 - IO error
+2023-03-16T17:49:24.233245+08:00 - IO error
+2023-03-16T17:49:24.233375+08:00 - IO error
+2023-03-16T17:49:24.233464+08:00 - IO error
+2023-03-16T17:49:24.233581+08:00 - IO error
+2023-03-16T17:49:24.233788+08:00 - IO error
+2023-03-16T17:49:24.233900+08:00 - IO error
+2023-03-16T17:49:24.234018+08:00 - IO error
+2023-03-16T17:49:24.234158+08:00 - IO error
+2023-03-16T17:49:24.234334+08:00 - IO error
+2023-03-16T17:49:24.234529+08:00 - IO error
+2023-03-16T17:49:24.234961+08:00 - upload task 7042069331131371521 execute ok!
+2023-03-16T17:53:33.276012+08:00 - execute upload task TaskUpLoad { task_id: "7042070377236926465", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T17:53:33.639323+08:00 - IO error
+2023-03-16T17:53:33.639455+08:00 - IO error
+2023-03-16T17:53:33.639603+08:00 - IO error
+2023-03-16T17:53:33.639753+08:00 - IO error
+2023-03-16T17:53:33.639924+08:00 - IO error
+2023-03-16T17:53:33.640128+08:00 - IO error
+2023-03-16T17:53:33.640248+08:00 - IO error
+2023-03-16T17:53:33.640410+08:00 - IO error
+2023-03-16T17:53:33.640538+08:00 - IO error
+2023-03-16T17:53:33.640794+08:00 - IO error
+2023-03-16T17:53:33.640912+08:00 - IO error
+2023-03-16T17:53:33.641045+08:00 - IO error
+2023-03-16T17:53:33.641198+08:00 - IO error
+2023-03-16T17:53:33.641312+08:00 - IO error
+2023-03-16T17:53:33.641490+08:00 - IO error
+2023-03-16T17:53:33.641603+08:00 - IO error
+2023-03-16T17:53:33.641696+08:00 - IO error
+2023-03-16T17:53:33.641789+08:00 - IO error
+2023-03-16T17:53:33.641939+08:00 - IO error
+2023-03-16T17:53:33.642058+08:00 - IO error
+2023-03-16T17:53:33.642160+08:00 - IO error
+2023-03-16T17:53:33.642301+08:00 - IO error
+2023-03-16T17:53:33.642396+08:00 - IO error
+2023-03-16T17:53:33.642484+08:00 - IO error
+2023-03-16T17:53:33.642580+08:00 - IO error
+2023-03-16T17:53:33.642658+08:00 - IO error
+2023-03-16T17:53:33.642755+08:00 - IO error
+2023-03-16T17:53:33.642909+08:00 - IO error
+2023-03-16T17:53:33.643116+08:00 - IO error
+2023-03-16T17:53:33.643276+08:00 - IO error
+2023-03-16T17:53:33.643412+08:00 - IO error
+2023-03-16T17:53:33.643971+08:00 - upload task 7042070377236926465 execute ok!
+2023-03-16T17:54:20.693292+08:00 - execute upload task TaskUpLoad { task_id: "7042070576118239233", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-16T17:54:21.056363+08:00 - lazy_load_credentials
+2023-03-16T17:54:21.056423+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 95.771µs)
+2023-03-16T17:54:23.946513+08:00 - upload task 7042070576118239233 execute ok!
+2023-03-17T09:50:16.541664+08:00 - execute upload task TaskUpLoad { task_id: "7042311143985123329", description: "download", target: OSSDescription { provider: Ali, access_key_id: "LTAI5tRSSbKW95VJ3R7F7kbm", secret_access_key: "2modg1UjUaypkm3BUW18STBVVFFSoL", endpoint: "oss-cn-beijing.aliyuncs.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-17T09:50:16.544644+08:00 - upload task 7042311143985123329 execute ok!
+2023-03-17T09:53:11.478977+08:00 - execute upload task TaskUpLoad { task_id: "7042311877724082177", description: "download", target: OSSDescription { provider: Ali, access_key_id: "LTAI5tRSSbKW95VJ3R7F7kbm", secret_access_key: "2modg1UjUaypkm3BUW18STBVVFFSoL", endpoint: "oss-cn-beijing.aliyuncs.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-17T09:53:11.499781+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.501602+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.503019+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.504799+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.506243+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.507671+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.509048+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.510310+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.512057+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.513287+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.514383+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.515369+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.516304+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.518183+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.519329+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.520392+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.521174+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.522547+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.523582+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.524910+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.526005+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.526834+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.527966+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.528878+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.530601+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.548652+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.550133+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.551255+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.552206+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.553531+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.554591+08:00 - input error: Failed to get file type
+2023-03-17T09:53:11.554731+08:00 - upload task 7042311877724082177 execute ok!
+2023-03-17T09:54:31.982314+08:00 - execute upload task TaskUpLoad { task_id: "7042312215382331393", description: "download", target: OSSDescription { provider: Ali, access_key_id: "LTAI5tRSSbKW95VJ3R7F7kbm", secret_access_key: "2modg1UjUaypkm3BUW18STBVVFFSoL", endpoint: "oss-cn-beijing.aliyuncs.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-17T09:54:31.982680+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.982850+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.983078+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.983235+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.983471+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.983595+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.983728+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.983868+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.984027+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.984219+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.984360+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.984504+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.984643+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.984808+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.984938+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.985062+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.985231+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.985373+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.985499+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.985679+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.985828+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.985962+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.986078+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.986190+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.986326+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.986445+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.986620+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.986783+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.986901+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.987024+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.987141+08:00 - input error: Failed to get file type
+2023-03-17T09:54:31.987230+08:00 - upload task 7042312215382331393 execute ok!
+2023-03-17T10:13:42.478295+08:00 - execute upload task TaskUpLoad { task_id: "7042317040908111873", description: "download", target: OSSDescription { provider: Ali, access_key_id: "LTAI5tRSSbKW95VJ3R7F7kbm", secret_access_key: "2modg1UjUaypkm3BUW18STBVVFFSoL", endpoint: "oss-cn-beijing.aliyuncs.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-17T10:13:43.236631+08:00 - Not found CanonicalizedResource
+2023-03-17T10:13:43.308422+08:00 - upload task 7042317040908111873 execute ok!
+2023-03-17T10:13:59.125931+08:00 - execute upload task TaskUpLoad { task_id: "7042317110739079169", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-17T10:13:59.461183+08:00 - lazy_load_credentials
+2023-03-17T10:13:59.461241+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 87.955µs)
+2023-03-17T10:14:01.549615+08:00 - upload task 7042317110739079169 execute ok!
+2023-03-17T10:14:11.935185+08:00 - execute upload task TaskUpLoad { task_id: "7042317164463919105", description: "download", target: OSSDescription { provider: Ali, access_key_id: "LTAI5tRSSbKW95VJ3R7F7kbm", secret_access_key: "2modg1UjUaypkm3BUW18STBVVFFSoL", endpoint: "oss-cn-beijing.aliyuncs.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-17T10:14:12.531760+08:00 - Not found CanonicalizedResource
+2023-03-17T10:14:12.609686+08:00 - upload task 7042317164463919105 execute ok!
+2023-03-17T10:15:05.741201+08:00 - execute upload task TaskUpLoad { task_id: "7042317390142640129", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-17T10:15:05.762067+08:00 - lazy_load_credentials
+2023-03-17T10:15:05.762132+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 100.305µs)
+2023-03-17T10:15:08.001451+08:00 - upload task 7042317390142640129 execute ok!
+2023-03-17T10:16:22.918148+08:00 - execute upload task TaskUpLoad { task_id: "7042317713846439937", description: "download", target: OSSDescription { provider: Ali, access_key_id: "LTAI5tRSSbKW95VJ3R7F7kbm", secret_access_key: "2modg1UjUaypkm3BUW18STBVVFFSoL", endpoint: "oss-cn-beijing.aliyuncs.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-17T10:16:23.616346+08:00 - Not found CanonicalizedResource
+2023-03-17T10:16:23.699622+08:00 - upload task 7042317713846439937 execute ok!
+2023-03-17T10:26:51.980716+08:00 - execute upload task TaskUpLoad { task_id: "7042320352327897089", description: "download", target: OSSDescription { provider: Ali, access_key_id: "LTAI5tAepdxxAmtjXV98oNZj", secret_access_key: "93qg3cCpvfPSex5TLj05pIETMhNmSx", endpoint: "oss-cn-beijing.aliyuncs.com", region: "oss-cn-beijing", bucket: "ali-jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-17T10:26:53.206061+08:00 - Not found CanonicalizedResource
+2023-03-17T10:26:53.296217+08:00 - upload task 7042320352327897089 execute ok!
+2023-03-17T10:28:45.416318+08:00 - execute upload task TaskUpLoad { task_id: "7042320828104577025", description: "download", target: OSSDescription { provider: Ali, access_key_id: "LTAI5tAepdxxAmtjXV98oNZj", secret_access_key: "93qg3cCpvfPSex5TLj05pIETMhNmSx", endpoint: "oss-cn-beijing.aliyuncs.com", region: "oss-cn-beijing", bucket: "ali-jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-17T10:28:45.417178+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.417254+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.417321+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.417393+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.417553+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.417640+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.417715+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.417785+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.417866+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.418016+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.418086+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.418158+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.418239+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.418311+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.418382+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.418459+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.418557+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.418709+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.418806+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.418911+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.418972+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.419029+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.419090+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.419153+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.419253+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.419316+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.419376+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.419437+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.419490+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.419546+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.419603+08:00 - No such file or directory (os error 2)
+2023-03-17T10:28:45.419701+08:00 - upload task 7042320828104577025 execute ok!
+2023-03-17T10:29:22.373387+08:00 - execute upload task TaskUpLoad { task_id: "7042320983117664257", description: "download", target: OSSDescription { provider: Ali, access_key_id: "LTAI5tAepdxxAmtjXV98oNZj", secret_access_key: "93qg3cCpvfPSex5TLj05pIETMhNmSx", endpoint: "oss-cn-beijing.aliyuncs.com", region: "oss-cn-beijing", bucket: "ali-jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-17T10:29:22.373797+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.373905+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.373982+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.374048+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.374181+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.374243+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.374313+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.374379+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.374438+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.374557+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.374614+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.374669+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.374724+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.374777+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.374832+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.374887+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.374941+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.374995+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.375050+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.375440+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.375530+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.375596+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.375658+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.375722+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.375797+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.375878+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.375952+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.376013+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.376071+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.376129+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.376187+08:00 - No such file or directory (os error 2)
+2023-03-17T10:29:22.376258+08:00 - upload task 7042320983117664257 execute ok!
+2023-03-17T10:38:06.345563+08:00 - execute upload task TaskUpLoad { task_id: "7042323180815519745", description: "download", target: OSSDescription { provider: Ali, access_key_id: "LTAI5tAepdxxAmtjXV98oNZj", secret_access_key: "93qg3cCpvfPSex5TLj05pIETMhNmSx", endpoint: "oss-cn-beijing.aliyuncs.com", region: "oss-cn-beijing", bucket: "ali-jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-17T10:38:07.095584+08:00 - Not found CanonicalizedResource
+2023-03-17T10:38:07.182270+08:00 - upload task 7042323180815519745 execute ok!
+2023-03-17T10:43:02.301141+08:00 - execute upload task TaskUpLoad { task_id: "7042324422140760065", description: "download", target: OSSDescription { provider: Ali, access_key_id: "LTAI5tAepdxxAmtjXV98oNZj", secret_access_key: "93qg3cCpvfPSex5TLj05pIETMhNmSx", endpoint: "oss-cn-beijing.aliyuncs.com", region: "oss-cn-beijing", bucket: "ali-jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-17T10:43:03.167612+08:00 - Not found CanonicalizedResource
+2023-03-17T10:43:03.264391+08:00 - upload task 7042324422140760065 execute ok!
+2023-03-17T10:45:38.755522+08:00 - execute upload task TaskUpLoad { task_id: "7042325078360592385", description: "download", target: OSSDescription { provider: Ali, access_key_id: "LTAI5tAepdxxAmtjXV98oNZj", secret_access_key: "93qg3cCpvfPSex5TLj05pIETMhNmSx", endpoint: "oss-cn-beijing.aliyuncs.com", region: "oss-cn-beijing", bucket: "ali-jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-17T10:45:39.507062+08:00 - upload task 7042325078360592385 execute ok!
+2023-03-17T10:46:42.640025+08:00 - execute upload task TaskUpLoad { task_id: "7042325346309509121", description: "download", target: OSSDescription { provider: Ali, access_key_id: "LTAI5tAepdxxAmtjXV98oNZj", secret_access_key: "93qg3cCpvfPSex5TLj05pIETMhNmSx", endpoint: "oss-cn-beijing.aliyuncs.com", region: "oss-cn-beijing", bucket: "ali-jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-17T10:46:43.448243+08:00 - upload task 7042325346309509121 execute ok!
+2023-03-17T11:15:06.216815+08:00 - execute upload task TaskUpLoad { task_id: "7042332491629334529", description: "download", target: OSSDescription { provider: Ali, access_key_id: "LTAI5tAepdxxAmtjXV98oNZj", secret_access_key: "93qg3cCpvfPSex5TLj05pIETMhNmSx", endpoint: "oss-cn-beijing.aliyuncs.com", region: "oss-cn-beijing", bucket: "ali-jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-17T11:15:07.160940+08:00 - upload task 7042332491629334529 execute ok!
+2023-03-17T11:16:20.802638+08:00 - execute upload task TaskUpLoad { task_id: "7042332804465692673", description: "download", target: OSSDescription { provider: Ali, access_key_id: "LTAI5tAepdxxAmtjXV98oNZj", secret_access_key: "93qg3cCpvfPSex5TLj05pIETMhNmSx", endpoint: "oss-cn-beijing.aliyuncs.com", region: "oss-cn-beijing", bucket: "ali-jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-17T11:16:21.662596+08:00 - upload task 7042332804465692673 execute ok!
+2023-03-17T11:19:38.177145+08:00 - execute upload task: TaskUpLoad { task_id: "7042333632312250369", description: "download", target: OSSDescription { provider: Ali, access_key_id: "LTAI5tAepdxxAmtjXV98oNZj", secret_access_key: "93qg3cCpvfPSex5TLj05pIETMhNmSx", endpoint: "oss-cn-beijing.aliyuncs.com", region: "oss-cn-beijing", bucket: "ali-jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 }
+2023-03-17T11:19:39.048035+08:00 - upload task 7042333632312250369 execute ok!
+2023-03-17T11:20:12.241353+08:00 - execute upload task: TaskUpLoad { task_id: "7042333775191216129", description: "download", target: OSSDescription { provider: Ali, access_key_id: "LTAI5tAepdxxAmtjXV98oNZj", secret_access_key: "93qg3cCpvfPSex5TLj05pIETMhNmSx", endpoint: "oss-cn-beijing.aliyuncs.com", region: "oss-cn-beijing", bucket: "ali-jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 }
+2023-03-17T11:20:13.071501+08:00 - upload task 7042333775191216129 execute ok!
+2023-03-17T11:26:43.168998+08:00 - execute upload task: TaskUpLoad { task_id: "7042335414857895937", description: "download", target: OSSDescription { provider: Ali, access_key_id: "LTAI5tAepdxxAmtjXV98oNZj", secret_access_key: "93qg3cCpvfPSex5TLj05pIETMhNmSx", endpoint: "oss-cn-beijing.aliyuncs.com", region: "oss-cn-beijing", bucket: "ali-jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 }
+2023-03-17T11:26:43.956757+08:00 - upload task 7042335414857895937 execute ok!
+2023-03-17T14:24:57.195547+08:00 - No such file or directory (os error 2)
+2023-03-17T14:25:19.572827+08:00 - execute download task TaskDownload { task_id: "7042380362718253057", description: "download", source: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-17T14:25:19.981301+08:00 - lazy_load_credentials
+2023-03-17T14:25:19.981358+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 98.321µs)
+2023-03-17T14:25:25.273465+08:00 - service error
+2023-03-17T14:25:25.273925+08:00 - download task 7042380362718253057 execute ok!
+2023-03-17T14:25:46.841311+08:00 - execute download task TaskDownload { task_id: "7042380477088534529", description: "download", source: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-17T14:25:46.862716+08:00 - lazy_load_credentials
+2023-03-17T14:25:46.862796+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 120.585µs)
+2023-03-17T14:25:49.710165+08:00 - service error
+2023-03-17T14:25:49.710879+08:00 - download task 7042380477088534529 execute ok!
+2023-03-17T14:27:49.819680+08:00 - execute upload task: TaskUpLoad { task_id: "7042380992899846145", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 }
+2023-03-17T14:27:49.841743+08:00 - lazy_load_credentials
+2023-03-17T14:27:49.841818+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 114.343µs)
+2023-03-17T14:27:53.026667+08:00 - upload task 7042380992899846145 execute ok!
+2023-03-17T14:39:24.148597+08:00 - execute upload task: TaskUpLoad { task_id: "7042383905122553857", description: "download", target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket" }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 }
+2023-03-17T14:39:24.508598+08:00 - lazy_load_credentials
+2023-03-17T14:39:24.508656+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 92.073µs)
+2023-03-17T14:39:29.249003+08:00 - upload task 7042383905122553857 execute ok!

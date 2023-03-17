@@ -13,24 +13,22 @@ dependencies = [
 
 [[package]]
 name = "aliyun-oss-client"
-version = "0.10.1"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0dcecc087d3487e478ad7499553f129e253c74f272fd2c51c1d87774d2b0846"
+checksum = "b9311f9fc716de53a4603b5fdda37fa3e8dd9f10c2de4e97ab2e74c17f8c1fd1"
 dependencies = [
  "async-stream",
  "async-trait",
- "base64 0.13.1",
+ "base64 0.20.0",
  "chrono",
  "futures",
  "futures-core",
- "futures-util",
  "hmac",
  "http",
- "infer",
+ "infer 0.11.0",
  "oss_derive",
  "quick-xml",
  "reqwest",
- "rustc_version",
  "sha1",
  "thiserror",
 ]
@@ -484,9 +482,9 @@ dependencies = [
 
 [[package]]
 name = "base64"
-version = "0.13.1"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
+checksum = "0ea22880d78093b0cbe17c89f64a7d457941e65759157ec6cb31a31d652b05e5"
 
 [[package]]
 name = "base64"
@@ -532,9 +530,9 @@ checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
 
 [[package]]
 name = "bytes"
-version = "1.1.0"
+version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4872d67bab6358e59559027aa3b9157c53d9358c51423c17554809a8858e0f8"
+checksum = "89b2fd2a0dcf38d7971e2194b6b6eebab45ae01067456a7fd93d5547a61b70be"
 
 [[package]]
 name = "bytes-utils"
@@ -1280,6 +1278,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "infer"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f551f8c3a39f68f986517db0d1759de85881894fdc7db798bd2a9df9cb04b7fc"
+dependencies = [
+ "cfb",
+]
+
+[[package]]
 name = "instant"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1626,9 +1633,9 @@ checksum = "8e22443d1643a904602595ba1cd8f7d896afe56d26712531c5ff73a15b2fbf64"
 
 [[package]]
 name = "oss_derive"
-version = "0.9.6"
+version = "0.9.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93141ed20f015618f84a025f5929445c977cb3d73685e5e995276e82ec0dd455"
+checksum = "7b9cd8bf024e919445a21bf6611c7248a981b170a7d8d4591b4271456bed820e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1646,9 +1653,11 @@ dependencies = [
  "aws-credential-types",
  "aws-sdk-s3",
  "aws-types",
+ "bytes",
  "clap",
  "fork",
  "http",
+ "infer 0.13.0",
  "jdcloud_signer",
  "lazy_static",
  "log",
@@ -1663,6 +1672,7 @@ dependencies = [
  "shellwords",
  "sysinfo",
  "tokio",
+ "walkdir",
 ]
 
 [[package]]
@@ -1794,9 +1804,9 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.26.0"
+version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f50b1c63b38611e7d4d7f68b82d3ad0cc71a2ad2e7f61fc10f1328d917c93cd"
+checksum = "ffc053f057dd768a56f62cd7e434c42c831d296968997e9ac1f76ea7c2d14c41"
 dependencies = [
  "memchr",
 ]
@@ -2134,6 +2144,15 @@ name = "ryu"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73b4b750c782965c211b42f022f59af1fbceabdd026623714f104152f1ec149f"
+
+[[package]]
+name = "same-file"
+version = "1.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
+dependencies = [
+ "winapi-util",
+]
 
 [[package]]
 name = "schannel"
@@ -2760,6 +2779,17 @@ name = "version_check"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
+
+[[package]]
+name = "walkdir"
+version = "2.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "808cf2735cd4b6866113f648b791c6adc5714537bc222d9347bb203386ffda56"
+dependencies = [
+ "same-file",
+ "winapi",
+ "winapi-util",
+]
 
 [[package]]
 name = "want"
