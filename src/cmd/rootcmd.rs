@@ -229,7 +229,31 @@ fn cmd_match(matches: &ArgMatches) {
     }
 
     if let Some(osstask) = matches.subcommand_matches("osstask") {
-        if let Some(_transfer) = osstask.subcommand_matches("transfer") {}
+        if let Some(transfer) = osstask.subcommand_matches("transfer") {
+            if let Some(f) = transfer.get_one::<String>("filepath") {
+                let transfer = read_yaml_file::<TaskTransfer>(f);
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                let async_req = async {
+                    match transfer {
+                        Ok(t) => {
+                            log::info!("execute download task {:?} begin", t.clone());
+                            let r = t.execute().await;
+                            match r {
+                                Ok(_) => log::info!("download task {} execute ok!", t.task_id),
+                                Err(e) => {
+                                    log::error!("{}", e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("{}", e);
+                        }
+                    }
+                };
+                rt.block_on(async_req);
+            }
+        }
+
         if let Some(download) = osstask.subcommand_matches("download") {
             if let Some(f) = download.get_one::<String>("filepath") {
                 let download = read_yaml_file::<TaskDownload>(f);

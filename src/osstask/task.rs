@@ -1,7 +1,7 @@
 use std::fs;
 
 use crate::{commons::read_lines, s3::OSSDescription};
-use anyhow::{Ok, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use snowflake::SnowflakeIdGenerator;
 use walkdir::WalkDir;
@@ -10,12 +10,69 @@ const OBJECT_LIST_FILE_NAME: &'static str = ".objlist";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TaskTransfer {
+    #[serde(default = "TaskDownload::task_id_default")]
     pub task_id: String,
+    #[serde(default = "TaskDownload::task_description_default")]
     pub description: String,
     pub source: OSSDescription,
     pub target: OSSDescription,
     pub bach_size: i32,
     pub task_threads: usize,
+}
+
+impl TaskTransfer {
+    pub async fn execute(&self) -> Result<()> {
+        // 记录源端object列表
+        let client_source = self.source.gen_oss_client_ref()?;
+        let client_target = self.target.gen_oss_client_ref()?;
+
+        // 生成文件清单，文件清单默认文件存储在文件存储目录下 .objlist
+        let object_list_file = OBJECT_LIST_FILE_NAME.to_string();
+        let _ = fs::remove_file(object_list_file.clone());
+        let r = client_source
+            .append_all_object_list_to_file(
+                self.source.bucket.clone(),
+                self.source.prefix.clone(),
+                self.bach_size,
+                object_list_file.clone(),
+            )
+            .await;
+
+        if let Err(e) = r {
+            log::error!("{}", e);
+        };
+
+        // 按列表传输object from source to target
+        let lines = read_lines(object_list_file.clone())?;
+        for line in lines {
+            if let Result::Ok(f) = line {
+                if !f.ends_with("/") {
+                    let bytes = client_source
+                        .get_object_bytes(self.source.bucket.clone(), f.clone())
+                        .await;
+
+                    match bytes {
+                        Ok(b) => {
+                            let r = client_target
+                                .upload_object_bytes(self.target.bucket.clone(), f.clone(), b)
+                                .await;
+
+                            if let Err(e) = r {
+                                log::error!("{}", e);
+                                continue;
+                            };
+                        }
+                        Err(e) => {
+                            log::error!("{}", e);
+                            continue;
+                        }
+                    }
+                }
+            };
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -51,7 +108,7 @@ impl TaskDownload {
         let r = client
             .append_all_object_list_to_file(
                 self.source.bucket.clone(),
-                None,
+                self.source.prefix.clone(),
                 self.bach_size,
                 object_list_file.clone(),
             )

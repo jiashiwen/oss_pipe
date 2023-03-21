@@ -452,3 +452,252 @@
 2023-03-17T14:39:24.508598+08:00 - lazy_load_credentials
 2023-03-17T14:39:24.508656+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 92.073µs)
 2023-03-17T14:39:29.249003+08:00 - upload task 7042383905122553857 execute ok!
+2023-03-20T16:58:59.154243+08:00 - missing field `local_path`
+2023-03-20T16:59:22.134408+08:00 - missing field `local_path`
+2023-03-20T17:00:53.928278+08:00 - execute download task TaskTransfer { task_id: "7043506677433372673", description: "transfer task", source: OSSDescription { provider: Ali, access_key_id: "LTAI5tAepdxxAmtjXV98oNZj", secret_access_key: "93qg3cCpvfPSex5TLj05pIETMhNmSx", endpoint: "oss-cn-beijing.aliyuncs.com", region: "cn-north-1", bucket: "ali-jsw-bucket", prefix: None }, target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket", prefix: None }, bach_size: 100, task_threads: 1 } begin
+2023-03-20T17:00:54.476256+08:00 - lazy_load_credentials
+2023-03-20T17:00:54.476346+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 128.614µs)
+2023-03-20T17:00:54.533140+08:00 - service error
+2023-03-20T17:00:54.592821+08:00 - service error
+2023-03-20T17:00:54.680367+08:00 - service error
+2023-03-20T17:00:54.750558+08:00 - service error
+2023-03-20T17:00:54.837571+08:00 - service error
+2023-03-20T17:00:54.909573+08:00 - service error
+2023-03-20T17:00:55.074385+08:00 - service error
+2023-03-20T17:00:55.136333+08:00 - service error
+2023-03-20T17:00:55.215757+08:00 - service error
+2023-03-20T17:00:55.278614+08:00 - service error
+2023-03-20T17:00:55.336362+08:00 - service error
+2023-03-20T17:00:55.403291+08:00 - service error
+2023-03-20T17:00:55.488315+08:00 - service error
+2023-03-20T17:00:55.550321+08:00 - service error
+2023-03-20T17:00:55.615485+08:00 - service error
+2023-03-20T17:00:55.706500+08:00 - service error
+2023-03-20T17:00:55.791916+08:00 - service error
+2023-03-20T17:00:55.876431+08:00 - service error
+2023-03-20T17:00:55.948555+08:00 - service error
+2023-03-20T17:00:56.025754+08:00 - service error
+2023-03-20T17:00:56.073431+08:00 - service error
+2023-03-20T17:00:56.154076+08:00 - service error
+2023-03-20T17:00:56.257508+08:00 - service error
+2023-03-20T17:00:56.359742+08:00 - service error
+2023-03-20T17:00:56.427002+08:00 - service error
+2023-03-20T17:00:56.512214+08:00 - service error
+2023-03-20T17:00:56.583380+08:00 - service error
+2023-03-20T17:00:56.651109+08:00 - service error
+2023-03-20T17:00:56.716392+08:00 - service error
+2023-03-20T17:00:56.779291+08:00 - service error
+2023-03-20T17:00:56.779810+08:00 - download task 7043506677433372673 execute ok!
+2023-03-20T17:05:11.873895+08:00 - execute download task TaskTransfer { task_id: "7043507759337312257", description: "transfer task", source: OSSDescription { provider: Ali, access_key_id: "LTAI5tAepdxxAmtjXV98oNZj", secret_access_key: "93qg3cCpvfPSex5TLj05pIETMhNmSx", endpoint: "oss-cn-beijing.aliyuncs.com", region: "cn-north-1", bucket: "ali-jsw-bucket", prefix: None }, target: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket", prefix: None }, bach_size: 100, task_threads: 1 } begin
+2023-03-20T17:05:12.345529+08:00 - lazy_load_credentials
+2023-03-20T17:05:12.345612+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 118.631µs)
+2023-03-20T17:05:16.611191+08:00 - download task 7043507759337312257 execute ok!
+2023-03-21T10:40:48.835161+08:00 - No such file or directory (os error 2)
+2023-03-21T10:41:35.083860+08:00 - execute download task TaskDownload { task_id: "7043773607792742401", description: "download", source: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket", prefix: None }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 } begin
+2023-03-21T10:41:35.401268+08:00 - lazy_load_credentials
+2023-03-21T10:41:35.401331+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 95.843µs)
+2023-03-21T10:41:37.715241+08:00 - download task 7043773607792742401 execute ok!
+2023-03-21T10:42:01.126037+08:00 - missing field `source` at line 3 column 1
+2023-03-21T10:44:01.326541+08:00 - execute upload task: TaskUpLoad { task_id: "7043774221176147969", description: "download", target: OSSDescription { provider: JRSS, access_key_id: "ZL9RX5KAF5JHX892Z4ME", secret_access_key: "zkykAEiRGLiftYeSEZAVJ6VqHfAC8aPjUOUsxBHj", endpoint: "http://cn-sy-jrss4.jdfmgt.com", region: "cn-sy", bucket: "jsw-bucket", prefix: None }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 }
+2023-03-21T10:44:01.630500+08:00 - lazy_load_credentials
+2023-03-21T10:44:01.630565+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 96.685µs)
+2023-03-21T10:44:01.650532+08:00 - dispatch failure
+2023-03-21T10:44:01.653094+08:00 - dispatch failure
+2023-03-21T10:44:01.655424+08:00 - dispatch failure
+2023-03-21T10:44:01.657851+08:00 - dispatch failure
+2023-03-21T10:44:01.660327+08:00 - dispatch failure
+2023-03-21T10:44:01.662754+08:00 - dispatch failure
+2023-03-21T10:44:01.665103+08:00 - dispatch failure
+2023-03-21T10:44:01.667335+08:00 - dispatch failure
+2023-03-21T10:44:01.669634+08:00 - dispatch failure
+2023-03-21T10:44:01.672334+08:00 - dispatch failure
+2023-03-21T10:44:01.674714+08:00 - dispatch failure
+2023-03-21T10:44:01.677007+08:00 - dispatch failure
+2023-03-21T10:44:01.679133+08:00 - dispatch failure
+2023-03-21T10:44:01.681540+08:00 - dispatch failure
+2023-03-21T10:44:01.683887+08:00 - dispatch failure
+2023-03-21T10:44:01.686300+08:00 - dispatch failure
+2023-03-21T10:44:01.688807+08:00 - dispatch failure
+2023-03-21T10:44:01.691175+08:00 - dispatch failure
+2023-03-21T10:44:01.693455+08:00 - dispatch failure
+2023-03-21T10:44:01.695599+08:00 - dispatch failure
+2023-03-21T10:44:01.697868+08:00 - dispatch failure
+2023-03-21T10:44:01.700054+08:00 - dispatch failure
+2023-03-21T10:44:01.702338+08:00 - dispatch failure
+2023-03-21T10:44:01.704653+08:00 - dispatch failure
+2023-03-21T10:44:01.707164+08:00 - dispatch failure
+2023-03-21T10:44:01.709584+08:00 - dispatch failure
+2023-03-21T10:44:01.711690+08:00 - dispatch failure
+2023-03-21T10:44:01.713912+08:00 - dispatch failure
+2023-03-21T10:44:01.716181+08:00 - dispatch failure
+2023-03-21T10:44:01.718420+08:00 - dispatch failure
+2023-03-21T10:44:01.718837+08:00 - upload task 7043774221176147969 execute ok!
+2023-03-21T10:48:17.034372+08:00 - execute upload task: TaskUpLoad { task_id: "7043775293689040897", description: "download", target: OSSDescription { provider: JRSS, access_key_id: "ZL9RX5KAF5JHX892Z4ME", secret_access_key: "zkykAEiRGLiftYeSEZAVJ6VqHfAC8aPjUOUsxBHj", endpoint: "http://cn-sy-jrss4.jdfmgt.com", region: "cn-sy", bucket: "jsw-bucket", prefix: None }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 }
+2023-03-21T10:48:17.336889+08:00 - lazy_load_credentials
+2023-03-21T10:48:17.336958+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 104.162µs)
+2023-03-21T10:48:17.354216+08:00 - dispatch failure
+2023-03-21T10:48:17.357415+08:00 - dispatch failure
+2023-03-21T10:48:17.360151+08:00 - dispatch failure
+2023-03-21T10:48:17.362672+08:00 - dispatch failure
+2023-03-21T10:48:17.365194+08:00 - dispatch failure
+2023-03-21T10:48:17.367745+08:00 - dispatch failure
+2023-03-21T10:48:17.370270+08:00 - dispatch failure
+2023-03-21T10:48:17.372464+08:00 - dispatch failure
+2023-03-21T10:48:17.374820+08:00 - dispatch failure
+2023-03-21T10:48:17.377345+08:00 - dispatch failure
+2023-03-21T10:48:17.379667+08:00 - dispatch failure
+2023-03-21T10:48:17.381857+08:00 - dispatch failure
+2023-03-21T10:48:17.384033+08:00 - dispatch failure
+2023-03-21T10:48:17.386206+08:00 - dispatch failure
+2023-03-21T10:48:17.388362+08:00 - dispatch failure
+2023-03-21T10:48:17.390502+08:00 - dispatch failure
+2023-03-21T10:48:17.392646+08:00 - dispatch failure
+2023-03-21T10:48:17.394881+08:00 - dispatch failure
+2023-03-21T10:48:17.397188+08:00 - dispatch failure
+2023-03-21T10:48:17.399682+08:00 - dispatch failure
+2023-03-21T10:48:17.402149+08:00 - dispatch failure
+2023-03-21T10:48:17.404520+08:00 - dispatch failure
+2023-03-21T10:48:17.406664+08:00 - dispatch failure
+2023-03-21T10:48:17.408950+08:00 - dispatch failure
+2023-03-21T10:48:17.411331+08:00 - dispatch failure
+2023-03-21T10:48:17.413753+08:00 - dispatch failure
+2023-03-21T10:48:17.416163+08:00 - dispatch failure
+2023-03-21T10:48:17.418600+08:00 - dispatch failure
+2023-03-21T10:48:17.421096+08:00 - dispatch failure
+2023-03-21T10:48:17.423376+08:00 - dispatch failure
+2023-03-21T10:48:17.423767+08:00 - upload task 7043775293689040897 execute ok!
+2023-03-21T10:49:30.082228+08:00 - execute upload task: TaskUpLoad { task_id: "7043775600074559489", description: "download", target: OSSDescription { provider: JRSS, access_key_id: "ZL9RX5KAF5JHX892Z4ME", secret_access_key: "zkykAEiRGLiftYeSEZAVJ6VqHfAC8aPjUOUsxBHj", endpoint: "http://cn-sy-jrss4.jdfmgt.com", region: "cn-sy", bucket: "jsw-bucket", prefix: None }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 }
+2023-03-21T10:49:30.384058+08:00 - lazy_load_credentials
+2023-03-21T10:49:30.384152+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 101.094µs)
+2023-03-21T10:49:30.387865+08:00 - dispatch failure
+2023-03-21T10:49:30.390261+08:00 - dispatch failure
+2023-03-21T10:49:30.392994+08:00 - dispatch failure
+2023-03-21T10:49:30.395305+08:00 - dispatch failure
+2023-03-21T10:49:30.397492+08:00 - dispatch failure
+2023-03-21T10:49:30.399349+08:00 - dispatch failure
+2023-03-21T10:49:30.401323+08:00 - dispatch failure
+2023-03-21T10:49:30.403393+08:00 - dispatch failure
+2023-03-21T10:49:30.405593+08:00 - dispatch failure
+2023-03-21T10:49:30.407690+08:00 - dispatch failure
+2023-03-21T10:49:30.409989+08:00 - dispatch failure
+2023-03-21T10:49:30.412012+08:00 - dispatch failure
+2023-03-21T10:49:30.414082+08:00 - dispatch failure
+2023-03-21T10:49:30.415874+08:00 - dispatch failure
+2023-03-21T10:49:30.417907+08:00 - dispatch failure
+2023-03-21T10:49:30.419839+08:00 - dispatch failure
+2023-03-21T10:49:30.421837+08:00 - dispatch failure
+2023-03-21T10:49:30.424119+08:00 - dispatch failure
+2023-03-21T10:49:30.426665+08:00 - dispatch failure
+2023-03-21T10:49:30.429019+08:00 - dispatch failure
+2023-03-21T10:49:30.431395+08:00 - dispatch failure
+2023-03-21T10:49:30.433629+08:00 - dispatch failure
+2023-03-21T10:49:30.436015+08:00 - dispatch failure
+2023-03-21T10:49:30.438469+08:00 - dispatch failure
+2023-03-21T10:49:30.440865+08:00 - dispatch failure
+2023-03-21T10:49:30.443453+08:00 - dispatch failure
+2023-03-21T10:49:30.445894+08:00 - dispatch failure
+2023-03-21T10:49:30.448244+08:00 - dispatch failure
+2023-03-21T10:49:30.450479+08:00 - dispatch failure
+2023-03-21T10:49:30.453020+08:00 - dispatch failure
+2023-03-21T10:49:30.453398+08:00 - upload task 7043775600074559489 execute ok!
+2023-03-21T10:51:09.003421+08:00 - execute upload task: TaskUpLoad { task_id: "7043776014979305473", description: "download", target: OSSDescription { provider: JRSS, access_key_id: "ZL9RX5KAF5JHX892Z4ME", secret_access_key: "zkykAEiRGLiftYeSEZAVJ6VqHfAC8aPjUOUsxBHj", endpoint: "http://cn-sy-jrss4.jdfmgt.com", region: "cn-sy", bucket: "jsw-bucket", prefix: None }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 }
+2023-03-21T10:51:09.305497+08:00 - lazy_load_credentials
+2023-03-21T10:51:09.305648+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 182.808µs)
+2023-03-21T10:51:09.385741+08:00 - dispatch failure
+2023-03-21T10:51:09.388108+08:00 - dispatch failure
+2023-03-21T10:51:09.390435+08:00 - dispatch failure
+2023-03-21T10:51:09.392821+08:00 - dispatch failure
+2023-03-21T10:51:09.395236+08:00 - dispatch failure
+2023-03-21T10:51:09.397747+08:00 - dispatch failure
+2023-03-21T10:51:09.400085+08:00 - dispatch failure
+2023-03-21T10:51:09.402380+08:00 - dispatch failure
+2023-03-21T10:51:09.404954+08:00 - dispatch failure
+2023-03-21T10:51:09.407769+08:00 - dispatch failure
+2023-03-21T10:51:09.410123+08:00 - dispatch failure
+2023-03-21T10:51:09.412325+08:00 - dispatch failure
+2023-03-21T10:51:09.414533+08:00 - dispatch failure
+2023-03-21T10:51:09.416991+08:00 - dispatch failure
+2023-03-21T10:51:09.419247+08:00 - dispatch failure
+2023-03-21T10:51:09.422242+08:00 - dispatch failure
+2023-03-21T10:51:09.425207+08:00 - dispatch failure
+2023-03-21T10:51:09.427932+08:00 - dispatch failure
+2023-03-21T10:51:09.430378+08:00 - dispatch failure
+2023-03-21T10:51:09.432949+08:00 - dispatch failure
+2023-03-21T10:51:09.435149+08:00 - dispatch failure
+2023-03-21T10:51:09.437499+08:00 - dispatch failure
+2023-03-21T10:51:09.439991+08:00 - dispatch failure
+2023-03-21T10:51:09.442480+08:00 - dispatch failure
+2023-03-21T10:51:09.444979+08:00 - dispatch failure
+2023-03-21T10:51:09.447053+08:00 - dispatch failure
+2023-03-21T10:51:09.449509+08:00 - dispatch failure
+2023-03-21T10:51:09.451794+08:00 - dispatch failure
+2023-03-21T10:51:09.454049+08:00 - dispatch failure
+2023-03-21T10:51:09.456453+08:00 - dispatch failure
+2023-03-21T10:51:09.456813+08:00 - upload task 7043776014979305473 execute ok!
+2023-03-21T10:52:03.434984+08:00 - execute upload task: TaskUpLoad { task_id: "7043776243283660801", description: "download", target: OSSDescription { provider: JRSS, access_key_id: "ZL9RX5KAF5JHX892Z4ME", secret_access_key: "zkykAEiRGLiftYeSEZAVJ6VqHfAC8aPjUOUsxBHj", endpoint: "http://cn-sy-jrss4.jdfmgt.com", region: "cn-sy", bucket: "jsw-bucket", prefix: None }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 }
+2023-03-21T10:52:03.736133+08:00 - lazy_load_credentials
+2023-03-21T10:52:03.736282+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 186.096µs)
+2023-03-21T10:52:03.739453+08:00 - dispatch failure
+2023-03-21T10:52:03.743016+08:00 - dispatch failure
+2023-03-21T10:52:03.746141+08:00 - dispatch failure
+2023-03-21T10:52:03.748219+08:00 - dispatch failure
+2023-03-21T10:52:03.750214+08:00 - dispatch failure
+2023-03-21T10:52:03.751960+08:00 - dispatch failure
+2023-03-21T10:52:03.753724+08:00 - dispatch failure
+2023-03-21T10:52:03.755490+08:00 - dispatch failure
+2023-03-21T10:52:03.757304+08:00 - dispatch failure
+2023-03-21T10:52:03.759183+08:00 - dispatch failure
+2023-03-21T10:52:03.760992+08:00 - dispatch failure
+2023-03-21T10:52:03.762892+08:00 - dispatch failure
+2023-03-21T10:52:03.765028+08:00 - dispatch failure
+2023-03-21T10:52:03.766959+08:00 - dispatch failure
+2023-03-21T10:52:03.769055+08:00 - dispatch failure
+2023-03-21T10:52:03.771022+08:00 - dispatch failure
+2023-03-21T10:52:03.773033+08:00 - dispatch failure
+2023-03-21T10:52:03.774809+08:00 - dispatch failure
+2023-03-21T10:52:03.776648+08:00 - dispatch failure
+2023-03-21T10:52:03.778594+08:00 - dispatch failure
+2023-03-21T10:52:03.780931+08:00 - dispatch failure
+2023-03-21T10:52:03.782863+08:00 - dispatch failure
+2023-03-21T10:52:03.785085+08:00 - dispatch failure
+2023-03-21T10:52:03.788060+08:00 - dispatch failure
+2023-03-21T10:52:03.790952+08:00 - dispatch failure
+2023-03-21T10:52:03.793798+08:00 - dispatch failure
+2023-03-21T10:52:03.796331+08:00 - dispatch failure
+2023-03-21T10:52:03.798667+08:00 - dispatch failure
+2023-03-21T10:52:03.800940+08:00 - dispatch failure
+2023-03-21T10:52:03.803391+08:00 - dispatch failure
+2023-03-21T10:52:03.803797+08:00 - upload task 7043776243283660801 execute ok!
+2023-03-21T11:24:51.254248+08:00 - execute download task TaskDownload { task_id: "7043784496914763777", description: "download", source: OSSDescription { provider: JD, access_key_id: "ZL9RX5KAF5JHX892Z4ME", secret_access_key: "zkykAEiRGLiftYeSEZAVJ6VqHfAC8aPjUOUsxBHj", endpoint: "http://cn-sy-jrss4.jdfmgt.com", region: "cn-sy", bucket: "jsw-bucket", prefix: None }, local_path: "/tmp/jrssdownload", bach_size: 100, task_threads: 1 } begin
+2023-03-21T11:24:51.545330+08:00 - lazy_load_credentials
+2023-03-21T11:24:51.545417+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 94.799µs)
+2023-03-21T11:24:51.559759+08:00 - dispatch failure
+2023-03-21T11:24:51.560121+08:00 - No such file or directory (os error 2)
+2023-03-21T13:20:44.380171+08:00 - execute download task TaskDownload { task_id: "7043813660438958081", description: "download", source: OSSDescription { provider: JD, access_key_id: "ZL9RX5KAF5JHX892Z4ME", secret_access_key: "zkykAEiRGLiftYeSEZAVJ6VqHfAC8aPjUOUsxBHj", endpoint: "http://cn-sy-jrss4.jdfmgt.com", region: "cn-sy", bucket: "jsw-bucket", prefix: None }, local_path: "/tmp/jrssdownload", bach_size: 100, task_threads: 1 } begin
+2023-03-21T13:20:44.686482+08:00 - lazy_load_credentials
+2023-03-21T13:20:44.686547+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 97.834µs)
+2023-03-21T13:20:44.707306+08:00 - dispatch failure
+2023-03-21T13:20:44.707693+08:00 - No such file or directory (os error 2)
+2023-03-21T13:22:21.354602+08:00 - execute download task TaskDownload { task_id: "7043814067181588481", description: "download", source: OSSDescription { provider: JD, access_key_id: "ZL9RX5KAF5JHX892Z4ME", secret_access_key: "zkykAEiRGLiftYeSEZAVJ6VqHfAC8aPjUOUsxBHj", endpoint: "http://cn-sy-jrss4.jdfmgt.com", region: "cn-sy", bucket: "jsw-bucket", prefix: None }, local_path: "/tmp/jrssdownload", bach_size: 100, task_threads: 1 } begin
+2023-03-21T13:22:21.378174+08:00 - lazy_load_credentials
+2023-03-21T13:22:21.378250+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 114.703µs)
+2023-03-21T13:22:21.391369+08:00 - dispatch failure
+2023-03-21T13:22:21.391799+08:00 - No such file or directory (os error 2)
+2023-03-21T13:22:43.019792+08:00 - execute download task TaskDownload { task_id: "7043814158055378945", description: "download", source: OSSDescription { provider: JRSS, access_key_id: "ZL9RX5KAF5JHX892Z4ME", secret_access_key: "zkykAEiRGLiftYeSEZAVJ6VqHfAC8aPjUOUsxBHj", endpoint: "http://cn-sy-jrss4.jdfmgt.com", region: "cn-sy", bucket: "jsw-bucket", prefix: None }, local_path: "/tmp/jrssdownload", bach_size: 100, task_threads: 1 } begin
+2023-03-21T13:22:43.039160+08:00 - lazy_load_credentials
+2023-03-21T13:22:43.039213+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 86.575µs)
+2023-03-21T13:22:44.421157+08:00 - download task 7043814158055378945 execute ok!
+2023-03-21T13:23:25.527722+08:00 - execute upload task: TaskUpLoad { task_id: "7043814336342659073", description: "download", target: OSSDescription { provider: JRSS, access_key_id: "ZL9RX5KAF5JHX892Z4ME", secret_access_key: "zkykAEiRGLiftYeSEZAVJ6VqHfAC8aPjUOUsxBHj", endpoint: "http://cn-sy-jrss4.jdfmgt.com", region: "cn-sy", bucket: "jsw-bucket", prefix: None }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 }
+2023-03-21T13:23:25.551352+08:00 - lazy_load_credentials
+2023-03-21T13:23:25.551437+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 127.137µs)
+2023-03-21T13:23:27.338220+08:00 - upload task 7043814336342659073 execute ok!
+2023-03-21T13:35:05.709965+08:00 - execute upload task: TaskUpLoad { task_id: "7043817273118822401", description: "download", target: OSSDescription { provider: JRSS, access_key_id: "ZL9RX5KAF5JHX892Z4ME", secret_access_key: "zkykAEiRGLiftYeSEZAVJ6VqHfAC8aPjUOUsxBHj", endpoint: "http://cn-sy-jrss4.jdfmgt.com", region: "cn-sy", bucket: "jsw-bucket", prefix: None }, local_path: "/tmp/jddownload", bach_size: 100, task_threads: 1 }
+2023-03-21T13:35:06.000634+08:00 - lazy_load_credentials
+2023-03-21T13:35:06.000697+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 93.162µs)
+2023-03-21T13:35:08.079344+08:00 - upload task 7043817273118822401 execute ok!
+2023-03-21T15:19:39.802906+08:00 - execute download task TaskTransfer { task_id: "7043843588576382977", description: "transfer task", source: OSSDescription { provider: JD, access_key_id: "4107B314B15BCE99A1C781DFCF119F59", secret_access_key: "8877CD432EB5738EFF0FA01F630201C9", endpoint: "http://s3.cn-north-1.jdcloud-oss.com", region: "cn-north-1", bucket: "jsw-bucket", prefix: None }, target: OSSDescription { provider: JRSS, access_key_id: "ZL9RX5KAF5JHX892Z4ME", secret_access_key: "zkykAEiRGLiftYeSEZAVJ6VqHfAC8aPjUOUsxBHj", endpoint: "http://cn-sy-jrss4.jdfmgt.com", region: "cn-sy", bucket: "jsw-bucket", prefix: None }, bach_size: 100, task_threads: 1 } begin
+2023-03-21T15:19:39.862754+08:00 - lazy_load_credentials
+2023-03-21T15:19:39.862819+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 100.918µs)
+2023-03-21T15:19:40.153894+08:00 - lazy_load_credentials
+2023-03-21T15:19:40.153990+08:00 - credentials cache miss occurred; retrieved new AWS credentials (took 137.899µs)
+2023-03-21T15:19:44.205534+08:00 - download task 7043843588576382977 execute ok!
