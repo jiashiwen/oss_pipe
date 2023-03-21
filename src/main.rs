@@ -7,6 +7,7 @@ mod interact;
 mod logger;
 mod osstask;
 mod s3;
+pub mod checkpoint;
 
 fn main() {
     init_log();

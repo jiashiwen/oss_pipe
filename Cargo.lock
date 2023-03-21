@@ -419,9 +419,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-protocol-test"
-version = "0.54.3"
+version = "0.54.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51425d035725e1f029fb9ed76f190c939c99355a955308d3c5976578b5ffbbca"
+checksum = "d4d1c9bcb35ce11055ec128dab2c66a7ed47e2dfff99883e32c21a1ab6d6bee6"
 dependencies = [
  "assert-json-diff",
  "http",

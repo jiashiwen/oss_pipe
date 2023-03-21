@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use super::{ali_oss::OssAliClient, jd_s3::OssJdClient};
+use super::{ali_oss::OssAliClient, jd_s3::OssJdClient, jrss::JRSSClient};
 use aliyun_oss_client::{BucketName, EndPoint};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -68,6 +68,7 @@ pub trait OSSActions {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum OssProvider {
     JD,
+    JRSS,
     Ali,
     AWS,
 }
@@ -85,6 +86,9 @@ pub struct OSSDescription {
     pub endpoint: String,
     pub region: String,
     pub bucket: String,
+    #[serde(default = "OSSDescription::prefix_default")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
 }
 
 impl Default for OSSDescription {
@@ -96,9 +100,17 @@ impl Default for OSSDescription {
             endpoint: "http://s3.cn-north-1.jdcloud-oss.com".to_string(),
             region: "cn-north-1".to_string(),
             bucket: "bucket_name".to_string(),
+            prefix: Some("test/samples/".to_string()),
         }
     }
 }
+
+impl OSSDescription {
+    fn prefix_default() -> Option<String> {
+        None
+    }
+}
+
 impl OSSDescription {
     pub fn gen_oss_client_ref(&self) -> Result<Box<dyn OSSActions>> {
         match self.provider {
@@ -132,6 +144,27 @@ impl OSSDescription {
                 let ali_client = OssAliClient { client };
                 Ok(Box::new(ali_client))
             }
+
+            OssProvider::JRSS => {
+                let shared_config = SdkConfig::builder()
+                    .credentials_provider(SharedCredentialsProvider::new(Credentials::new(
+                        self.access_key_id.clone(),
+                        self.secret_access_key.clone(),
+                        None,
+                        None,
+                        "Static",
+                    )))
+                    .endpoint_url(self.endpoint.clone())
+                    .region(Region::new(self.region.clone()))
+                    .build();
+
+                let s3_config_builder =
+                    aws_sdk_s3::config::Builder::from(&shared_config).force_path_style(true);
+                let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
+                let jdclient = JRSSClient { client };
+                Ok(Box::new(jdclient))
+            }
+
             OssProvider::AWS => todo!(),
         }
     }
@@ -322,6 +355,29 @@ mod test {
                 .list_objects("jsw-bucket".to_string(), None, 5, r.unwrap().next_token)
                 .await;
             println!("{:?}", r1);
+        });
+        println!("test finish!!!!!!")
+    }
+
+    //cargo test s3::oss::test::test_ossaction_transfer_objects -- --nocapture
+    #[test]
+    fn test_ossaction_transfer_objects() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+
+        let oss_jd = get_jd_oss_description();
+        let oss_ali = get_ali_oss_description();
+
+        rt.block_on(async {
+            let client_jd = oss_jd.gen_oss_client_ref().unwrap();
+            let client_ali = oss_ali.gen_oss_client_ref().unwrap();
+            let bytes = client_ali
+                .get_object_bytes("ali-jsw-bucket".to_string(), "gua.rs".to_string())
+                .await
+                .unwrap();
+
+            let r1 = client_jd
+                .upload_object_bytes("jsw-bucket".to_string(), "gua.rs".to_string(), bytes)
+                .await;
         });
         println!("test finish!!!!!!")
     }
