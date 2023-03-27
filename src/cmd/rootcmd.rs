@@ -279,6 +279,40 @@ fn cmd_match(matches: &ArgMatches) {
             }
         }
 
+        if let Some(download) = osstask.subcommand_matches("download_multithread") {
+            if let Some(f) = download.get_one::<String>("filepath") {
+                let download = read_yaml_file::<TaskDownload>(f);
+                match download {
+                    Ok(d) => {
+                        let r = d.execute_multi_thread();
+                        println!("{:?}", r);
+                    }
+                    Err(e) => {
+                        log::error!("{}", e);
+                    }
+                }
+                // let rt = tokio::runtime::Runtime::new().unwrap();
+                // let async_req = async {
+                //     match download {
+                //         Ok(d) => {
+                //             log::info!("execute download task {:?} begin", d.clone());
+                //             let r = d.execute().await;
+                //             match r {
+                //                 Ok(_) => log::info!("download task {} execute ok!", d.task_id),
+                //                 Err(e) => {
+                //                     log::error!("{}", e);
+                //                 }
+                //             }
+                //         }
+                //         Err(e) => {
+                //             log::error!("{}", e);
+                //         }
+                //     }
+                // };
+                // rt.block_on(async_req);
+            }
+        }
+
         if let Some(upload) = osstask.subcommand_matches("upload") {
             if let Some(f) = upload.get_one::<String>("filepath") {
                 let upload = read_yaml_file::<TaskUpLoad>(f);

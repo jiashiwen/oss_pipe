@@ -112,7 +112,7 @@ impl OSSDescription {
 }
 
 impl OSSDescription {
-    pub fn gen_oss_client_ref(&self) -> Result<Box<dyn OSSActions>> {
+    pub fn gen_oss_client_ref(&self) -> Result<Box<dyn OSSActions + Send + Sync>> {
         match self.provider {
             OssProvider::JD => {
                 let shared_config = SdkConfig::builder()
@@ -172,6 +172,13 @@ impl OSSDescription {
 
 #[cfg(test)]
 mod test {
+    use std::{collections::HashMap, thread, time::Duration};
+
+    use tokio::{
+        runtime,
+        task::{self, spawn_blocking},
+    };
+
     use crate::commons::read_yaml_file;
 
     use super::{OSSDescription, OssProvider};
@@ -199,57 +206,6 @@ mod test {
             }
         }
         oss_ali
-    }
-
-    //cargo test s3::oss::test::test_ossaction_jd_list_objects -- --nocapture
-    #[test]
-    fn test_ossaction_jd_list_objects() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let oss_jd = get_jd_oss_description();
-        let jd = oss_jd.gen_oss_client_ref();
-        rt.block_on(async {
-            let client = jd.unwrap();
-            let r = client
-                .list_objects("jsw-bucket".to_string(), None, 10, None)
-                .await;
-
-            if let Err(e) = r {
-                println!("{}", e.to_string());
-                return;
-            }
-
-            let r1 = client
-                .list_objects("jsw-bucket".to_string(), None, 5, r.unwrap().next_token)
-                .await;
-            println!("{:?}", r1);
-        });
-        println!("test finish!!!!!!")
-    }
-
-    //cargo test s3::oss::test::test_ossaction_jd_append_object_list_to_file -- --nocapture
-    #[test]
-    fn test_ossaction_jd_append_object_list_to_file() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let oss_jd = get_jd_oss_description();
-        let jd = oss_jd.gen_oss_client_ref();
-
-        rt.block_on(async {
-            let client = jd.unwrap();
-            let r = client
-                .append_object_list_to_file(
-                    "jsw-bucket".to_string(),
-                    None,
-                    5,
-                    None,
-                    "/tmp/jd_obj_list".to_string(),
-                )
-                .await;
-
-            if let Err(e) = r {
-                println!("{}", e.to_string());
-                return;
-            }
-        });
     }
 
     //cargo test s3::oss::test::test_ossaction_jd_append_all_object_list_to_file -- --nocapture
@@ -302,83 +258,35 @@ mod test {
         });
     }
 
-    //cargo test s3::oss::test::test_ossaction_ali_upload_object_form_file -- --nocapture
-    #[test]
-    fn test_ossaction_ali_upload_object_form_file() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let oss_ali = get_ali_oss_description();
-        let ali = oss_ali.gen_oss_client_ref();
+    //cargo test s3::oss::test::test_tokio_multi_thread -- --nocapture
 
-        rt.block_on(async {
-            println!("upload");
-            let client = ali.unwrap();
-            let r = client
-                .upload_object_from_local(
-                    "ali-jsw-bucket".to_string(),
-                    "ali_download/cloud_game_new_arch.png".to_string(),
-                    "/tmp/ali_download/cloud_game_new_arch.png".to_string(),
-                )
-                .await;
-
-            if let Err(e) = r {
-                println!("{}", e.to_string());
-                return;
-            }
-        });
+    pub async fn sleep() {
+        thread::sleep(Duration::from_secs(1));
     }
-
-    //cargo test s3::oss::test::test_ossaction_ali_list_objects -- --nocapture
     #[test]
-    fn test_ossaction_ali_list_objects() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let vec_oss = read_yaml_file::<Vec<OSSDescription>>("osscfg.yml").unwrap();
-        let mut oss_ali = OSSDescription::default();
-        for item in vec_oss.iter() {
-            if item.provider == OssProvider::Ali {
-                oss_ali = item.clone();
-            }
-        }
-        let ali = oss_ali.gen_oss_client_ref();
+    fn test_tokio_multi_thread() {
+        let max_task = 8;
+        let rt = runtime::Builder::new_multi_thread()
+            .worker_threads(max_task)
+            .enable_time()
+            .build()
+            .unwrap();
+        let mut v_handle: Box<Vec<task::JoinHandle<()>>> = Box::new(vec![]);
         rt.block_on(async {
-            let client = ali.unwrap();
-            let r = client
-                .list_objects("jsw-bucket".to_string(), None, 10, None)
-                .await;
+            for i in 0..10000 {
+                println!("run {}", i);
 
-            if let Err(e) = r {
-                println!("{}", e.to_string());
-                return;
+                while v_handle.len() >= max_task {
+                    v_handle.retain(|h| !h.is_finished());
+                }
+
+                let handler = tokio::spawn(async move {
+                    // thread::sleep(Duration::from_secs(1));
+                    sleep().await;
+                    println!("spawn {}", i);
+                });
+                v_handle.push(handler);
             }
-            println!("{:?}", r);
-
-            let r1 = client
-                .list_objects("jsw-bucket".to_string(), None, 5, r.unwrap().next_token)
-                .await;
-            println!("{:?}", r1);
         });
-        println!("test finish!!!!!!")
-    }
-
-    //cargo test s3::oss::test::test_ossaction_transfer_objects -- --nocapture
-    #[test]
-    fn test_ossaction_transfer_objects() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-
-        let oss_jd = get_jd_oss_description();
-        let oss_ali = get_ali_oss_description();
-
-        rt.block_on(async {
-            let client_jd = oss_jd.gen_oss_client_ref().unwrap();
-            let client_ali = oss_ali.gen_oss_client_ref().unwrap();
-            let bytes = client_ali
-                .get_object_bytes("ali-jsw-bucket".to_string(), "gua.rs".to_string())
-                .await
-                .unwrap();
-
-            let r1 = client_jd
-                .upload_object_bytes("jsw-bucket".to_string(), "gua.rs".to_string(), bytes)
-                .await;
-        });
-        println!("test finish!!!!!!")
     }
 }
