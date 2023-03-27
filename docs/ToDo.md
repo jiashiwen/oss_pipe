@@ -1,5 +1,9 @@
 # ToDo
 
+## 技术验证
+
+- [ ] 验证tokio multy threads 在执行时是否阻塞
+
 ## 基本功能
 
 - [x] 工程整理，升级依赖，剔除不必要的依赖和代码
@@ -11,7 +15,9 @@
 - [x] 实现读取和上传object bytes
 - [x] jrss适配，相关文档http://jrss-portal-public.jdfmgt.com/
 - [ ] checkpoint 设计与实现
-- [ ] 断点续传机制
+- [ ] 错误数据持久化与解析，配合checkpoint实现断点续传
+- [ ] 大文件支持https://docs.aws.amazon.com/sdk-for-rust/latest/dg/rust_s3_code_examples.html
+
 
 ## 多线程任务
 

@@ -28,6 +28,8 @@ async-trait = "0.1.66"
 walkdir = "2.3.2"
 bytes = "1.4.0"
 infer = "0.13.0"
+rayon = "1.7.0"
+# tokio-rayon = "2.1.0"
 
 # jd and aws oss
 jdcloud_signer = { git = "https://github.com/shijunLee/jdcloud-sdk-rust-signer" }
