@@ -1,6 +1,6 @@
 /target
 osscfg*
 .history
-logs/*
+/logs/*
 /task_example_yml   
 /examples

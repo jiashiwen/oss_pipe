@@ -6,8 +6,14 @@ pub fn new_osstask_cmd() -> Command {
         .subcommand(osstask_transfer())
         .subcommand(osstask_download())
         .subcommand(osstask_download_multithread())
+        .subcommand(osstask_download_tokio())
         .subcommand(osstask_upload())
         .subcommand(osstask_template())
+        .args(&[Arg::new("filepath")
+            .value_name("filepath")
+            .required(false)
+            .index(1)
+            .help("transfer task description file")])
 }
 
 fn osstask_transfer() -> Command {
@@ -33,6 +39,16 @@ fn osstask_download() -> Command {
 fn osstask_download_multithread() -> Command {
     clap::Command::new("download_multithread")
         .about("execute download multithread task")
+        .args(&[Arg::new("filepath")
+            .value_name("filepath")
+            .required(true)
+            .index(1)
+            .help("download task description file")])
+}
+
+fn osstask_download_tokio() -> Command {
+    clap::Command::new("download_tokio")
+        .about("execute download multithread task by tokio")
         .args(&[Arg::new("filepath")
             .value_name("filepath")
             .required(true)

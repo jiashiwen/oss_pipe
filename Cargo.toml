@@ -30,6 +30,7 @@ bytes = "1.4.0"
 infer = "0.13.0"
 rayon = "1.7.0"
 # tokio-rayon = "2.1.0"
+env_logger = "0.9.0"
 
 # jd and aws oss
 jdcloud_signer = { git = "https://github.com/shijunLee/jdcloud-sdk-rust-signer" }

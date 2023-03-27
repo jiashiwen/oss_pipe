@@ -18,6 +18,9 @@
 - [ ] 错误数据持久化与解析，配合checkpoint实现断点续传
 - [ ] 大文件支持https://docs.aws.amazon.com/sdk-for-rust/latest/dg/rust_s3_code_examples.html
 
+## 测试验证
+
+- [ ] tokio  实现多线程稳定性，通过循环多线程upload测试,异步情况需重新考虑trait。
 
 ## 多线程任务
 

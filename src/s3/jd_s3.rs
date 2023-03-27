@@ -181,6 +181,7 @@ impl OSSActions for OssJdClient {
             .key(key.clone())
             .send()
             .await?;
+
         let data = resp.body.collect().await?;
         let bytes = data.into_bytes();
         let mut store = dir.clone();
@@ -201,6 +202,46 @@ impl OSSActions for OssJdClient {
             .open(store_path)?;
         let _ = file.write(&*bytes);
         file.flush()?;
+        Ok(())
+    }
+
+    async fn download_objects_to_local(
+        &self,
+        bucket: String,
+        keys: Vec<String>,
+        dir: String,
+    ) -> Result<()> {
+        for key in keys {
+            let resp = self
+                .client
+                .get_object()
+                .bucket(bucket.clone())
+                .key(key.clone())
+                .send()
+                .await
+                .unwrap();
+
+            let data = resp.body.collect().await?;
+            let bytes = data.into_bytes();
+            let mut store = dir.clone();
+            store.push_str("/");
+            store.push_str(&key);
+
+            let store_path = Path::new(store.as_str());
+            let path = std::path::Path::new(store_path);
+
+            if let Some(p) = path.parent() {
+                std::fs::create_dir_all(p)?;
+            };
+
+            let mut file = OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .create(true)
+                .open(store_path)?;
+            let _ = file.write(&*bytes);
+            file.flush()?;
+        }
         Ok(())
     }
 
