@@ -50,6 +50,13 @@ pub trait OSSActions {
         dir: String,
     ) -> Result<()>;
 
+    async fn download_objects_to_local(
+        &self,
+        bucket: String,
+        keys: Vec<String>,
+        dir: String,
+    ) -> Result<()>;
+
     // 从本地传文件
     async fn upload_object_from_local(
         &self,
@@ -172,7 +179,7 @@ impl OSSDescription {
 
 #[cfg(test)]
 mod test {
-    use std::{collections::HashMap, thread, time::Duration};
+    use std::{thread, time::Duration};
 
     use tokio::{
         runtime,

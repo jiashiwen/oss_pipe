@@ -204,6 +204,15 @@ impl OSSActions for JRSSClient {
         Ok(())
     }
 
+    async fn download_objects_to_local(
+        &self,
+        bucket: String,
+        keys: Vec<String>,
+        dir: String,
+    ) -> Result<()> {
+        Ok(())
+    }
+
     async fn upload_object_from_local(
         &self,
         bucket: String,

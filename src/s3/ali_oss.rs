@@ -126,6 +126,7 @@ impl OSSActions for OssAliClient {
         batch: i32,
         file_path: String,
     ) -> Result<()> {
+        println!("bucket {} ", bucket);
         let resp = self
             .list_objects(bucket.clone(), prefix.clone(), batch, None)
             .await?;
@@ -195,6 +196,15 @@ impl OSSActions for OssAliClient {
             .open(store_path)?;
         let _ = file.write(&*resp);
 
+        Ok(())
+    }
+
+    async fn download_objects_to_local(
+        &self,
+        bucket: String,
+        keys: Vec<String>,
+        dir: String,
+    ) -> Result<()> {
         Ok(())
     }
 
