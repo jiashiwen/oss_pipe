@@ -71,6 +71,7 @@ fn osstask_template() -> Command {
         .about("generate oss task description yaml template")
         .subcommand(osstask_template_download())
         .subcommand(osstask_template_transfer())
+        .subcommand(osstask_template_upload())
 }
 
 fn osstask_template_download() -> Command {
@@ -79,4 +80,8 @@ fn osstask_template_download() -> Command {
 
 fn osstask_template_transfer() -> Command {
     clap::Command::new("transfer").about("generate oss task description template for transfer task")
+}
+
+fn osstask_template_upload() -> Command {
+    clap::Command::new("upload").about("generate oss task description template for upload task")
 }

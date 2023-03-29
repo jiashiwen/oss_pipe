@@ -33,6 +33,7 @@ impl OSSActions for OssAliClient {
     ) -> Result<super::OssObjectsList> {
         let mut q = Query::new();
         q.insert("max-keys", max_keys.to_string());
+
         if let Some(p) = prefix {
             q.insert(QueryKey::Prefix, p);
         };
@@ -44,9 +45,11 @@ impl OSSActions for OssAliClient {
         let list = self
             .client
             .clone()
-            .get_object_list(q)
+            .get_object_list(q.clone())
             .await
-            .map_err(|e| anyhow!(e.to_string()))?;
+            .map_err(|e| anyhow!(e.to_string()))
+            .unwrap();
+        // println!("list :{:?}", list.bucket());
 
         let token = list.next_continuation_token().clone();
 
@@ -126,7 +129,6 @@ impl OSSActions for OssAliClient {
         batch: i32,
         file_path: String,
     ) -> Result<()> {
-        println!("bucket {} ", bucket);
         let resp = self
             .list_objects(bucket.clone(), prefix.clone(), batch, None)
             .await?;

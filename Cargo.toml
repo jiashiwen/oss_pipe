@@ -50,6 +50,10 @@ aliyun-oss-client = "0.11.1"
 name = "jrss"
 path = "examples/jrss_sample.rs"
 
+[[example]]
+name = "aws_ali"
+path = "examples/ali_sample_with_aws_s3.rs"
+
 
 
 

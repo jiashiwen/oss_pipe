@@ -1,11 +1,13 @@
 use std::str::FromStr;
 
-use super::{ali_oss::OssAliClient, jd_s3::OssJdClient, jrss::JRSSClient};
+// use super::aws_s3::OssClient;
+use super::{ali_oss::OssAliClient, aws_s3::OssClient, jd_s3::OssJdClient, jrss::JRSSClient};
 use aliyun_oss_client::{BucketName, EndPoint};
-use anyhow::Result;
+use anyhow::{Ok, Result};
 use async_trait::async_trait;
 use aws_config::SdkConfig;
 use aws_credential_types::{provider::SharedCredentialsProvider, Credentials};
+
 use aws_sdk_s3::Region;
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
@@ -170,6 +172,69 @@ impl OSSDescription {
                 let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
                 let jdclient = JRSSClient { client };
                 Ok(Box::new(jdclient))
+            }
+
+            OssProvider::AWS => todo!(),
+        }
+    }
+
+    pub fn gen_oss_client(&self) -> Result<OssClient> {
+        match self.provider {
+            OssProvider::JD => {
+                let shared_config = SdkConfig::builder()
+                    .credentials_provider(SharedCredentialsProvider::new(Credentials::new(
+                        self.access_key_id.clone(),
+                        self.secret_access_key.clone(),
+                        None,
+                        None,
+                        "Static",
+                    )))
+                    .endpoint_url(self.endpoint.clone())
+                    .region(Region::new(self.region.clone()))
+                    .build();
+
+                let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+                let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
+                let oss_client = OssClient { client };
+                Ok(oss_client)
+            }
+            OssProvider::Ali => {
+                let shared_config = SdkConfig::builder()
+                    .credentials_provider(SharedCredentialsProvider::new(Credentials::new(
+                        self.access_key_id.clone(),
+                        self.secret_access_key.clone(),
+                        None,
+                        None,
+                        "Static",
+                    )))
+                    .endpoint_url(self.endpoint.clone())
+                    .region(Region::new(self.region.clone()))
+                    .build();
+
+                let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+                let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
+                let oss_client = OssClient { client };
+                Ok(oss_client)
+            }
+
+            OssProvider::JRSS => {
+                let shared_config = SdkConfig::builder()
+                    .credentials_provider(SharedCredentialsProvider::new(Credentials::new(
+                        self.access_key_id.clone(),
+                        self.secret_access_key.clone(),
+                        None,
+                        None,
+                        "Static",
+                    )))
+                    .endpoint_url(self.endpoint.clone())
+                    .region(Region::new(self.region.clone()))
+                    .build();
+
+                let s3_config_builder =
+                    aws_sdk_s3::config::Builder::from(&shared_config).force_path_style(true);
+                let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
+                let oss_client = OssClient { client };
+                Ok(oss_client)
             }
 
             OssProvider::AWS => todo!(),

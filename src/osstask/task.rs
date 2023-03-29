@@ -1,15 +1,24 @@
-use std::fs;
+use std::{fs, sync::atomic::AtomicU64};
 
-use crate::{checkpoint::CheckPoint, commons::read_lines, s3::OSSDescription};
-use anyhow::Result;
+use crate::{
+    checkpoint::CheckPoint,
+    commons::{read_lines, scan_folder_files_to_file},
+    s3::OSSDescription,
+};
+use anyhow::{anyhow, Ok, Result};
 
 use rayon::ThreadPoolBuilder;
 use serde::{Deserialize, Serialize};
 use snowflake::SnowflakeIdGenerator;
-use tokio::{runtime, task};
+use tokio::{
+    runtime::{self},
+    task::{self, JoinSet},
+};
 use walkdir::WalkDir;
 
-const OBJECT_LIST_FILE_NAME: &'static str = ".objlist";
+const OBJECT_LIST_FILE_NAME: &'static str = "objlist";
+const CHECK_POINT_FILE_NAME: &'static str = "checkpoint.yml";
+const ERROR_RECORD_ILE_NAME: &'static str = "error_record.yml";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum TaskType {
@@ -43,6 +52,14 @@ impl TaskDescription {
             TaskDescription::Transfer(t) => t.execute_rayon(),
         }
     }
+
+    pub fn exec_oss_client(&self) -> Result<()> {
+        match self {
+            TaskDescription::Download(d) => d.exec_oss_client(),
+            TaskDescription::Upload(u) => u.exec_oss_client(),
+            TaskDescription::Transfer(t) => t.exec_oss_client(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -72,8 +89,204 @@ pub struct TaskTransfer {
 }
 
 impl TaskTransfer {
-    pub fn task_type(&self) -> TaskType {
-        TaskType::Transfer
+    //Todo
+    // 增加多线程及checkpoint
+    // 增加错误输出及任务停止条件
+    pub fn exec_oss_client(&self) -> Result<()> {
+        // static Error_times: AtomicU64 = AtomicU64::new(0);
+        // 记录源端object列表
+        let client_source = self.source.gen_oss_client()?;
+        let client_target = self.target.gen_oss_client()?;
+
+        // 生成文件清单，文件清单默认文件存储在文件存储目录下 .objlist
+        let object_list_file = OBJECT_LIST_FILE_NAME.to_string();
+        let _ = fs::remove_file(object_list_file.clone());
+        let rt = runtime::Builder::new_multi_thread()
+            .worker_threads(self.task_threads)
+            .enable_all()
+            .max_io_events_per_tick(self.task_threads)
+            .build()
+            .unwrap();
+
+        rt.block_on(async {
+            let client_source = self.source.gen_oss_client().unwrap();
+            client_source
+                .append_all_object_list_to_file(
+                    self.source.bucket.clone(),
+                    self.source.prefix.clone(),
+                    self.bach_size,
+                    object_list_file.clone(),
+                )
+                .await
+                .unwrap();
+        });
+        let mut set: JoinSet<()> = JoinSet::new();
+
+        rt.block_on(async {
+            let mut file_position = 0;
+            let mut vec_keys: Vec<String> = vec![];
+
+            // 按列表传输object from source to target
+            let lines = match read_lines(object_list_file.clone()) {
+                Result::Ok(l) => l,
+                Err(e) => {
+                    log::error!("{}", e);
+                    return;
+                }
+            };
+            for line in lines {
+                if let Result::Ok(key) = line {
+                    let len = key.bytes().len() + "\n".bytes().len();
+                    file_position += len;
+                    if !key.ends_with("/") {
+                        vec_keys.push(key.clone());
+                    }
+                };
+
+                if vec_keys.len().to_string().eq(&self.bach_size.to_string()) {
+                    // println!("atomic is {:?}", Error_times);
+                    while set.len() >= self.task_threads {
+                        set.join_next().await;
+                    }
+                    let vk = vec_keys.clone();
+                    let bucket_s = self.source.bucket.clone();
+                    let bucket_t = self.target.bucket.clone();
+                    let c_s = client_source.clone();
+                    let c_t = client_target.clone();
+                    set.spawn(async move {
+                        for key in vk {
+                            let bytes =
+                                match c_s.get_object_bytes(bucket_s.clone(), key.clone()).await {
+                                    core::result::Result::Ok(b) => b,
+                                    Err(e) => {
+                                        log::error!("{}", e);
+                                        continue;
+                                    }
+                                };
+
+                            if let Err(e) = c_t
+                                .upload_object_bytes(bucket_t.clone(), key.clone(), bytes)
+                                .await
+                            {
+                                log::error!("{}", e);
+                            };
+                        }
+                    });
+
+                    // 记录checkpoint
+                    let position: u64 = file_position.try_into().unwrap();
+                    let checkpoint = CheckPoint {
+                        execute_file_path: object_list_file.clone(),
+                        execute_position: position,
+                    };
+                    if let Err(e) = checkpoint.save_to_file(CHECK_POINT_FILE_NAME) {
+                        log::error!("{}", e);
+                    };
+
+                    // 清理临时key vec
+                    vec_keys.clear();
+                }
+            }
+
+            if vec_keys.len() > 0 {
+                while set.len() >= self.task_threads {
+                    set.join_next().await;
+                }
+                let vk = vec_keys.clone();
+                let c_s = client_source.clone();
+                let c_t = client_target.clone();
+                let bucket_s = self.source.bucket.clone();
+                let bucket_t = self.target.bucket.clone();
+
+                set.spawn(async move {
+                    for key in vk {
+                        let bytes = match c_s.get_object_bytes(bucket_s.clone(), key.clone()).await
+                        {
+                            core::result::Result::Ok(b) => b,
+                            Err(e) => {
+                                log::error!("{}", e);
+                                continue;
+                            }
+                        };
+
+                        if let Err(e) = c_t
+                            .upload_object_bytes(bucket_t.clone(), key.clone(), bytes)
+                            .await
+                        {
+                            log::error!("{}", e);
+                        };
+                    }
+                });
+
+                // 记录checkpoint
+                let position: u64 = file_position.try_into().unwrap();
+                let checkpoint = CheckPoint {
+                    execute_file_path: object_list_file.clone(),
+                    execute_position: position,
+                };
+                if let Err(e) = checkpoint.save_to_file(CHECK_POINT_FILE_NAME) {
+                    log::error!("{}", e);
+                };
+            }
+
+            while set.len() > 0 {
+                set.join_next().await;
+            }
+        });
+        Ok(())
+    }
+
+    pub async fn execute(&self) -> Result<()> {
+        // 记录源端object列表
+        let client_source = self.source.gen_oss_client_ref()?;
+        let client_target = self.target.gen_oss_client_ref()?;
+
+        // 生成文件清单，文件清单默认文件存储在文件存储目录下 .objlist
+        let object_list_file = OBJECT_LIST_FILE_NAME.to_string();
+        let _ = fs::remove_file(object_list_file.clone());
+        let r = client_source
+            .append_all_object_list_to_file(
+                self.source.bucket.clone(),
+                self.source.prefix.clone(),
+                self.bach_size,
+                object_list_file.clone(),
+            )
+            .await;
+
+        if let Err(e) = r {
+            log::error!("{}", e);
+        };
+
+        // 按列表传输object from source to target
+        let lines = read_lines(object_list_file.clone())?;
+        for line in lines {
+            if let Result::Ok(f) = line {
+                if !f.ends_with("/") {
+                    let bytes = client_source
+                        .get_object_bytes(self.source.bucket.clone(), f.clone())
+                        .await;
+
+                    match bytes {
+                        core::result::Result::Ok(b) => {
+                            let r = client_target
+                                .upload_object_bytes(self.target.bucket.clone(), f.clone(), b)
+                                .await;
+
+                            if let Err(e) = r {
+                                log::error!("{}", e);
+                                continue;
+                            };
+                        }
+                        Err(e) => {
+                            log::error!("{}", e);
+                            continue;
+                        }
+                    }
+                }
+            };
+        }
+
+        Ok(())
     }
 
     pub fn execute_rayon(&self) -> Result<()> {
@@ -86,8 +299,8 @@ impl TaskTransfer {
 
         // 生成文件清单，文件清单默认文件存储在文件存储目录下 .objlist
         rt.block_on(async {
-            println!("exec rayon");
             let source_client = self.source.gen_oss_client_ref().unwrap();
+
             let r = source_client
                 .append_all_object_list_to_file(
                     self.source.bucket.clone(),
@@ -140,7 +353,7 @@ impl TaskTransfer {
                                     .get_object_bytes(self.source.bucket.clone(), key.clone())
                                     .await;
                                 match bytes {
-                                    Ok(b) => {
+                                    core::result::Result::Ok(b) => {
                                         let r = client_target
                                             .upload_object_bytes(self.target.bucket.clone(), key, b)
                                             .await;
@@ -164,57 +377,8 @@ impl TaskTransfer {
         Ok(())
     }
 
-    pub async fn execute(&self) -> Result<()> {
-        // 记录源端object列表
-        let client_source = self.source.gen_oss_client_ref()?;
-        let client_target = self.target.gen_oss_client_ref()?;
-
-        // 生成文件清单，文件清单默认文件存储在文件存储目录下 .objlist
-        let object_list_file = OBJECT_LIST_FILE_NAME.to_string();
-        let _ = fs::remove_file(object_list_file.clone());
-        let r = client_source
-            .append_all_object_list_to_file(
-                self.source.bucket.clone(),
-                self.source.prefix.clone(),
-                self.bach_size,
-                object_list_file.clone(),
-            )
-            .await;
-
-        if let Err(e) = r {
-            log::error!("{}", e);
-        };
-
-        // 按列表传输object from source to target
-        let lines = read_lines(object_list_file.clone())?;
-        for line in lines {
-            if let Result::Ok(f) = line {
-                if !f.ends_with("/") {
-                    let bytes = client_source
-                        .get_object_bytes(self.source.bucket.clone(), f.clone())
-                        .await;
-
-                    match bytes {
-                        Ok(b) => {
-                            let r = client_target
-                                .upload_object_bytes(self.target.bucket.clone(), f.clone(), b)
-                                .await;
-
-                            if let Err(e) = r {
-                                log::error!("{}", e);
-                                continue;
-                            };
-                        }
-                        Err(e) => {
-                            log::error!("{}", e);
-                            continue;
-                        }
-                    }
-                }
-            };
-        }
-
-        Ok(())
+    pub fn task_type(&self) -> TaskType {
+        TaskType::Transfer
     }
 }
 
@@ -349,7 +513,8 @@ impl TaskDownload {
 
     // 实现基于tokio的多线程方案
     pub fn execute_tokio(&self) -> Result<()> {
-        let client = self.source.gen_oss_client_ref()?;
+        // let client = self.source.gen_oss_client_ref()?;
+        let client = self.source.gen_oss_client()?;
 
         let rt = runtime::Builder::new_multi_thread()
             .worker_threads(self.task_threads)
@@ -359,9 +524,10 @@ impl TaskDownload {
         let mut v_handle: Box<Vec<task::JoinHandle<()>>> = Box::new(vec![]);
         let object_list_file = self.local_path.clone() + "/" + OBJECT_LIST_FILE_NAME;
 
+        // 生成文件清单，文件清单默认文件存储在文件存储目录下 .objlist
+        let _ = fs::remove_file(object_list_file.clone());
+        let mut createfile = false;
         rt.block_on(async {
-            // 生成文件清单，文件清单默认文件存储在文件存储目录下 .objlist
-            let _ = fs::remove_file(object_list_file.clone());
             let r = client
                 .append_all_object_list_to_file(
                     self.source.bucket.clone(),
@@ -374,19 +540,33 @@ impl TaskDownload {
             if let Err(e) = r {
                 log::error!("{}", e);
             };
+            createfile = true;
+        });
 
-            let mut checkpoint_counter = 0;
+        if !createfile {
+            return Err(anyhow!("create file err {}", object_list_file));
+        }
+
+        rt.block_on(async {
+            let mut line_counter = 0;
+            // 记录文件字节数，既文件的offset
             let mut fileposition: usize = 0;
             let mut vec_key: Vec<String> = vec![];
             let lines = read_lines(object_list_file.clone()).unwrap();
+
+            // 通过joinset控制并发线程数
+            let mut set = JoinSet::new();
+            let mut set_count = 0;
+
             // 根据清单下载文件
             for line in lines {
-                checkpoint_counter += 1;
+                line_counter += 1;
                 if let Result::Ok(f) = line {
                     let len = f.bytes().len() + "\n".bytes().len();
                     fileposition += len;
 
                     if !f.ends_with("/") {
+                        println!("f:{}", &f);
                         vec_key.push(f);
                     }
                 };
@@ -395,31 +575,27 @@ impl TaskDownload {
                     v_handle.retain(|h| !h.is_finished());
                 }
 
-                if checkpoint_counter.eq(&self.bach_size) {
+                if line_counter.eq(&self.bach_size) {
                     let vk = vec_key.clone();
                     let source = self.source.clone();
                     let bucket = self.source.bucket.clone();
                     let dir = self.local_path.clone();
-                    let client = source.gen_oss_client_ref().unwrap();
-                    let handle = tokio::spawn(async move {
-                        // let client = source.gen_oss_client_ref().unwrap();
-                        if let Err(e) = client
-                            .download_objects_to_local(bucket.clone(), vk, dir.clone())
-                            .await
-                        {
-                            log::error!("{}", e);
-                        };
-                        // for key in vk {
-                        //     if let Err(e) = client
-                        //         .download_object_to_local(bucket.clone(), key, dir.clone())
-                        //         .await
-                        //     {
-                        //         log::error!("{}", e);
-                        //     };
-                        // }
+
+                    if set.len() >= self.task_threads {
+                        set.join_next().await;
+                    }
+
+                    set.spawn(async move {
+                        let client = source.gen_oss_client_ref().unwrap();
+                        for key in vk {
+                            if let Err(e) = client
+                                .download_object_to_local(bucket.clone(), key, dir.clone())
+                                .await
+                            {
+                                log::error!("{}", e);
+                            };
+                        }
                     });
-                    // 新增连接池handle
-                    v_handle.push(handle);
 
                     // 记录checkpoint
                     let position: u64 = fileposition.try_into().unwrap();
@@ -429,6 +605,7 @@ impl TaskDownload {
                     };
                     let checkpoint_file = self.local_path.clone() + &"/.checkpoint.yml".to_string();
                     let _ = checkpoint.save_to_file(&checkpoint_file);
+                    line_counter = 0;
 
                     // 清理临时Vec
                     vec_key.clear();
@@ -443,8 +620,12 @@ impl TaskDownload {
                 while v_handle.len() >= self.task_threads {
                     v_handle.retain(|h| !h.is_finished());
                 }
-                let handle = tokio::spawn(async move {
-                    let client = source.gen_oss_client_ref().unwrap();
+
+                if set.len() >= self.task_threads {
+                    set.join_next().await;
+                }
+                let handle = set.spawn(async move {
+                    let client = source.gen_oss_client().unwrap();
                     for key in vk {
                         if let Err(e) = client
                             .download_object_to_local(bucket.clone(), key, dir.clone())
@@ -463,9 +644,63 @@ impl TaskDownload {
                 };
                 let checkpoint_file = self.local_path.clone() + &"/.checkpoint.yml".to_string();
                 let _ = checkpoint.save_to_file(&checkpoint_file);
-                v_handle.push(handle);
+            }
+
+            while set.len() > 0 {
+                println!("len{}", set.len());
+                set.join_next().await;
             }
         });
+
+        Ok(())
+    }
+
+    //基于aws client 通用方案
+    pub fn exec_oss_client(&self) -> Result<()> {
+        let client = self.source.gen_oss_client()?;
+        let rt = runtime::Builder::new_multi_thread()
+            .worker_threads(self.task_threads)
+            .enable_all()
+            .max_io_events_per_tick(self.task_threads)
+            .build()?;
+
+        rt.block_on(async {
+            // 生成文件清单，文件清单默认文件存储在文件存储目录下 .objlist
+            let object_list_file = self.local_path.clone() + "/" + OBJECT_LIST_FILE_NAME;
+            let _ = fs::remove_file(object_list_file.clone());
+
+            let r = client
+                .append_all_object_list_to_file(
+                    self.source.bucket.clone(),
+                    self.source.prefix.clone(),
+                    self.bach_size,
+                    object_list_file.clone(),
+                )
+                .await;
+            if let Err(e) = r {
+                log::error!("{}", e);
+            };
+
+            // 根据清单下载文件
+            let lines = read_lines(object_list_file.clone()).unwrap();
+            for line in lines {
+                if let Result::Ok(f) = line {
+                    if !f.ends_with("/") {
+                        let r = client
+                            .download_object_to_local(
+                                self.source.bucket.clone(),
+                                f.clone(),
+                                self.local_path.clone(),
+                            )
+                            .await;
+                        if let Err(e) = r {
+                            log::error!("{}", e);
+                        };
+                    }
+                };
+            }
+        });
+
         Ok(())
     }
 
@@ -523,6 +758,53 @@ impl TaskUpLoad {
     pub fn task_type(&self) -> TaskType {
         TaskType::Upload
     }
+
+    pub fn exec_oss_client(&self) -> Result<()> {
+        let client = self.target.gen_oss_client()?;
+        let object_list_file = self.local_path.clone() + "/" + OBJECT_LIST_FILE_NAME;
+        // 遍历目录并生成文件列表
+        scan_folder_files_to_file(self.local_path.as_str(), &object_list_file)?;
+        let rt = runtime::Builder::new_multi_thread()
+            .worker_threads(self.task_threads)
+            .enable_all()
+            .max_io_events_per_tick(self.task_threads)
+            .build()?;
+        let lines = read_lines(object_list_file.clone())?;
+        rt.block_on(async {
+            // 根据清单上传文件
+
+            for line in lines {
+                // match line {
+                //     Ok(l) => {
+                //         let mut path = self.local_path.clone();
+                //         if path.ends_with("/") {
+                //             path.push_str(l.as_str());
+                //         } else {
+                //             path.push_str("/");
+                //             path.push_str(&l);
+                //         }
+
+                //         if let Err(e) = client
+                //             .upload_object_from_local(
+                //                 self.target.bucket.as_str(),
+                //                 l.as_str(),
+                //                 path.as_str(),
+                //             )
+                //             .await
+                //         {
+                //             log::error!("{}", e)
+                //         };
+                //     }
+                //     Err(e) => {
+                //         log::error!("{}", e)
+                //     }
+                // }
+            }
+        });
+
+        Ok(())
+    }
+
     pub async fn execute(&self) -> Result<()> {
         let client = self.target.gen_oss_client_ref()?;
         // 遍历目录并上传
