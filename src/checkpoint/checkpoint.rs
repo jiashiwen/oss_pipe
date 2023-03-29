@@ -90,8 +90,7 @@ mod test {
 
         println!("positon:{}", positon);
 
-        f.seek(SeekFrom::Start(positon.try_into().unwrap()))
-            .unwrap();
+        f.seek(SeekFrom::Start(positon)).unwrap();
         let mut line = String::new();
 
         let lines = io::BufReader::new(&f).lines();

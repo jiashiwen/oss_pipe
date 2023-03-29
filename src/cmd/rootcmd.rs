@@ -256,12 +256,47 @@ fn cmd_match(matches: &ArgMatches) {
 
         if let Some(transfer) = osstask.subcommand_matches("transfer") {
             if let Some(f) = transfer.get_one::<String>("filepath") {
-                let transfer = read_yaml_file::<Task>(f);
+                let task = match read_yaml_file::<Task>(f) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        log::error!("{:?}", e);
+                        return;
+                    }
+                };
 
-                match transfer {
+                // let runtime = match runtime::Builder::new_multi_thread()
+                //     .worker_threads(2)
+                //     .enable_all()
+                //     .build()
+                // {
+                //     Ok(rt) => rt,
+                //     Err(e) => {
+                //         log::error!("{:?}", e);
+                //         return;
+                //     }
+                // };
+                let r = task.task_desc.exec_oss_client();
+                match r {
+                    Ok(_) => {
+                        log::info!("download task {} execute ok!", task.task_id)
+                    }
+                    Err(e) => {
+                        log::error!("{}", e);
+                    }
+                }
+
+                // runtime.block_on(async {});
+            }
+        }
+
+        if let Some(download) = osstask.subcommand_matches("download") {
+            if let Some(f) = download.get_one::<String>("filepath") {
+                let task = read_yaml_file::<Task>(f);
+
+                match task {
                     Ok(t) => {
-                        log::info!("execute download task {:?} begin", t.clone());
-                        let r = t.task_desc.exec_rayon();
+                        log::info!("execute download task {:?} begin", t.task_id.clone());
+                        let r = t.task_desc.exec_oss_client();
                         match r {
                             Ok(_) => log::info!("download task {} execute ok!", t.task_id),
                             Err(e) => {
@@ -273,31 +308,12 @@ fn cmd_match(matches: &ArgMatches) {
                         log::error!("{}", e);
                     }
                 }
-            }
-        }
+                // let rt = tokio::runtime::Runtime::new().unwrap();
+                // let async_req = async {
 
-        if let Some(download) = osstask.subcommand_matches("download") {
-            if let Some(f) = download.get_one::<String>("filepath") {
-                let task = read_yaml_file::<Task>(f);
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                let async_req = async {
-                    match task {
-                        Ok(t) => {
-                            log::info!("execute download task {:?} begin", t.task_id.clone());
-                            let r = t.task_desc.exec().await;
-                            match r {
-                                Ok(_) => log::info!("download task {} execute ok!", t.task_id),
-                                Err(e) => {
-                                    log::error!("{}", e);
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            log::error!("{}", e);
-                        }
-                    }
-                };
-                rt.block_on(async_req);
+                //     }
+                // };
+                // rt.block_on(async_req);
             }
         }
 
@@ -334,25 +350,26 @@ fn cmd_match(matches: &ArgMatches) {
         if let Some(upload) = osstask.subcommand_matches("upload") {
             if let Some(f) = upload.get_one::<String>("filepath") {
                 let upload = read_yaml_file::<Task>(f);
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                let async_req = async {
-                    match upload {
-                        Ok(t) => {
-                            log::info!("execute upload task: {:?}", t.task_id);
-                            let r = t.task_desc.exec().await;
-                            match r {
-                                Ok(_) => log::info!("upload task {} execute ok!", t.task_id),
-                                Err(e) => {
-                                    log::error!("{}", e);
-                                }
+                match upload {
+                    Ok(t) => {
+                        log::info!("execute upload task: {:?}", t.task_id);
+                        let r = t.task_desc.exec_oss_client();
+                        match r {
+                            Ok(_) => log::info!("upload task {} execute ok!", t.task_id),
+                            Err(e) => {
+                                log::error!("{}", e);
                             }
                         }
-                        Err(e) => {
-                            log::error!("{}", e);
-                        }
                     }
-                };
-                rt.block_on(async_req);
+                    Err(e) => {
+                        log::error!("{}", e);
+                    }
+                }
+                // let rt = tokio::runtime::Runtime::new().unwrap();
+                // let async_req = async {
+
+                // };
+                // rt.block_on(async_req);
             }
         }
 
@@ -381,11 +398,9 @@ fn cmd_match(matches: &ArgMatches) {
                 let task_id = task_id_generator();
                 let mut oss_ali = OSSDescription::default();
                 oss_ali.provider = OssProvider::Ali;
-                oss_ali.endpoint = "oss-cn-beijing.aliyuncs.com".to_string();
+                oss_ali.endpoint = "http://oss-cn-beijing.aliyuncs.com".to_string();
 
                 let task_transfer = TaskTransfer {
-                    // task_id: task_id.to_string(),
-                    // description: "transfer task".to_string(),
                     source: oss_ali,
                     target: OSSDescription::default(),
                     bach_size: 100,
@@ -395,6 +410,25 @@ fn cmd_match(matches: &ArgMatches) {
                     task_id: task_id.to_string(),
                     name: "transfer task".to_string(),
                     task_desc: TaskDescription::Transfer(task_transfer),
+                };
+                let yml = struct_to_yaml_string(&task);
+                match yml {
+                    Ok(str) => println!("{}", str),
+                    Err(e) => eprintln!("{}", e.to_string()),
+                }
+            }
+
+            if let Some(_) = template.subcommand_matches("upload") {
+                let task_upload = TaskUpLoad {
+                    local_path: "/tmp".to_string(),
+                    bach_size: 100,
+                    task_threads: 1,
+                    target: OSSDescription::default(),
+                };
+                let task = Task {
+                    task_id: task_id.to_string(),
+                    name: "download task".to_string(),
+                    task_desc: TaskDescription::Upload(task_upload),
                 };
                 let yml = struct_to_yaml_string(&task);
                 match yml {
