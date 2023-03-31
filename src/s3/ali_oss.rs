@@ -220,23 +220,18 @@ impl OSSActions for OssAliClient {
         Ok(())
     }
 
-    async fn get_object_bytes(&self, _bucket: String, key: String) -> Result<Bytes> {
-        let resp = &self.client.get_object(key.clone(), ..).await?;
+    async fn get_object_bytes(&self, _bucket: &str, key: &str) -> Result<Bytes> {
+        let resp = &self.client.get_object(key.to_string(), ..).await?;
         let bytes = Bytes::from(resp.clone());
         Ok(bytes)
     }
 
-    async fn upload_object_bytes(
-        &self,
-        _bucket: String,
-        key: String,
-        content: Bytes,
-    ) -> Result<()> {
+    async fn upload_object_bytes(&self, _bucket: &str, key: &str, content: Bytes) -> Result<()> {
         let get_content_type =
             |content: &Vec<u8>| Infer::new().get(content).map(|con| con.mime_type());
 
         self.client
-            .put_content(content.to_vec(), key, get_content_type)
+            .put_content(content.to_vec(), key.to_string(), get_content_type)
             .await?;
 
         Ok(())

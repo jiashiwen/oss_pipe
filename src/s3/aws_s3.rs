@@ -1,11 +1,12 @@
 use std::{
+    f32::consts::E,
     fs::OpenOptions,
     io::{LineWriter, Write},
     path::Path,
 };
 
-use anyhow::Result;
-use aws_sdk_s3::{types::ByteStream, Client};
+use anyhow::{Ok, Result};
+use aws_sdk_s3::{model::ObjectAttributes, types::ByteStream, Client};
 use bytes::Bytes;
 
 use super::OssObjectsList;
@@ -259,7 +260,7 @@ impl OssClient {
         Ok(())
     }
 
-    pub async fn get_object_bytes(&self, bucket: String, key: String) -> Result<Bytes> {
+    pub async fn get_object_bytes(&self, bucket: &str, key: &str) -> Result<Bytes> {
         let resp = self
             .client
             .get_object()
@@ -273,12 +274,7 @@ impl OssClient {
         Ok(bytes)
     }
 
-    pub async fn upload_object_bytes(
-        &self,
-        bucket: String,
-        key: String,
-        content: Bytes,
-    ) -> Result<()> {
+    pub async fn upload_object_bytes(&self, bucket: &str, key: &str, content: Bytes) -> Result<()> {
         let body = ByteStream::from(content);
         self.client
             .put_object()
@@ -288,5 +284,25 @@ impl OssClient {
             .send()
             .await?;
         Ok(())
+    }
+
+    pub async fn object_exists(&self, bucket: &str, key: &str) -> Result<bool> {
+        let mut exist = true;
+        if let Err(e) = self
+            .client
+            .head_object()
+            .bucket(bucket)
+            .key(key)
+            .send()
+            .await
+        {
+            let err = e.into_service_error();
+            if err.is_not_found() {
+                exist = false
+            } else {
+                return Err(anyhow::Error::new(err));
+            }
+        };
+        Ok(exist)
     }
 }

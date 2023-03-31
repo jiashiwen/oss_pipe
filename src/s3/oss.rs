@@ -68,10 +68,10 @@ pub trait OSSActions {
     ) -> Result<()>;
 
     // 获取object字节
-    async fn get_object_bytes(&self, bucket: String, key: String) -> Result<Bytes>;
+    async fn get_object_bytes(&self, bucket: &str, key: &str) -> Result<Bytes>;
 
     // 上传object字节
-    async fn upload_object_bytes(&self, bucket: String, key: String, content: Bytes) -> Result<()>;
+    async fn upload_object_bytes(&self, bucket: &str, key: &str, content: Bytes) -> Result<()>;
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -192,7 +192,6 @@ impl OSSDescription {
                     .endpoint_url(self.endpoint.clone())
                     .region(Region::new(self.region.clone()))
                     .build();
-
                 let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
                 let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
                 let oss_client = OssClient { client };
@@ -248,7 +247,7 @@ mod test {
 
     use tokio::{
         runtime,
-        task::{self, spawn_blocking},
+        task::{self, spawn_blocking, JoinSet},
     };
 
     use crate::commons::read_yaml_file;
@@ -337,27 +336,27 @@ mod test {
     }
     #[test]
     fn test_tokio_multi_thread() {
-        let max_task = 8;
+        let max_task = 2;
         let rt = runtime::Builder::new_multi_thread()
             .worker_threads(max_task)
             .enable_time()
             .build()
             .unwrap();
-        let mut v_handle: Box<Vec<task::JoinHandle<()>>> = Box::new(vec![]);
+        // let mut v_handle: Box<Vec<task::JoinHandle<()>>> = Box::new(vec![]);
+        let mut set = JoinSet::new();
         rt.block_on(async {
-            for i in 0..10000 {
+            for i in 0..100 {
                 println!("run {}", i);
-
-                while v_handle.len() >= max_task {
-                    v_handle.retain(|h| !h.is_finished());
+                while set.len() >= max_task {
+                    set.join_next().await;
                 }
-
-                let handler = tokio::spawn(async move {
-                    // thread::sleep(Duration::from_secs(1));
+                set.spawn(async move {
                     sleep().await;
                     println!("spawn {}", i);
                 });
-                v_handle.push(handler);
+            }
+            while set.len() >= max_task {
+                set.join_next().await;
             }
         });
     }

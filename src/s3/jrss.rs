@@ -231,7 +231,7 @@ impl OSSActions for JRSSClient {
         Ok(())
     }
 
-    async fn get_object_bytes(&self, bucket: String, key: String) -> Result<Bytes> {
+    async fn get_object_bytes(&self, bucket: &str, key: &str) -> Result<Bytes> {
         let resp = self
             .client
             .get_object()
@@ -244,7 +244,7 @@ impl OSSActions for JRSSClient {
         Ok(bytes)
     }
 
-    async fn upload_object_bytes(&self, bucket: String, key: String, content: Bytes) -> Result<()> {
+    async fn upload_object_bytes(&self, bucket: &str, key: &str, content: Bytes) -> Result<()> {
         let body = ByteStream::from(content);
         self.client
             .put_object()
