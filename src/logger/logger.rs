@@ -6,6 +6,7 @@ use log4rs::append::rolling_file::policy::compound::trigger::size::SizeTrigger;
 use log4rs::append::rolling_file::policy::compound::CompoundPolicy;
 use log4rs::append::rolling_file::RollingFileAppender;
 use log4rs::config::{Appender, Root};
+use log4rs::encode::json::JsonEncoder;
 use log4rs::encode::pattern::PatternEncoder;
 use log4rs::Config;
 
@@ -27,7 +28,9 @@ pub fn init_log() {
         .encoder(Box::new(PatternEncoder::new("{d} - {m}{n}")))
         .build("logs/app.log")
         .unwrap();
-    let stdout = ConsoleAppender::builder().build();
+    let stdout = ConsoleAppender::builder()
+        .encoder(Box::new(JsonEncoder::new()))
+        .build();
 
     // let appender_rolling = Appender::builder().build("rolling_file", Box::new(rolling_file));
     // let appender_file = Appender::builder().build("file_out", Box::new(file_out));

@@ -14,12 +14,20 @@
 - [x] 抽象ossaction trait
 - [x] 实现读取和上传object bytes
 - [x] jrss适配，相关文档http://jrss-portal-public.jdfmgt.com/
+- [x] 多线程验证rayon 和 tokio两个方案
+- [x] 编写多线程程序
 - [ ] checkpoint 设计与实现 transfer
 - [ ] checkpoint 设计与实现 download
 - [ ] checkpoint 设计与实现 upload
 - [ ] 最大错误数机制，到达最大错误数，任务停止
 - [ ] 错误数据持久化与解析，配合checkpoint实现断点续传
+- [ ] 实现获取object属性函数
 - [ ] 大文件支持https://docs.aws.amazon.com/sdk-for-rust/latest/dg/rust_s3_code_examples.html
+
+# 面临问题 -- sdk 兼容性问题，需要实验
+
+- [ ] 如何获取object属性
+- [ ] 如何判断object是否存在
 
 ## 测试验证
 
@@ -28,7 +36,6 @@
 ## 多线程任务
 
 - [ ] 多线程任务模型设计
-
 
 ## 服务化改造
 

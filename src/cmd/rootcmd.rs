@@ -405,6 +405,9 @@ fn cmd_match(matches: &ArgMatches) {
                     target: OSSDescription::default(),
                     bach_size: 100,
                     task_threads: 1,
+                    max_errors: 100,
+                    error_dir: "/tmp".to_string(),
+                    target_exists_skip: false,
                 };
                 let task = Task {
                     task_id: task_id.to_string(),

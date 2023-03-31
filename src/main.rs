@@ -4,6 +4,7 @@ pub mod checkpoint;
 mod cmd;
 mod commons;
 mod configure;
+mod exception;
 mod interact;
 mod logger;
 mod osstask;

@@ -1,8 +1,16 @@
-use std::{fs, sync::atomic::AtomicU64};
+use std::{
+    fs,
+    sync::{
+        atomic::{AtomicU64, AtomicUsize},
+        Arc,
+    },
+    time::SystemTime,
+};
 
 use crate::{
-    checkpoint::CheckPoint,
+    checkpoint::{CheckPoint, Record},
     commons::{read_lines, scan_folder_files_to_file},
+    osstask::Transfer,
     s3::OSSDescription,
 };
 use anyhow::{anyhow, Ok, Result};
@@ -10,6 +18,7 @@ use anyhow::{anyhow, Ok, Result};
 use rayon::ThreadPoolBuilder;
 use serde::{Deserialize, Serialize};
 use snowflake::SnowflakeIdGenerator;
+use time::OffsetDateTime;
 use tokio::{
     runtime::{self},
     task::{self, JoinSet},
@@ -85,18 +94,37 @@ pub struct TaskTransfer {
     pub source: OSSDescription,
     pub target: OSSDescription,
     pub bach_size: i32,
+    #[serde(default = "TaskTransfer::task_threads_default")]
     pub task_threads: usize,
+    #[serde(default = "TaskTransfer::max_errors_default")]
+    pub max_errors: usize,
+    pub error_dir: String,
+    #[serde(default = "TaskTransfer::target_exists_skip_default")]
+    pub target_exists_skip: bool,
 }
 
 impl TaskTransfer {
+    fn task_threads_default() -> usize {
+        1
+    }
+
+    fn max_errors_default() -> usize {
+        1
+    }
+
+    fn target_exists_skip_default() -> bool {
+        false
+    }
+
     //Todo
     // 增加多线程及checkpoint
     // 增加错误输出及任务停止条件
     pub fn exec_oss_client(&self) -> Result<()> {
-        // static Error_times: AtomicU64 = AtomicU64::new(0);
+        let error_times = Arc::new(AtomicUsize::new(0));
+
         // 记录源端object列表
-        let client_source = self.source.gen_oss_client()?;
-        let client_target = self.target.gen_oss_client()?;
+        // let client_source = self.source.gen_oss_client()?;
+        // let client_target = self.target.gen_oss_client()?;
 
         // 生成文件清单，文件清单默认文件存储在文件存储目录下 .objlist
         let object_list_file = OBJECT_LIST_FILE_NAME.to_string();
@@ -105,12 +133,20 @@ impl TaskTransfer {
             .worker_threads(self.task_threads)
             .enable_all()
             .max_io_events_per_tick(self.task_threads)
-            .build()
-            .unwrap();
+            .build()?;
+
+        let mut finish = false;
 
         rt.block_on(async {
-            let client_source = self.source.gen_oss_client().unwrap();
-            client_source
+            let client_source = match self.source.gen_oss_client() {
+                Result::Ok(c) => c,
+                Err(e) => {
+                    log::error!("{}", e);
+                    finish = true;
+                    return;
+                }
+            };
+            if let Err(e) = client_source
                 .append_all_object_list_to_file(
                     self.source.bucket.clone(),
                     self.source.prefix.clone(),
@@ -118,13 +154,22 @@ impl TaskTransfer {
                     object_list_file.clone(),
                 )
                 .await
-                .unwrap();
+            {
+                log::error!("{}", e);
+                finish = true;
+                return;
+            };
         });
+
+        if finish {
+            return Err(anyhow!("get object list error"));
+        }
+
         let mut set: JoinSet<()> = JoinSet::new();
 
         rt.block_on(async {
             let mut file_position = 0;
-            let mut vec_keys: Vec<String> = vec![];
+            let mut vec_keys: Vec<Record> = vec![];
 
             // 按列表传输object from source to target
             let lines = match read_lines(object_list_file.clone()) {
@@ -135,42 +180,53 @@ impl TaskTransfer {
                 }
             };
             for line in lines {
+                // 若错误达到上限，则停止任务
+                if error_times.load(std::sync::atomic::Ordering::SeqCst) >= self.max_errors {
+                    break;
+                }
                 if let Result::Ok(key) = line {
                     let len = key.bytes().len() + "\n".bytes().len();
                     file_position += len;
                     if !key.ends_with("/") {
-                        vec_keys.push(key.clone());
+                        let record = Record {
+                            key,
+                            offset: file_position,
+                        };
+                        vec_keys.push(record);
                     }
                 };
 
                 if vec_keys.len().to_string().eq(&self.bach_size.to_string()) {
-                    // println!("atomic is {:?}", Error_times);
                     while set.len() >= self.task_threads {
                         set.join_next().await;
                     }
                     let vk = vec_keys.clone();
-                    let bucket_s = self.source.bucket.clone();
-                    let bucket_t = self.target.bucket.clone();
-                    let c_s = client_source.clone();
-                    let c_t = client_target.clone();
-                    set.spawn(async move {
-                        for key in vk {
-                            let bytes =
-                                match c_s.get_object_bytes(bucket_s.clone(), key.clone()).await {
-                                    core::result::Result::Ok(b) => b,
-                                    Err(e) => {
-                                        log::error!("{}", e);
-                                        continue;
-                                    }
-                                };
+                    let now = OffsetDateTime::now_utc().unix_timestamp_nanos();
+                    let mut err_file = self.error_dir.clone();
+                    if self.error_dir.ends_with("/") {
+                        err_file.push_str("err_record_");
+                        err_file.push_str(&now.to_string());
+                    } else {
+                        err_file.push_str("/");
+                        err_file.push_str("err_record_");
+                        err_file.push_str(&now.to_string());
+                    }
 
-                            if let Err(e) = c_t
-                                .upload_object_bytes(bucket_t.clone(), key.clone(), bytes)
-                                .await
-                            {
-                                log::error!("{}", e);
-                            };
-                        }
+                    let transfer = Transfer {
+                        source: self.source.clone(),
+                        target: self.target.clone(),
+                        error_conter: Arc::clone(&error_times),
+                        error_file: err_file,
+                        prefix: self.target.prefix.clone(),
+                        target_exist_skip: self.target_exists_skip,
+                    };
+                    set.spawn(async move {
+                        if let Err(e) = transfer.exec(vk).await {
+                            transfer
+                                .error_conter
+                                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            log::error!("{}", e);
+                        };
                     });
 
                     // 记录checkpoint
@@ -188,34 +244,42 @@ impl TaskTransfer {
                 }
             }
 
-            if vec_keys.len() > 0 {
+            // 若错误达到上限，则不执行后续操作
+            if vec_keys.len() > 0
+                && error_times.load(std::sync::atomic::Ordering::SeqCst) < self.max_errors
+            {
                 while set.len() >= self.task_threads {
                     set.join_next().await;
                 }
+
                 let vk = vec_keys.clone();
-                let c_s = client_source.clone();
-                let c_t = client_target.clone();
-                let bucket_s = self.source.bucket.clone();
-                let bucket_t = self.target.bucket.clone();
+                let now = OffsetDateTime::now_utc().unix_timestamp_nanos();
+                let mut err_file = self.error_dir.clone();
+                if self.error_dir.ends_with("/") {
+                    err_file.push_str("err_record_");
+                    err_file.push_str(&now.to_string());
+                } else {
+                    err_file.push_str("/");
+                    err_file.push_str("err_record_");
+                    err_file.push_str(&now.to_string());
+                }
+
+                let transfer = Transfer {
+                    source: self.source.clone(),
+                    target: self.target.clone(),
+                    error_conter: Arc::clone(&error_times),
+                    error_file: err_file,
+                    prefix: self.target.prefix.clone(),
+                    target_exist_skip: false,
+                };
 
                 set.spawn(async move {
-                    for key in vk {
-                        let bytes = match c_s.get_object_bytes(bucket_s.clone(), key.clone()).await
-                        {
-                            core::result::Result::Ok(b) => b,
-                            Err(e) => {
-                                log::error!("{}", e);
-                                continue;
-                            }
-                        };
-
-                        if let Err(e) = c_t
-                            .upload_object_bytes(bucket_t.clone(), key.clone(), bytes)
-                            .await
-                        {
-                            log::error!("{}", e);
-                        };
-                    }
+                    if let Err(e) = transfer.exec(vk).await {
+                        transfer
+                            .error_conter
+                            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        log::error!("{}", e);
+                    };
                 });
 
                 // 记录checkpoint
@@ -263,13 +327,13 @@ impl TaskTransfer {
             if let Result::Ok(f) = line {
                 if !f.ends_with("/") {
                     let bytes = client_source
-                        .get_object_bytes(self.source.bucket.clone(), f.clone())
+                        .get_object_bytes(self.source.bucket.as_str(), f.as_str())
                         .await;
 
                     match bytes {
                         core::result::Result::Ok(b) => {
                             let r = client_target
-                                .upload_object_bytes(self.target.bucket.clone(), f.clone(), b)
+                                .upload_object_bytes(self.target.bucket.as_str(), f.as_str(), b)
                                 .await;
 
                             if let Err(e) = r {
@@ -350,12 +414,16 @@ impl TaskTransfer {
                         rt.block_on(async {
                             for key in keys {
                                 let bytes = client_source
-                                    .get_object_bytes(self.source.bucket.clone(), key.clone())
+                                    .get_object_bytes(self.source.bucket.as_str(), key.as_str())
                                     .await;
                                 match bytes {
                                     core::result::Result::Ok(b) => {
                                         let r = client_target
-                                            .upload_object_bytes(self.target.bucket.clone(), key, b)
+                                            .upload_object_bytes(
+                                                self.target.bucket.as_str(),
+                                                key.as_str(),
+                                                b,
+                                            )
                                             .await;
 
                                         if let Err(e) = r {
