@@ -11,6 +11,9 @@ pub struct Transfer {
     pub prefix: Option<String>,
     // pub filter: Option<String>,
     pub target_exist_skip: bool,
+    // pub from_checkpoint: bool,
+    // pub big_file_size: u64,
+    // pub multi_part_chunck: u64,
 }
 
 impl Transfer {
@@ -58,6 +61,8 @@ impl Transfer {
                     }
                 }
             }
+
+            // 补充大文件分支
 
             if let Err(e) = c_t
                 .upload_object_bytes(self.target.bucket.as_str(), target_key.as_str(), bytes)
