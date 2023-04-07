@@ -101,6 +101,8 @@ pub struct TaskTransfer {
     pub error_dir: String,
     #[serde(default = "TaskTransfer::target_exists_skip_default")]
     pub target_exists_skip: bool,
+    #[serde(default = "TaskTransfer::target_exists_skip_default")]
+    pub start_from_checkpoint: bool,
 }
 
 impl TaskTransfer {

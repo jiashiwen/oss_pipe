@@ -12,7 +12,7 @@ use crate::commons::{json_to_struct, read_lines, read_yaml_file, struct_to_yaml_
 
 use super::Record;
 
-const CHECKPOINT_FILE_NAME: &'static str = ".checkpoint";
+const CHECKPOINT_FILE_NAME: &'static str = "checkpoint";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckPoint {
@@ -64,7 +64,6 @@ pub fn get_task_checkpoint(checkpoint_file: &str, error_record_dir: &str) -> Res
     }
 
     let tmp_u64 = u64::try_from(tmp)?;
-
     if tmp_u64 < checkpoint.execute_position {
         checkpoint.execute_position = tmp_u64;
     }
@@ -74,9 +73,8 @@ pub fn get_task_checkpoint(checkpoint_file: &str, error_record_dir: &str) -> Res
 
 #[cfg(test)]
 mod test {
-    use std::io::Read;
-    use std::io::Seek;
     use std::io::SeekFrom;
+    use std::io::{Read, Seek};
     use std::{
         fs::{self, File},
         io::{self, BufRead},

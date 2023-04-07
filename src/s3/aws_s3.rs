@@ -1,13 +1,19 @@
 use std::{
-    f32::consts::E,
-    fs::OpenOptions,
-    io::{LineWriter, Write},
+    fs::{self, OpenOptions},
+    io::{LineWriter, Read, Seek, SeekFrom, Write},
+    num::ParseIntError,
     path::Path,
 };
 
-use anyhow::{Ok, Result};
-use aws_sdk_s3::{model::ObjectAttributes, types::ByteStream, Client};
-use bytes::Bytes;
+use anyhow::{anyhow, Ok, Result};
+use aws_sdk_s3::{
+    model::{multipart_upload, CompletedMultipartUpload, CompletedPart},
+    output::{CreateMultipartUploadOutput, GetObjectOutput},
+    types::ByteStream,
+    Client,
+};
+use aws_smithy_types::date_time::DateTime;
+use tokio::io::AsyncReadExt;
 
 use super::OssObjectsList;
 
@@ -260,7 +266,7 @@ impl OssClient {
         Ok(())
     }
 
-    pub async fn get_object_bytes(&self, bucket: &str, key: &str) -> Result<Bytes> {
+    pub async fn get_object(&self, bucket: &str, key: &str) -> Result<GetObjectOutput> {
         let resp = self
             .client
             .get_object()
@@ -268,19 +274,223 @@ impl OssClient {
             .key(key.clone())
             .send()
             .await?;
-
-        let data = resp.body.collect().await?;
-        let bytes = data.into_bytes();
-        Ok(bytes)
+        Ok(resp)
     }
 
-    pub async fn upload_object_bytes(&self, bucket: &str, key: &str, content: Bytes) -> Result<()> {
-        let body = ByteStream::from(content);
+    //Todo 改造为直接使用ByteStream
+    pub async fn get_object_bytes(&self, bucket: &str, key: &str) -> Result<ByteStream> {
+        let resp = self
+            .client
+            .get_object()
+            .bucket(bucket)
+            .key(key.clone())
+            .send()
+            .await?;
+        Ok(resp.body)
+    }
+
+    pub async fn upload_object_bytes(
+        &self,
+        bucket: &str,
+        key: &str,
+        content: ByteStream,
+    ) -> Result<()> {
         self.client
             .put_object()
             .bucket(bucket)
             .key(key)
-            .body(body)
+            .body(content)
+            .send()
+            .await?;
+        Ok(())
+    }
+
+    pub async fn multipart_upload_ByteStream(
+        &self,
+        bucket: &str,
+        key: &str,
+        body_len: usize,
+        chunk_size: usize,
+        body: ByteStream,
+    ) -> Result<()> {
+        // 计算上传分片
+        let batch = body_len / chunk_size;
+        let remainder = body_len % chunk_size;
+
+        let mut byte_stream_async_reader = body.into_async_read();
+        let mut upload_parts: Vec<CompletedPart> = Vec::new();
+
+        //获取上传id
+        let multipart_upload_res: CreateMultipartUploadOutput = self
+            .client
+            .create_multipart_upload()
+            .bucket(bucket)
+            .key(key)
+            .send()
+            .await?;
+        let upload_id = match multipart_upload_res.upload_id() {
+            Some(id) => id,
+            None => {
+                return Err(anyhow!("upload id is None"));
+            }
+        };
+
+        // multipartes upload
+        for i in 0..batch {
+            let mut buffer = vec![0; chunk_size];
+            let buf_size = byte_stream_async_reader.read_exact(&mut buffer).await?;
+            let part_number: i32 = i.try_into()?;
+
+            let upload_part_res = self
+                .client
+                .upload_part()
+                .key(key)
+                .bucket(bucket)
+                .upload_id(upload_id)
+                .body(ByteStream::from(buffer))
+                .part_number(part_number)
+                .send()
+                .await?;
+
+            let completer_part = CompletedPart::builder()
+                .e_tag(upload_part_res.e_tag.unwrap_or_default())
+                .part_number(part_number)
+                .build();
+
+            upload_parts.push(completer_part);
+        }
+
+        if remainder > 0 {
+            let mut buffer = vec![0; remainder];
+            let buf_size = byte_stream_async_reader.read_exact(&mut buffer).await?;
+            let part_number: i32 = batch.try_into()?;
+            let upload_part_res = self
+                .client
+                .upload_part()
+                .key(key)
+                .bucket(bucket)
+                .upload_id(upload_id)
+                .body(ByteStream::from(buffer))
+                .part_number(part_number + 1)
+                .send()
+                .await?;
+
+            let completer_part = CompletedPart::builder()
+                .e_tag(upload_part_res.e_tag.unwrap_or_default())
+                .part_number(part_number + 1)
+                .build();
+
+            upload_parts.push(completer_part);
+        }
+        // 完成上传文件合并
+        let completed_multipart_upload: CompletedMultipartUpload =
+            CompletedMultipartUpload::builder()
+                .set_parts(Some(upload_parts))
+                .build();
+
+        let _complete_multipart_upload_res = self
+            .client
+            .complete_multipart_upload()
+            .bucket(bucket)
+            .key(key)
+            .multipart_upload(completed_multipart_upload)
+            .upload_id(upload_id)
+            .send()
+            .await?;
+
+        Ok(())
+    }
+
+    // multipart upload
+    pub async fn multipart_upload_local_file(
+        &self,
+        bucket: &str,
+        key: &str,
+        file_name: &str,
+        chuck_size: usize,
+    ) -> Result<()> {
+        let mut file = fs::File::open(file_name)?;
+        let file_meta = file.metadata()?;
+        let file_len = file_meta.len();
+        let mut stream_counter: u64 = 0;
+        println!("{:?}", file_len);
+
+        let mut part_number = 0;
+
+        let mut upload_parts: Vec<CompletedPart> = Vec::new();
+
+        //获取上传id
+        let multipart_upload_res: CreateMultipartUploadOutput = self
+            .client
+            .create_multipart_upload()
+            .bucket(bucket)
+            .key(key)
+            .send()
+            .await?;
+        let upload_id = match multipart_upload_res.upload_id() {
+            Some(id) => id,
+            None => {
+                return Err(anyhow!("upload id is None"));
+            }
+        };
+
+        //分段上传文件并记录completer_part
+        loop {
+            let mut buf = vec![0; chuck_size];
+            file.seek(SeekFrom::Start(stream_counter))?;
+            let read_count = file.read(&mut buf)?;
+            let len: u64 = read_count.try_into()?;
+            stream_counter += len;
+            part_number += 1;
+
+            if read_count == 0 {
+                break;
+            }
+
+            let mut stream = ByteStream::default();
+            if read_count != chuck_size {
+                let tmp = &buf[0..read_count];
+                let v = tmp.to_vec();
+                stream = ByteStream::from(v);
+            } else {
+                stream = ByteStream::from(buf);
+            }
+
+            let upload_part_res = self
+                .client
+                .upload_part()
+                .key(key)
+                .bucket(bucket)
+                .upload_id(upload_id)
+                .body(stream)
+                .part_number(part_number)
+                .send()
+                .await?;
+
+            let completer_part = CompletedPart::builder()
+                .e_tag(upload_part_res.e_tag.unwrap_or_default())
+                .part_number(part_number)
+                .build();
+
+            upload_parts.push(completer_part);
+
+            if read_count != chuck_size {
+                break;
+            }
+        }
+        // 完成上传文件合并
+        let completed_multipart_upload: CompletedMultipartUpload =
+            CompletedMultipartUpload::builder()
+                .set_parts(Some(upload_parts))
+                .build();
+
+        let _complete_multipart_upload_res = self
+            .client
+            .complete_multipart_upload()
+            .bucket(bucket)
+            .key(key)
+            .multipart_upload(completed_multipart_upload)
+            .upload_id(upload_id)
             .send()
             .await?;
         Ok(())
@@ -304,5 +514,33 @@ impl OssClient {
             }
         };
         Ok(exist)
+    }
+
+    pub async fn get_object_etag(&self, bucket: &str, key: &str) -> Result<Option<String>> {
+        let head = self
+            .client
+            .head_object()
+            .bucket(bucket)
+            .key(key)
+            .send()
+            .await?;
+        return match head.e_tag() {
+            Some(t) => Ok(Some(t.to_string())),
+            None => Ok(None),
+        };
+    }
+
+    pub async fn object_last_modified(&self, bucket: &str, key: &str) -> Result<Option<DateTime>> {
+        let head = self
+            .client
+            .head_object()
+            .bucket(bucket)
+            .key(key)
+            .send()
+            .await?;
+        return match head.last_modified() {
+            Some(d) => Ok(Some(d.clone())),
+            None => Ok(None),
+        };
     }
 }
