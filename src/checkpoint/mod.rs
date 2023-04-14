@@ -1,5 +1,6 @@
 mod checkpoint;
-mod error_record;
+mod record;
 
+pub use checkpoint::get_task_checkpoint;
 pub use checkpoint::CheckPoint;
-pub use error_record::Record;
+pub use record::Record;

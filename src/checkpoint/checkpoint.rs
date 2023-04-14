@@ -1,18 +1,15 @@
-use std::{
-    fs::{File, OpenOptions},
-    io::Write,
-    str::FromStr,
-};
+use std::{fs::OpenOptions, io::Write, str::FromStr};
 
 use anyhow::{Error, Result};
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
-use crate::commons::{json_to_struct, read_lines, read_yaml_file, struct_to_yaml_string};
+use crate::{
+    commons::{json_to_struct, read_lines, read_yaml_file, struct_to_yaml_string},
+    osstask::OFFSET_PREFIX,
+};
 
 use super::Record;
-
-const CHECKPOINT_FILE_NAME: &'static str = "checkpoint";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckPoint {
@@ -30,7 +27,11 @@ impl FromStr for CheckPoint {
 }
 impl CheckPoint {
     pub fn save_to_file(&self, path: &str) -> Result<()> {
-        let mut file = OpenOptions::new().create(true).write(true).open(path)?;
+        let mut file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(path)?;
         let constent = struct_to_yaml_string(self)?;
         file.write_all(constent.as_bytes())?;
         file.flush()?;
@@ -38,36 +39,44 @@ impl CheckPoint {
     }
 }
 
-pub fn get_task_checkpoint(checkpoint_file: &str, error_record_dir: &str) -> Result<CheckPoint> {
+pub fn get_task_checkpoint(checkpoint_file: &str, meta_dir: &str) -> Result<CheckPoint> {
     let mut checkpoint = read_yaml_file::<CheckPoint>(checkpoint_file)?;
-    let mut tmp = usize::try_from(checkpoint.execute_position)?;
 
-    // 遍历error record 目录，并提取错误记录offset
-    for entry in WalkDir::new(error_record_dir)
+    // 遍历offset 日志文件，选取每个文件中最大的offset，当offset 小于checkpoint中的offset，则取较小值
+    for entry in WalkDir::new(meta_dir)
         .into_iter()
         .filter_map(Result::ok)
-        .filter(|e| !e.file_type().is_dir())
+        .filter(|e| !e.file_type().is_dir() && e.file_name().to_str().is_some())
     {
+        let file_name = entry.file_name().to_str().unwrap();
+
+        if !file_name.starts_with(OFFSET_PREFIX) {
+            continue;
+        };
+
         if let Some(p) = entry.path().to_str() {
             if let Ok(lines) = read_lines(p) {
+                let mut max_offset_in_the_file = 0;
                 for line in lines {
                     if let Ok(content) = line {
-                        if let Ok(r) = json_to_struct::<Record>(&content) {
-                            if r.offset < tmp {
-                                tmp = r.offset
+                        match content.parse::<u64>() {
+                            Ok(offset) => {
+                                if offset > max_offset_in_the_file {
+                                    max_offset_in_the_file = offset
+                                }
+                            }
+                            Err(_) => {
+                                continue;
                             }
                         };
                     }
                 }
+                if max_offset_in_the_file < checkpoint.execute_position {
+                    checkpoint.execute_position = max_offset_in_the_file
+                }
             };
         };
     }
-
-    let tmp_u64 = u64::try_from(tmp)?;
-    if tmp_u64 < checkpoint.execute_position {
-        checkpoint.execute_position = tmp_u64;
-    }
-
     Ok(checkpoint)
 }
 
@@ -87,7 +96,7 @@ mod test {
     #[test]
     fn test_get_task_checkpoint() {
         println!("get_task_checkpoint");
-        let c = get_task_checkpoint("checkpoint.yml", "/tmp/err_dir");
+        let c = get_task_checkpoint("/tmp/meta_dir/checkpoint.yml", "/tmp/meta_dir");
         println!("{:?}", c);
     }
 

@@ -72,6 +72,7 @@ fn osstask_template() -> Command {
         .subcommand(osstask_template_download())
         .subcommand(osstask_template_transfer())
         .subcommand(osstask_template_upload())
+        .subcommand(osstask_local_to_local())
 }
 
 fn osstask_template_download() -> Command {
@@ -84,4 +85,8 @@ fn osstask_template_transfer() -> Command {
 
 fn osstask_template_upload() -> Command {
     clap::Command::new("upload").about("generate oss task description template for upload task")
+}
+fn osstask_local_to_local() -> Command {
+    clap::Command::new("localtolocal")
+        .about("generate oss task description template for local to local task")
 }

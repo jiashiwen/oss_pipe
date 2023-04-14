@@ -1,39 +1,40 @@
 use std::{
-    fs,
-    sync::{
-        atomic::{AtomicU64, AtomicUsize},
-        Arc,
-    },
-    time::SystemTime,
+    fs::{self, File},
+    io::{self, BufRead, Seek, SeekFrom, Write},
+    sync::{atomic::AtomicUsize, Arc},
 };
 
 use crate::{
-    checkpoint::{CheckPoint, Record},
-    commons::{read_lines, scan_folder_files_to_file},
-    osstask::Transfer,
+    checkpoint::{get_task_checkpoint, CheckPoint, Record},
+    commons::{json_to_struct, read_lines, scan_folder_files_to_file},
+    osstask::{LocalToLocal, Transfer},
     s3::OSSDescription,
 };
-use anyhow::{anyhow, Ok, Result};
+use anyhow::{anyhow, Result};
 
 use rayon::ThreadPoolBuilder;
 use serde::{Deserialize, Serialize};
 use snowflake::SnowflakeIdGenerator;
-use time::OffsetDateTime;
+
 use tokio::{
-    runtime::{self},
+    runtime,
     task::{self, JoinSet},
 };
 use walkdir::WalkDir;
 
-const OBJECT_LIST_FILE_NAME: &'static str = "objlist";
-const CHECK_POINT_FILE_NAME: &'static str = "checkpoint.yml";
-const ERROR_RECORD_ILE_NAME: &'static str = "error_record.yml";
+pub const OBJECT_LIST_FILE_NAME: &'static str = "objlist";
+pub const CHECK_POINT_FILE_NAME: &'static str = "checkpoint.yml";
+pub const ERROR_RECORD_PREFIX: &'static str = "error_record_";
+pub const OFFSET_PREFIX: &'static str = "offset_";
+pub const OFFSET_EXEC_PREFIX: &'static str = "offset_exec_";
+pub const OFFSET_TASK_PREFIX: &'static str = "offset_task_";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum TaskType {
     Download,
     Upload,
     Transfer,
+    LocalToLocal,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -41,146 +42,196 @@ pub enum TaskDescription {
     Download(TaskDownload),
     Upload(TaskUpLoad),
     Transfer(TaskTransfer),
+    LocalToLocal(TaskLocalToLocal),
 }
 
 // ToDo
 // 抽象 task
 impl TaskDescription {
-    pub async fn exec(&self) -> Result<()> {
-        return match self {
-            TaskDescription::Download(d) => d.execute().await,
-            TaskDescription::Upload(u) => u.execute().await,
-            TaskDescription::Transfer(t) => t.execute().await,
-        };
-    }
-
-    pub fn exec_rayon(&self) -> Result<()> {
+    pub fn exec_multi_threads(&self) -> Result<()> {
         match self {
-            TaskDescription::Download(_) => todo!(),
-            TaskDescription::Upload(_) => todo!(),
-            TaskDescription::Transfer(t) => t.execute_rayon(),
+            TaskDescription::Download(d) => d.exec_multi_threads(),
+            TaskDescription::Upload(u) => u.exec_multi_threads(),
+            TaskDescription::Transfer(t) => t.exec_multi_threads(),
+            TaskDescription::LocalToLocal(l) => l.exec_multi_threads(),
         }
     }
+}
 
-    pub fn exec_oss_client(&self) -> Result<()> {
-        match self {
-            TaskDescription::Download(d) => d.exec_oss_client(),
-            TaskDescription::Upload(u) => u.exec_oss_client(),
-            TaskDescription::Transfer(t) => t.exec_oss_client(),
-        }
+pub struct TaskDefaultParameters {}
+impl TaskDefaultParameters {
+    pub fn id_default() -> String {
+        task_id_generator().to_string()
+    }
+
+    pub fn name_default() -> String {
+        "default_name".to_string()
+    }
+
+    pub fn batch_size_default() -> i32 {
+        100
+    }
+
+    pub fn task_threads_default() -> usize {
+        num_cpus::get()
+    }
+
+    pub fn max_errors_default() -> usize {
+        1
+    }
+
+    pub fn start_from_checkpoint_default() -> bool {
+        false
+    }
+
+    pub fn target_exists_skip_default() -> bool {
+        false
+    }
+    pub fn large_file_size_default() -> usize {
+        // 100M
+        104857600
+    }
+    pub fn multi_part_chunck_default() -> usize {
+        // 10M
+        10485760
+    }
+
+    pub fn meta_dir_default() -> String {
+        "/tmp/meta_dir".to_string()
     }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Task {
-    #[serde(default = "Task::id_default")]
+    #[serde(default = "TaskDefaultParameters::id_default")]
     pub task_id: String,
-    #[serde(default = "Task::name_default")]
+    #[serde(default = "TaskDefaultParameters::name_default")]
     pub name: String,
     pub task_desc: TaskDescription,
-}
-
-impl Task {
-    fn id_default() -> String {
-        task_id_generator().to_string()
-    }
-    fn name_default() -> String {
-        "default_name".to_string()
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TaskTransfer {
     pub source: OSSDescription,
     pub target: OSSDescription,
+    #[serde(default = "TaskDefaultParameters::batch_size_default")]
     pub bach_size: i32,
-    #[serde(default = "TaskTransfer::task_threads_default")]
+    #[serde(default = "TaskDefaultParameters::task_threads_default")]
     pub task_threads: usize,
-    #[serde(default = "TaskTransfer::max_errors_default")]
+    #[serde(default = "TaskDefaultParameters::max_errors_default")]
     pub max_errors: usize,
-    pub error_dir: String,
-    #[serde(default = "TaskTransfer::target_exists_skip_default")]
+    #[serde(default = "TaskDefaultParameters::meta_dir_default")]
+    pub meta_dir: String,
+    #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
     pub target_exists_skip: bool,
-    #[serde(default = "TaskTransfer::target_exists_skip_default")]
+    #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
     pub start_from_checkpoint: bool,
+    #[serde(default = "TaskDefaultParameters::large_file_size_default")]
+    pub large_file_size: usize,
+    #[serde(default = "TaskDefaultParameters::multi_part_chunck_default")]
+    pub multi_part_chunck: usize,
+}
+
+impl Default for TaskTransfer {
+    fn default() -> Self {
+        Self {
+            source: OSSDescription::default(),
+            target: OSSDescription::default(),
+            bach_size: TaskDefaultParameters::batch_size_default(),
+            task_threads: TaskDefaultParameters::task_threads_default(),
+            max_errors: TaskDefaultParameters::max_errors_default(),
+            meta_dir: TaskDefaultParameters::meta_dir_default(),
+            target_exists_skip: TaskDefaultParameters::target_exists_skip_default(),
+            start_from_checkpoint: TaskDefaultParameters::start_from_checkpoint_default(),
+            large_file_size: TaskDefaultParameters::large_file_size_default(),
+            multi_part_chunck: TaskDefaultParameters::multi_part_chunck_default(),
+        }
+    }
 }
 
 impl TaskTransfer {
-    fn task_threads_default() -> usize {
-        1
-    }
-
-    fn max_errors_default() -> usize {
-        1
-    }
-
-    fn target_exists_skip_default() -> bool {
-        false
-    }
-
     //Todo
     // 增加多线程及checkpoint
     // 增加错误输出及任务停止条件
-    pub fn exec_oss_client(&self) -> Result<()> {
+    pub fn exec_multi_threads(&self) -> Result<()> {
         let error_times = Arc::new(AtomicUsize::new(0));
+        let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_NAME, "");
+        let check_point_file = gen_file_path(self.meta_dir.as_str(), CHECK_POINT_FILE_NAME, "");
 
-        // 记录源端object列表
-        // let client_source = self.source.gen_oss_client()?;
-        // let client_target = self.target.gen_oss_client()?;
-
-        // 生成文件清单，文件清单默认文件存储在文件存储目录下 .objlist
-        let object_list_file = OBJECT_LIST_FILE_NAME.to_string();
-        let _ = fs::remove_file(object_list_file.clone());
         let rt = runtime::Builder::new_multi_thread()
             .worker_threads(self.task_threads)
             .enable_all()
             .max_io_events_per_tick(self.task_threads)
             .build()?;
 
-        let mut finish = false;
+        // 若不从checkpoint开始，重新生成文件清单
+        if !self.start_from_checkpoint {
+            // 预清理meta目录
+            let _ = fs::remove_dir_all(self.meta_dir.as_str());
+            let mut interrupted = false;
 
-        rt.block_on(async {
-            let client_source = match self.source.gen_oss_client() {
-                Result::Ok(c) => c,
-                Err(e) => {
+            rt.block_on(async {
+                let client_source = match self.source.gen_oss_client() {
+                    Result::Ok(c) => c,
+                    Err(e) => {
+                        log::error!("{}", e);
+                        interrupted = true;
+                        return;
+                    }
+                };
+                if let Err(e) = client_source
+                    .append_all_object_list_to_file(
+                        self.source.bucket.clone(),
+                        self.source.prefix.clone(),
+                        self.bach_size,
+                        object_list_file.clone(),
+                    )
+                    .await
+                {
                     log::error!("{}", e);
-                    finish = true;
+                    interrupted = true;
                     return;
-                }
-            };
-            if let Err(e) = client_source
-                .append_all_object_list_to_file(
-                    self.source.bucket.clone(),
-                    self.source.prefix.clone(),
-                    self.bach_size,
-                    object_list_file.clone(),
-                )
-                .await
-            {
-                log::error!("{}", e);
-                finish = true;
-                return;
-            };
-        });
+                };
+            });
 
-        if finish {
-            return Err(anyhow!("get object list error"));
+            if interrupted {
+                return Err(anyhow!("get object list error"));
+            }
         }
 
         let mut set: JoinSet<()> = JoinSet::new();
+        let mut file = File::open(object_list_file.as_str())?;
 
         rt.block_on(async {
             let mut file_position = 0;
             let mut vec_keys: Vec<Record> = vec![];
 
-            // 按列表传输object from source to target
-            let lines = match read_lines(object_list_file.clone()) {
-                Result::Ok(l) => l,
-                Err(e) => {
+            if self.start_from_checkpoint {
+                // 执行错误补偿，重新执行错误日志中的记录
+                match self.error_retry() {
+                    Ok(_) => {}
+                    Err(e) => {
+                        log::error!("{}", e);
+                        return;
+                    }
+                };
+
+                let checkpoint =
+                    match get_task_checkpoint(check_point_file.as_str(), self.meta_dir.as_str()) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            log::error!("{}", e);
+                            return;
+                        }
+                    };
+                if let Err(e) = file.seek(SeekFrom::Start(checkpoint.execute_position)) {
                     log::error!("{}", e);
                     return;
-                }
-            };
+                };
+            }
+
+            // 按列表传输object from source to target
+            let lines = io::BufReader::new(file).lines();
             for line in lines {
                 // 若错误达到上限，则停止任务
                 if error_times.load(std::sync::atomic::Ordering::SeqCst) >= self.max_errors {
@@ -203,24 +254,16 @@ impl TaskTransfer {
                         set.join_next().await;
                     }
                     let vk = vec_keys.clone();
-                    let now = OffsetDateTime::now_utc().unix_timestamp_nanos();
-                    let mut err_file = self.error_dir.clone();
-                    if self.error_dir.ends_with("/") {
-                        err_file.push_str("err_record_");
-                        err_file.push_str(&now.to_string());
-                    } else {
-                        err_file.push_str("/");
-                        err_file.push_str("err_record_");
-                        err_file.push_str(&now.to_string());
-                    }
 
                     let transfer = Transfer {
                         source: self.source.clone(),
                         target: self.target.clone(),
                         error_conter: Arc::clone(&error_times),
-                        error_file: err_file,
                         prefix: self.target.prefix.clone(),
                         target_exist_skip: self.target_exists_skip,
+                        large_file_size: self.large_file_size,
+                        multi_part_chunck: self.multi_part_chunck,
+                        meta_dir: self.meta_dir.clone(),
                     };
                     set.spawn(async move {
                         if let Err(e) = transfer.exec(vk).await {
@@ -237,7 +280,7 @@ impl TaskTransfer {
                         execute_file_path: object_list_file.clone(),
                         execute_position: position,
                     };
-                    if let Err(e) = checkpoint.save_to_file(CHECK_POINT_FILE_NAME) {
+                    if let Err(e) = checkpoint.save_to_file(check_point_file.as_str()) {
                         log::error!("{}", e);
                     };
 
@@ -255,24 +298,16 @@ impl TaskTransfer {
                 }
 
                 let vk = vec_keys.clone();
-                let now = OffsetDateTime::now_utc().unix_timestamp_nanos();
-                let mut err_file = self.error_dir.clone();
-                if self.error_dir.ends_with("/") {
-                    err_file.push_str("err_record_");
-                    err_file.push_str(&now.to_string());
-                } else {
-                    err_file.push_str("/");
-                    err_file.push_str("err_record_");
-                    err_file.push_str(&now.to_string());
-                }
 
                 let transfer = Transfer {
                     source: self.source.clone(),
                     target: self.target.clone(),
                     error_conter: Arc::clone(&error_times),
-                    error_file: err_file,
                     prefix: self.target.prefix.clone(),
                     target_exist_skip: false,
+                    large_file_size: self.large_file_size,
+                    multi_part_chunck: self.multi_part_chunck,
+                    meta_dir: self.meta_dir.clone(),
                 };
 
                 set.spawn(async move {
@@ -290,7 +325,7 @@ impl TaskTransfer {
                     execute_file_path: object_list_file.clone(),
                     execute_position: position,
                 };
-                if let Err(e) = checkpoint.save_to_file(CHECK_POINT_FILE_NAME) {
+                if let Err(e) = checkpoint.save_to_file(check_point_file.as_str()) {
                     log::error!("{}", e);
                 };
             }
@@ -302,148 +337,60 @@ impl TaskTransfer {
         Ok(())
     }
 
-    pub async fn execute(&self) -> Result<()> {
-        // 记录源端object列表
-        let client_source = self.source.gen_oss_client_ref()?;
-        let client_target = self.target.gen_oss_client_ref()?;
+    pub fn error_retry(&self) -> Result<()> {
+        // 遍历错误记录
+        for entry in WalkDir::new(self.meta_dir.as_str())
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|e| !e.file_type().is_dir() && e.file_name().to_str().is_some())
+        {
+            let file_name = entry.file_name().to_str().unwrap();
 
-        // 生成文件清单，文件清单默认文件存储在文件存储目录下 .objlist
-        let object_list_file = OBJECT_LIST_FILE_NAME.to_string();
-        let _ = fs::remove_file(object_list_file.clone());
-        let r = client_source
-            .append_all_object_list_to_file(
-                self.source.bucket.clone(),
-                self.source.prefix.clone(),
-                self.bach_size,
-                object_list_file.clone(),
-            )
-            .await;
-
-        if let Err(e) = r {
-            log::error!("{}", e);
-        };
-
-        // 按列表传输object from source to target
-        let lines = read_lines(object_list_file.clone())?;
-        for line in lines {
-            if let Result::Ok(f) = line {
-                if !f.ends_with("/") {
-                    let bytes = client_source
-                        .get_object_bytes(self.source.bucket.as_str(), f.as_str())
-                        .await;
-
-                    match bytes {
-                        core::result::Result::Ok(b) => {
-                            let r = client_target
-                                .upload_object_bytes(self.target.bucket.as_str(), f.as_str(), b)
-                                .await;
-
-                            if let Err(e) = r {
-                                log::error!("{}", e);
-                                continue;
-                            };
-                        }
-                        Err(e) => {
-                            log::error!("{}", e);
-                            continue;
-                        }
-                    }
-                }
+            if !file_name.starts_with(ERROR_RECORD_PREFIX) {
+                continue;
             };
-        }
 
-        Ok(())
-    }
-
-    pub fn execute_rayon(&self) -> Result<()> {
-        let rt = tokio::runtime::Runtime::new()?;
-        let pool = ThreadPoolBuilder::new()
-            .num_threads(self.task_threads)
-            .build()?;
-        let object_list_file = OBJECT_LIST_FILE_NAME.to_string();
-        let _ = fs::remove_file(object_list_file.clone());
-
-        // 生成文件清单，文件清单默认文件存储在文件存储目录下 .objlist
-        rt.block_on(async {
-            let source_client = self.source.gen_oss_client_ref().unwrap();
-
-            let r = source_client
-                .append_all_object_list_to_file(
-                    self.source.bucket.clone(),
-                    self.source.prefix.clone(),
-                    self.bach_size,
-                    object_list_file.clone(),
-                )
-                .await;
-            if let Err(e) = r {
-                log::error!("{}", e);
-            };
-        });
-
-        let mut checkpoint_counter = 0;
-        let mut fileposition: usize = 0;
-        let lines = read_lines(object_list_file.clone())?;
-        pool.scope(|pc| {
-            let mut vec_key = vec![];
-            for line in lines {
-                checkpoint_counter += 1;
-                if let Result::Ok(f) = line {
-                    // 计算文件offset
-                    let len = f.bytes().len() + "\n".bytes().len();
-                    fileposition += len;
-
-                    if !f.ends_with("/") {
-                        vec_key.push(f.clone());
-                    }
-                };
-
-                if checkpoint_counter.eq(&self.bach_size) {
-                    let position: u64 = fileposition.try_into().unwrap();
-                    let checkpoint = CheckPoint {
-                        execute_file_path: object_list_file.clone(),
-                        execute_position: position,
-                    };
-
-                    let checkpoint_file = ".checkpoint.yml".to_string();
-                    let _ = checkpoint.save_to_file(&checkpoint_file);
-                    checkpoint_counter = 0;
-
-                    let keys = vec_key.clone();
-                    pc.spawn(move |_| {
-                        let client_source = self.source.gen_oss_client_ref().unwrap();
-                        let client_target = self.target.gen_oss_client_ref().unwrap();
-                        let rt = tokio::runtime::Runtime::new().unwrap();
-                        rt.block_on(async {
-                            for key in keys {
-                                let bytes = client_source
-                                    .get_object_bytes(self.source.bucket.as_str(), key.as_str())
-                                    .await;
-                                match bytes {
-                                    core::result::Result::Ok(b) => {
-                                        let r = client_target
-                                            .upload_object_bytes(
-                                                self.target.bucket.as_str(),
-                                                key.as_str(),
-                                                b,
-                                            )
-                                            .await;
-
-                                        if let Err(e) = r {
-                                            log::error!("{}", e);
-                                            continue;
-                                        };
-                                    }
+            if let Some(p) = entry.path().to_str() {
+                if let Ok(lines) = read_lines(p) {
+                    let mut record_vec = vec![];
+                    for line in lines {
+                        match line {
+                            Ok(content) => {
+                                let record = match json_to_struct::<Record>(content.as_str()) {
+                                    Ok(r) => r,
                                     Err(e) => {
                                         log::error!("{}", e);
                                         continue;
                                     }
-                                }
+                                };
+                                record_vec.push(record);
                             }
-                        });
-                    });
+                            Err(e) => {
+                                log::error!("{}", e);
+                                continue;
+                            }
+                        }
+                    }
+
+                    if record_vec.len() > 0 {
+                        let copy = Transfer {
+                            source: self.source.clone(),
+                            target: self.target.clone(),
+                            error_conter: Arc::new(AtomicUsize::new(0)),
+                            meta_dir: self.meta_dir.clone(),
+                            prefix: self.target.prefix.clone(),
+                            target_exist_skip: self.target_exists_skip,
+                            large_file_size: self.large_file_size,
+                            multi_part_chunck: self.multi_part_chunck,
+                        };
+                        let _ = copy.exec(record_vec);
+                    }
                 }
+
+                let _ = fs::remove_file(p);
             }
-        });
+        }
+
         Ok(())
     }
 
@@ -457,8 +404,33 @@ impl TaskTransfer {
 pub struct TaskDownload {
     pub source: OSSDescription,
     pub local_path: String,
+    #[serde(default = "TaskDefaultParameters::batch_size_default")]
     pub bach_size: i32,
+    #[serde(default = "TaskDefaultParameters::task_threads_default")]
     pub task_threads: usize,
+    #[serde(default = "TaskDefaultParameters::max_errors_default")]
+    pub max_errors: usize,
+    #[serde(default = "TaskDefaultParameters::meta_dir_default")]
+    pub meta_dir: String,
+    #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
+    pub target_exists_skip: bool,
+    #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
+    pub start_from_checkpoint: bool,
+}
+
+impl Default for TaskDownload {
+    fn default() -> Self {
+        Self {
+            source: OSSDescription::default(),
+            local_path: "/tmp".to_string(),
+            bach_size: TaskDefaultParameters::batch_size_default(),
+            task_threads: TaskDefaultParameters::task_threads_default(),
+            max_errors: TaskDefaultParameters::max_errors_default(),
+            meta_dir: TaskDefaultParameters::meta_dir_default(),
+            target_exists_skip: TaskDefaultParameters::target_exists_skip_default(),
+            start_from_checkpoint: TaskDefaultParameters::start_from_checkpoint_default(),
+        }
+    }
 }
 
 impl TaskDownload {
@@ -626,7 +598,6 @@ impl TaskDownload {
 
             // 通过joinset控制并发线程数
             let mut set = JoinSet::new();
-            let mut set_count = 0;
 
             // 根据清单下载文件
             for line in lines {
@@ -694,7 +665,7 @@ impl TaskDownload {
                 if set.len() >= self.task_threads {
                     set.join_next().await;
                 }
-                let handle = set.spawn(async move {
+                let _ = set.spawn(async move {
                     let client = source.gen_oss_client().unwrap();
                     for key in vk {
                         if let Err(e) = client
@@ -726,7 +697,7 @@ impl TaskDownload {
     }
 
     //基于aws client 通用方案
-    pub fn exec_oss_client(&self) -> Result<()> {
+    pub fn exec_multi_threads(&self) -> Result<()> {
         let client = self.source.gen_oss_client()?;
         let rt = runtime::Builder::new_multi_thread()
             .worker_threads(self.task_threads)
@@ -773,46 +744,6 @@ impl TaskDownload {
 
         Ok(())
     }
-
-    pub async fn execute(&self) -> Result<()> {
-        let client = self.source.gen_oss_client_ref()?;
-
-        // 生成文件清单，文件清单默认文件存储在文件存储目录下 .objlist
-        let object_list_file = self.local_path.clone() + "/" + OBJECT_LIST_FILE_NAME;
-        let _ = fs::remove_file(object_list_file.clone());
-        let r = client
-            .append_all_object_list_to_file(
-                self.source.bucket.clone(),
-                self.source.prefix.clone(),
-                self.bach_size,
-                object_list_file.clone(),
-            )
-            .await;
-
-        if let Err(e) = r {
-            log::error!("{}", e);
-        };
-
-        // 根据清单下载文件
-        let lines = read_lines(object_list_file.clone())?;
-        for line in lines {
-            if let Result::Ok(f) = line {
-                if !f.ends_with("/") {
-                    let r = client
-                        .download_object_to_local(
-                            self.source.bucket.clone(),
-                            f.clone(),
-                            self.local_path.clone(),
-                        )
-                        .await;
-                    if let Err(e) = r {
-                        log::error!("{}", e);
-                    };
-                }
-            };
-        }
-        Ok(())
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -820,8 +751,39 @@ impl TaskDownload {
 pub struct TaskUpLoad {
     pub target: OSSDescription,
     pub local_path: String,
+    #[serde(default = "TaskDefaultParameters::batch_size_default")]
     pub bach_size: i32,
+    #[serde(default = "TaskDefaultParameters::task_threads_default")]
     pub task_threads: usize,
+    #[serde(default = "TaskDefaultParameters::max_errors_default")]
+    pub max_errors: usize,
+    #[serde(default = "TaskDefaultParameters::meta_dir_default")]
+    pub meta_dir: String,
+    #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
+    pub target_exists_skip: bool,
+    #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
+    pub start_from_checkpoint: bool,
+    #[serde(default = "TaskDefaultParameters::large_file_size_default")]
+    pub large_file_size: usize,
+    #[serde(default = "TaskDefaultParameters::multi_part_chunck_default")]
+    pub multi_part_chunck: usize,
+}
+
+impl Default for TaskUpLoad {
+    fn default() -> Self {
+        Self {
+            target: OSSDescription::default(),
+            local_path: "/tmp".to_string(),
+            bach_size: TaskDefaultParameters::batch_size_default(),
+            task_threads: TaskDefaultParameters::task_threads_default(),
+            max_errors: TaskDefaultParameters::max_errors_default(),
+            meta_dir: TaskDefaultParameters::meta_dir_default(),
+            target_exists_skip: TaskDefaultParameters::target_exists_skip_default(),
+            start_from_checkpoint: TaskDefaultParameters::start_from_checkpoint_default(),
+            large_file_size: TaskDefaultParameters::large_file_size_default(),
+            multi_part_chunck: TaskDefaultParameters::multi_part_chunck_default(),
+        }
+    }
 }
 
 impl TaskUpLoad {
@@ -829,8 +791,7 @@ impl TaskUpLoad {
         TaskType::Upload
     }
 
-    pub fn exec_oss_client(&self) -> Result<()> {
-        let client = self.target.gen_oss_client()?;
+    pub fn exec_multi_threads(&self) -> Result<()> {
         let object_list_file = self.local_path.clone() + "/" + OBJECT_LIST_FILE_NAME;
         // 遍历目录并生成文件列表
         scan_folder_files_to_file(self.local_path.as_str(), &object_list_file)?;
@@ -843,33 +804,33 @@ impl TaskUpLoad {
         rt.block_on(async {
             // 根据清单上传文件
 
-            for line in lines {
-                // match line {
-                //     Ok(l) => {
-                //         let mut path = self.local_path.clone();
-                //         if path.ends_with("/") {
-                //             path.push_str(l.as_str());
-                //         } else {
-                //             path.push_str("/");
-                //             path.push_str(&l);
-                //         }
+            // for line in lines {
+            // match line {
+            //     Ok(l) => {
+            //         let mut path = self.local_path.clone();
+            //         if path.ends_with("/") {
+            //             path.push_str(l.as_str());
+            //         } else {
+            //             path.push_str("/");
+            //             path.push_str(&l);
+            //         }
 
-                //         if let Err(e) = client
-                //             .upload_object_from_local(
-                //                 self.target.bucket.as_str(),
-                //                 l.as_str(),
-                //                 path.as_str(),
-                //             )
-                //             .await
-                //         {
-                //             log::error!("{}", e)
-                //         };
-                //     }
-                //     Err(e) => {
-                //         log::error!("{}", e)
-                //     }
-                // }
-            }
+            //         if let Err(e) = client
+            //             .upload_object_from_local(
+            //                 self.target.bucket.as_str(),
+            //                 l.as_str(),
+            //                 path.as_str(),
+            //             )
+            //             .await
+            //         {
+            //             log::error!("{}", e)
+            //         };
+            //     }
+            //     Err(e) => {
+            //         log::error!("{}", e)
+            //     }
+            // }
+            // }
         });
 
         Ok(())
@@ -904,16 +865,284 @@ impl TaskUpLoad {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TaskLocalToLocal {
+    pub source_path: String,
+    pub target_path: String,
+    #[serde(default = "TaskDefaultParameters::batch_size_default")]
+    pub bach_size: i32,
+    #[serde(default = "TaskDefaultParameters::task_threads_default")]
+    pub task_threads: usize,
+    #[serde(default = "TaskDefaultParameters::max_errors_default")]
+    pub max_errors: usize,
+    #[serde(default = "TaskDefaultParameters::meta_dir_default")]
+    pub meta_dir: String,
+    #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
+    pub target_exists_skip: bool,
+    #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
+    pub start_from_checkpoint: bool,
+    #[serde(default = "TaskDefaultParameters::large_file_size_default")]
+    pub large_file_size: usize,
+    #[serde(default = "TaskDefaultParameters::multi_part_chunck_default")]
+    pub multi_part_chunck: usize,
+}
+
+impl Default for TaskLocalToLocal {
+    fn default() -> Self {
+        Self {
+            source_path: "/tmp/source".to_string(),
+            target_path: "/tmp/target".to_string(),
+            bach_size: TaskDefaultParameters::batch_size_default(),
+            task_threads: TaskDefaultParameters::task_threads_default(),
+            max_errors: TaskDefaultParameters::max_errors_default(),
+            meta_dir: TaskDefaultParameters::meta_dir_default(),
+            target_exists_skip: TaskDefaultParameters::target_exists_skip_default(),
+            start_from_checkpoint: TaskDefaultParameters::start_from_checkpoint_default(),
+            large_file_size: TaskDefaultParameters::large_file_size_default(),
+            multi_part_chunck: TaskDefaultParameters::multi_part_chunck_default(),
+        }
+    }
+}
+
+impl TaskLocalToLocal {
+    pub fn exec_multi_threads(&self) -> Result<()> {
+        let error_times = Arc::new(AtomicUsize::new(0));
+        let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_NAME, "");
+        let check_point_file = gen_file_path(self.meta_dir.as_str(), CHECK_POINT_FILE_NAME, "");
+
+        // 若不从checkpoint开始，重新生成文件清单
+        if !self.start_from_checkpoint {
+            // 预清理meta目录
+            let _ = fs::remove_dir_all(self.meta_dir.as_str());
+            scan_folder_files_to_file(self.source_path.as_str(), object_list_file.as_str())?;
+        }
+        let mut set: JoinSet<()> = JoinSet::new();
+        let mut file = File::open(object_list_file.as_str())?;
+
+        let mut file_position: usize = 0;
+        if self.start_from_checkpoint {
+            // 执行错误补偿，重新执行错误日志中的记录
+            self.error_retry()?;
+
+            let checkpoint =
+                match get_task_checkpoint(CHECK_POINT_FILE_NAME, self.meta_dir.as_str()) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        log::error!("{}", e);
+                        return Err(e);
+                    }
+                };
+            if let Err(e) = file.seek(SeekFrom::Start(checkpoint.execute_position)) {
+                log::error!("{}", e);
+                return Err(anyhow::Error::new(e));
+            };
+            file_position = checkpoint.execute_position.try_into()?;
+        }
+
+        let rt = runtime::Builder::new_multi_thread()
+            .worker_threads(self.task_threads)
+            .enable_all()
+            .max_io_events_per_tick(self.task_threads)
+            .build()?;
+
+        rt.block_on(async {
+            let mut vec_keys: Vec<Record> = vec![];
+            // let mut pre_batch_last_offset = file_position;
+
+            // 按列表传输object from source to target
+            let lines = io::BufReader::new(file).lines();
+            for line in lines {
+                // 若错误达到上限，则停止任务
+                if error_times.load(std::sync::atomic::Ordering::SeqCst) >= self.max_errors {
+                    break;
+                }
+                if let Result::Ok(key) = line {
+                    let len = key.bytes().len() + "\n".bytes().len();
+                    file_position += len;
+                    if !key.ends_with("/") {
+                        let record = Record {
+                            key,
+                            offset: file_position,
+                        };
+                        vec_keys.push(record);
+                    }
+                };
+
+                if vec_keys.len().to_string().eq(&self.bach_size.to_string()) {
+                    while set.len() >= self.task_threads {
+                        set.join_next().await;
+                    }
+                    let vk = vec_keys.clone();
+
+                    let localtolocal = LocalToLocal {
+                        source_path: self.source_path.clone(),
+                        target_path: self.target_path.clone(),
+                        error_conter: Arc::clone(&error_times),
+                        meta_dir: self.meta_dir.clone(),
+                        target_exist_skip: self.target_exists_skip,
+                        large_file_size: self.large_file_size,
+                        multi_part_chunck: self.multi_part_chunck,
+                    };
+                    // let pre_offset = pre_batch_last_offset;
+                    set.spawn(async move {
+                        if let Err(e) = localtolocal.exec(vk).await {
+                            localtolocal
+                                .error_conter
+                                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            log::error!("{}", e);
+                        };
+                    });
+
+                    // 记录checkpoint
+                    let position: u64 = file_position.try_into().unwrap();
+                    let checkpoint = CheckPoint {
+                        execute_file_path: object_list_file.clone(),
+                        execute_position: position,
+                    };
+                    if let Err(e) = checkpoint.save_to_file(check_point_file.as_str()) {
+                        log::error!("{}", e);
+                    };
+
+                    // 清理临时key vec
+                    // pre_batch_last_offset = vec_keys[0].offset;
+                    vec_keys.clear();
+                }
+            }
+
+            // 若错误达到上限，则不执行后续操作
+            if vec_keys.len() > 0
+                && error_times.load(std::sync::atomic::Ordering::SeqCst) < self.max_errors
+            {
+                while set.len() >= self.task_threads {
+                    set.join_next().await;
+                }
+
+                let vk = vec_keys.clone();
+
+                let localtolocal = LocalToLocal {
+                    source_path: self.source_path.clone(),
+                    target_path: self.target_path.clone(),
+                    error_conter: Arc::clone(&error_times),
+                    meta_dir: self.meta_dir.clone(),
+                    target_exist_skip: false,
+                    large_file_size: self.large_file_size,
+                    multi_part_chunck: self.multi_part_chunck,
+                };
+
+                set.spawn(async move {
+                    if let Err(e) = localtolocal.exec(vk).await {
+                        localtolocal
+                            .error_conter
+                            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        log::error!("{}", e);
+                    };
+                });
+
+                // 记录checkpoint
+                let position: u64 = file_position.try_into().unwrap();
+                let checkpoint = CheckPoint {
+                    execute_file_path: object_list_file.clone(),
+                    execute_position: position,
+                };
+                if let Err(e) = checkpoint.save_to_file(check_point_file.as_str()) {
+                    log::error!("{}", e);
+                };
+            }
+
+            while set.len() > 0 {
+                set.join_next().await;
+            }
+        });
+        Ok(())
+    }
+
+    pub fn error_retry(&self) -> Result<()> {
+        // 遍历错误记录
+        for entry in WalkDir::new(self.meta_dir.as_str())
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|e| !e.file_type().is_dir() && e.file_name().to_str().is_some())
+        {
+            let file_name = entry.file_name().to_str().unwrap();
+
+            if !file_name.starts_with(ERROR_RECORD_PREFIX) {
+                continue;
+            };
+
+            if let Some(p) = entry.path().to_str() {
+                if let Ok(lines) = read_lines(p) {
+                    let mut record_vec = vec![];
+                    for line in lines {
+                        match line {
+                            Ok(content) => {
+                                let record = match json_to_struct::<Record>(content.as_str()) {
+                                    Ok(r) => r,
+                                    Err(e) => {
+                                        log::error!("{}", e);
+                                        continue;
+                                    }
+                                };
+                                record_vec.push(record);
+                            }
+                            Err(e) => {
+                                log::error!("{}", e);
+                                continue;
+                            }
+                        }
+                    }
+
+                    if record_vec.len() > 0 {
+                        let copy = LocalToLocal {
+                            source_path: self.source_path.clone(),
+                            target_path: self.target_path.clone(),
+                            error_conter: Arc::new(AtomicUsize::new(0)),
+                            meta_dir: self.meta_dir.clone(),
+                            target_exist_skip: self.target_exists_skip,
+                            large_file_size: self.large_file_size,
+                            multi_part_chunck: self.multi_part_chunck,
+                        };
+                        let _ = copy.exec(record_vec);
+                    }
+                }
+
+                let _ = fs::remove_file(p);
+            }
+        }
+
+        Ok(())
+    }
+}
+
 pub fn task_id_generator() -> i64 {
     let mut id_generator_generator = SnowflakeIdGenerator::new(1, 1);
     let id = id_generator_generator.real_time_generate();
     id
 }
 
+pub fn gen_file_path(dir: &str, file_prefix: &str, file_subffix: &str) -> String {
+    let mut file_name = dir.to_string();
+    if dir.ends_with("/") {
+        file_name.push_str(file_prefix);
+        file_name.push_str(file_subffix);
+    } else {
+        file_name.push_str("/");
+        file_name.push_str(file_prefix);
+        file_name.push_str(file_subffix);
+    }
+    file_name
+}
+
+pub fn write_offset_log(file: &mut File, offset: usize) -> Result<()> {
+    file.write_all(&offset.to_be_bytes())?;
+    file.write_all("\n".as_bytes())?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use crate::{
         commons::{struct_to_json_string, struct_to_yaml_string},
+        osstask::TaskDefaultParameters,
         s3::OSSDescription,
     };
 
@@ -927,6 +1156,10 @@ mod test {
             local_path: "/tmp".to_string(),
             bach_size: 200,
             task_threads: 2,
+            max_errors: TaskDefaultParameters::max_errors_default(),
+            meta_dir: TaskDefaultParameters::meta_dir_default(),
+            target_exists_skip: TaskDefaultParameters::target_exists_skip_default(),
+            start_from_checkpoint: TaskDefaultParameters::start_from_checkpoint_default(),
         };
 
         let task = Task {
@@ -939,9 +1172,6 @@ mod test {
 
         let task_yml = struct_to_yaml_string(&task).unwrap();
         println!("yaml is {}", task_yml);
-
-        // let t = read_yaml_file::<Task>("task_example_yml/download_emun.yml").unwrap();
-        // println!("{:?}", t);
 
         let t_json = struct_to_json_string(&task).unwrap();
         println!("json {}", t_json);
