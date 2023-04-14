@@ -1,13 +1,12 @@
 use std::{
     fs::{self, OpenOptions},
     io::{LineWriter, Read, Seek, SeekFrom, Write},
-    num::ParseIntError,
     path::Path,
 };
 
 use anyhow::{anyhow, Ok, Result};
 use aws_sdk_s3::{
-    model::{multipart_upload, CompletedMultipartUpload, CompletedPart},
+    model::{CompletedMultipartUpload, CompletedPart},
     output::{CreateMultipartUploadOutput, GetObjectOutput},
     types::ByteStream,
     Client,
@@ -23,104 +22,6 @@ pub struct OssClient {
 }
 
 impl OssClient {
-    pub async fn list_objects(
-        &self,
-        bucket: String,
-        prefix: Option<String>,
-        max_keys: i32,
-        token: Option<String>,
-    ) -> Result<super::OssObjectsList> {
-        let mut obj_list = self
-            .client
-            .list_objects_v2()
-            .bucket(bucket)
-            .max_keys(max_keys);
-
-        if let Some(prefix_str) = prefix.clone() {
-            obj_list = obj_list.prefix(prefix_str);
-        }
-
-        if let Some(token_str) = token.clone() {
-            obj_list = obj_list.continuation_token(token_str);
-        }
-
-        let list = obj_list.send().await?;
-
-        let mut obj_list = None;
-
-        if let Some(l) = list.contents() {
-            let mut vec = vec![];
-            for item in l.iter() {
-                if let Some(str) = item.key() {
-                    vec.push(str.to_string());
-                };
-            }
-            if vec.len() > 0 {
-                obj_list = Some(vec);
-            }
-        };
-        let mut token = None;
-        if let Some(str) = list.next_continuation_token() {
-            token = Some(str.to_string());
-        };
-
-        let oss_list = OssObjectsList {
-            object_list: obj_list,
-            next_token: token,
-        };
-        Ok(oss_list)
-    }
-
-    pub async fn append_object_list_to_file(
-        &self,
-        bucket: String,
-        prefix: Option<String>,
-        batch: i32,
-        token: Option<String>,
-        file_path: String,
-    ) -> Result<Option<String>> {
-        let mut obj_list = self
-            .client
-            .list_objects_v2()
-            .bucket(bucket.clone())
-            .max_keys(batch);
-        if let Some(prefix_str) = prefix.clone() {
-            obj_list = obj_list.prefix(prefix_str);
-        }
-
-        if let Some(token_str) = token.clone() {
-            obj_list = obj_list.continuation_token(token_str);
-        }
-
-        let r = obj_list.send().await?;
-
-        //写入文件
-        let store_path = Path::new(file_path.as_str());
-        let path = std::path::Path::new(store_path);
-
-        if let Some(p) = path.parent() {
-            std::fs::create_dir_all(p)?;
-        };
-        let file_ref = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .append(true)
-            .open(file_path.clone())?;
-        let mut file = LineWriter::new(file_ref);
-        if let Some(objects) = r.contents() {
-            for item in objects.iter() {
-                let _ = file.write_all(item.key().unwrap().as_bytes());
-                let _ = file.write_all("\n".as_bytes());
-            }
-            file.flush()?;
-        }
-
-        return match r.next_continuation_token() {
-            Some(str) => Ok(Some(str.to_string())),
-            None => Ok(None),
-        };
-    }
-
     pub async fn append_all_object_list_to_file(
         &self,
         bucket: String,
@@ -133,9 +34,7 @@ impl OssClient {
             .await?;
         let mut token = resp.next_token;
 
-        let store_path = Path::new(file_path.as_str());
-        let path = std::path::Path::new(store_path);
-
+        let path = std::path::Path::new(file_path.as_str());
         if let Some(p) = path.parent() {
             std::fs::create_dir_all(p)?;
         };
@@ -170,6 +69,56 @@ impl OssClient {
         }
 
         Ok(())
+    }
+
+    pub async fn append_object_list_to_file(
+        &self,
+        bucket: String,
+        prefix: Option<String>,
+        batch: i32,
+        token: Option<String>,
+        file_path: String,
+    ) -> Result<Option<String>> {
+        let mut obj_list = self
+            .client
+            .list_objects_v2()
+            .bucket(bucket.clone())
+            .max_keys(batch);
+        if let Some(prefix_str) = prefix.clone() {
+            obj_list = obj_list.prefix(prefix_str);
+        }
+
+        if let Some(token_str) = token.clone() {
+            obj_list = obj_list.continuation_token(token_str);
+        }
+
+        let r = obj_list.send().await?;
+
+        //写入文件
+        let store_path = Path::new(file_path.as_str());
+        // let path = std::path::Path::new(store_path);
+
+        if let Some(p) = store_path.parent() {
+            std::fs::create_dir_all(p)?;
+        };
+        let file_ref = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .append(true)
+            .open(file_path.clone())?;
+        let mut file = LineWriter::new(file_ref);
+        if let Some(objects) = r.contents() {
+            for item in objects.iter() {
+                let _ = file.write_all(item.key().unwrap().as_bytes());
+                let _ = file.write_all("\n".as_bytes());
+            }
+            file.flush()?;
+        }
+
+        return match r.next_continuation_token() {
+            Some(str) => Ok(Some(str.to_string())),
+            None => Ok(None),
+        };
     }
 
     pub async fn download_object_to_local(
@@ -248,24 +197,6 @@ impl OssClient {
         Ok(())
     }
 
-    pub async fn upload_object_from_local(
-        &self,
-        bucket: &str,
-        key: &str,
-        file_path: &str,
-    ) -> Result<()> {
-        let body = ByteStream::from_path(Path::new(&file_path)).await?;
-        self.client
-            .put_object()
-            .bucket(bucket)
-            .key(key)
-            .body(body)
-            .send()
-            .await?;
-
-        Ok(())
-    }
-
     pub async fn get_object(&self, bucket: &str, key: &str) -> Result<GetObjectOutput> {
         let resp = self
             .client
@@ -277,7 +208,6 @@ impl OssClient {
         Ok(resp)
     }
 
-    //Todo 改造为直接使用ByteStream
     pub async fn get_object_bytes(&self, bucket: &str, key: &str) -> Result<ByteStream> {
         let resp = self
             .client
@@ -289,23 +219,69 @@ impl OssClient {
         Ok(resp.body)
     }
 
-    pub async fn upload_object_bytes(
-        &self,
-        bucket: &str,
-        key: &str,
-        content: ByteStream,
-    ) -> Result<()> {
-        self.client
-            .put_object()
+    pub async fn get_object_etag(&self, bucket: &str, key: &str) -> Result<Option<String>> {
+        let head = self
+            .client
+            .head_object()
             .bucket(bucket)
             .key(key)
-            .body(content)
             .send()
             .await?;
-        Ok(())
+        return match head.e_tag() {
+            Some(t) => Ok(Some(t.to_string())),
+            None => Ok(None),
+        };
     }
 
-    pub async fn multipart_upload_ByteStream(
+    pub async fn list_objects(
+        &self,
+        bucket: String,
+        prefix: Option<String>,
+        max_keys: i32,
+        token: Option<String>,
+    ) -> Result<super::OssObjectsList> {
+        let mut obj_list = self
+            .client
+            .list_objects_v2()
+            .bucket(bucket)
+            .max_keys(max_keys);
+
+        if let Some(prefix_str) = prefix.clone() {
+            obj_list = obj_list.prefix(prefix_str);
+        }
+
+        if let Some(token_str) = token.clone() {
+            obj_list = obj_list.continuation_token(token_str);
+        }
+
+        let list = obj_list.send().await?;
+
+        let mut obj_list = None;
+
+        if let Some(l) = list.contents() {
+            let mut vec = vec![];
+            for item in l.iter() {
+                if let Some(str) = item.key() {
+                    vec.push(str.to_string());
+                };
+            }
+            if vec.len() > 0 {
+                obj_list = Some(vec);
+            }
+        };
+        let mut token = None;
+        if let Some(str) = list.next_continuation_token() {
+            token = Some(str.to_string());
+        };
+
+        let oss_list = OssObjectsList {
+            object_list: obj_list,
+            next_token: token,
+        };
+        Ok(oss_list)
+    }
+
+    pub async fn multipart_upload_byte_stream(
         &self,
         bucket: &str,
         key: &str,
@@ -338,7 +314,7 @@ impl OssClient {
         // multipartes upload
         for i in 0..batch {
             let mut buffer = vec![0; chunk_size];
-            let buf_size = byte_stream_async_reader.read_exact(&mut buffer).await?;
+            let _ = byte_stream_async_reader.read_exact(&mut buffer).await?;
             let part_number: i32 = i.try_into()?;
 
             let upload_part_res = self
@@ -362,7 +338,7 @@ impl OssClient {
 
         if remainder > 0 {
             let mut buffer = vec![0; remainder];
-            let buf_size = byte_stream_async_reader.read_exact(&mut buffer).await?;
+            let _ = byte_stream_async_reader.read_exact(&mut buffer).await?;
             let part_number: i32 = batch.try_into()?;
             let upload_part_res = self
                 .client
@@ -382,6 +358,7 @@ impl OssClient {
 
             upload_parts.push(completer_part);
         }
+
         // 完成上传文件合并
         let completed_multipart_upload: CompletedMultipartUpload =
             CompletedMultipartUpload::builder()
@@ -411,10 +388,7 @@ impl OssClient {
     ) -> Result<()> {
         let mut file = fs::File::open(file_name)?;
         let file_meta = file.metadata()?;
-        let file_len = file_meta.len();
         let mut stream_counter: u64 = 0;
-        println!("{:?}", file_len);
-
         let mut part_number = 0;
 
         let mut upload_parts: Vec<CompletedPart> = Vec::new();
@@ -447,14 +421,14 @@ impl OssClient {
                 break;
             }
 
-            let mut stream = ByteStream::default();
-            if read_count != chuck_size {
-                let tmp = &buf[0..read_count];
-                let v = tmp.to_vec();
-                stream = ByteStream::from(v);
-            } else {
-                stream = ByteStream::from(buf);
-            }
+            let stream = match read_count != chuck_size {
+                true => {
+                    let tmp = &buf[0..read_count];
+                    let v = tmp.to_vec();
+                    ByteStream::from(v)
+                }
+                false => ByteStream::from(buf),
+            };
 
             let upload_part_res = self
                 .client
@@ -516,20 +490,6 @@ impl OssClient {
         Ok(exist)
     }
 
-    pub async fn get_object_etag(&self, bucket: &str, key: &str) -> Result<Option<String>> {
-        let head = self
-            .client
-            .head_object()
-            .bucket(bucket)
-            .key(key)
-            .send()
-            .await?;
-        return match head.e_tag() {
-            Some(t) => Ok(Some(t.to_string())),
-            None => Ok(None),
-        };
-    }
-
     pub async fn object_last_modified(&self, bucket: &str, key: &str) -> Result<Option<DateTime>> {
         let head = self
             .client
@@ -542,5 +502,39 @@ impl OssClient {
             Some(d) => Ok(Some(d.clone())),
             None => Ok(None),
         };
+    }
+
+    pub async fn upload_object_bytes(
+        &self,
+        bucket: &str,
+        key: &str,
+        content: ByteStream,
+    ) -> Result<()> {
+        self.client
+            .put_object()
+            .bucket(bucket)
+            .key(key)
+            .body(content)
+            .send()
+            .await?;
+        Ok(())
+    }
+
+    pub async fn upload_object_from_local(
+        &self,
+        bucket: &str,
+        key: &str,
+        file_path: &str,
+    ) -> Result<()> {
+        let body = ByteStream::from_path(Path::new(&file_path)).await?;
+        self.client
+            .put_object()
+            .bucket(bucket)
+            .key(key)
+            .body(body)
+            .send()
+            .await?;
+
+        Ok(())
     }
 }

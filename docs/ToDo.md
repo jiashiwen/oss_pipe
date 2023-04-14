@@ -2,7 +2,7 @@
 
 ## 技术验证
 
-- [ ] 验证tokio multy threads 在执行时是否阻塞
+- [x] 验证tokio multy threads 在执行时是否阻塞
 
 ## 基本功能
 
@@ -19,14 +19,31 @@
 - [ ] checkpoint 设计与实现 transfer
 - [ ] checkpoint 设计与实现 download
 - [ ] checkpoint 设计与实现 upload
-- [ ] 最大错误数机制，到达最大错误数，任务停止
+- [x] 最大错误数机制，到达最大错误数，任务停止
 - [ ] 错误数据持久化与解析，配合checkpoint实现断点续传
 - [ ] 实现获取object属性函数
+- [ ] 支持过期时间
+- [ ] 支持文件过期时间
 - [ ] 大文件支持https://docs.aws.amazon.com/sdk-for-rust/latest/dg/rust_s3_code_examples.html
+  - [x] 大文件分片上传
+  - [ ] 大文件分片下载
+- [ ] 多任务模式，统一描述文件支持多任务同事运行 
+- [ ] 增加local_to_local 任务，多线程复制目录文件
+  - [ ] 大文件文件流切分
+  - [ ] 大文件流写入
 
 ## 校验项
 
 - last_modify 时间戳，目标大于源
+
+## 错误处理及断点续传机制
+
+* 日志及执行offset记录
+  * 执行任务时每线程offset日志后写，记录完成的记录在文件中的offset，offset文件名为 文件名前缀+第一条记录的offset
+  * 某一记录执行出错时记录record及offset，当错误数达到某一阀值，停止任务
+* 断点续传机制
+  * 先根据错误记录日志做补偿同步，检查源端对象是否存在，若不存在则跳过
+  * 通过offset日志找到每个文件中的最大值，并所有文件的最大值取最小值，再与checkpoint中的offset比较取最小值，作为objectlist的起始offset。
 
 ## 增量实现
 
@@ -47,6 +64,7 @@
 
 - [ ] 如何获取object属性
 - [ ] 如何判断object是否存在
+- [ ] 文件追加和覆盖哪个效率更高待验证
 
 ## 测试验证
 

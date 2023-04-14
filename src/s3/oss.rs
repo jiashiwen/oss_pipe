@@ -10,6 +10,7 @@ use aws_credential_types::{provider::SharedCredentialsProvider, Credentials};
 
 use aws_sdk_s3::Region;
 use bytes::Bytes;
+use log::Level;
 use serde::{Deserialize, Serialize};
 
 #[async_trait]
@@ -236,7 +237,23 @@ impl OSSDescription {
                 Ok(oss_client)
             }
 
-            OssProvider::AWS => todo!(),
+            OssProvider::AWS => {
+                let shared_config = SdkConfig::builder()
+                    .credentials_provider(SharedCredentialsProvider::new(Credentials::new(
+                        self.access_key_id.clone(),
+                        self.secret_access_key.clone(),
+                        None,
+                        None,
+                        "Static",
+                    )))
+                    .endpoint_url(self.endpoint.clone())
+                    .region(Region::new(self.region.clone()))
+                    .build();
+                let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+                let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
+                let oss_client = OssClient { client };
+                Ok(oss_client)
+            }
         }
     }
 }
@@ -329,11 +346,10 @@ mod test {
         });
     }
 
-    //cargo test s3::oss::test::test_tokio_multi_thread -- --nocapture
-
     pub async fn sleep() {
         thread::sleep(Duration::from_secs(1));
     }
+    //cargo test s3::oss::test::test_tokio_multi_thread -- --nocapture
     #[test]
     fn test_tokio_multi_thread() {
         let max_task = 2;
@@ -343,8 +359,9 @@ mod test {
             .build()
             .unwrap();
         // let mut v_handle: Box<Vec<task::JoinHandle<()>>> = Box::new(vec![]);
-        let mut set = JoinSet::new();
+        // let mut set = JoinSet::new();
         rt.block_on(async {
+            let mut set = JoinSet::new();
             for i in 0..100 {
                 println!("run {}", i);
                 while set.len() >= max_task {

@@ -5,6 +5,7 @@ use anyhow::{anyhow, Result};
 use crate::configure::get_config;
 
 //检查配置目录是否存在，不存在则创建
+#[allow(dead_code)]
 pub fn check_local_desc_path() -> Result<()> {
     let cfg = get_config()?;
     let meta = fs::metadata(cfg.task_config.task_desc_local_path.clone());

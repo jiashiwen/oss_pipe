@@ -1,0 +1,136 @@
+use crate::{checkpoint::Record, commons::multi_parts_copy_file};
+use anyhow::Result;
+use std::io::Read;
+use std::{
+    fs::{self, OpenOptions},
+    io::Write,
+    path::Path,
+    sync::{atomic::AtomicUsize, Arc},
+};
+use walkdir::WalkDir;
+
+use super::{gen_file_path, write_offset_log, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
+
+#[derive(Debug, Clone)]
+pub struct LocalToLocal {
+    pub source_path: String,
+    pub target_path: String,
+    pub error_conter: Arc<AtomicUsize>,
+    pub meta_dir: String,
+    // pub filter: Option<String>,
+    pub target_exist_skip: bool,
+    pub large_file_size: usize,
+    pub multi_part_chunck: usize,
+}
+
+impl LocalToLocal {
+    pub async fn exec(&self, records: Vec<Record>) -> Result<()> {
+        let subffix = records[0].offset.to_string();
+        let offset_log_file_name = gen_file_path(&self.meta_dir, OFFSET_EXEC_PREFIX, &subffix);
+        let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
+
+        let mut offset_log_file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(offset_log_file_name.as_str())?;
+
+        let mut error_file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(error_file_name.as_str())?;
+
+        for record in records {
+            let s_file_name = gen_file_path(self.source_path.as_str(), &record.key.as_str(), "");
+            let t_file_name = gen_file_path(self.target_path.as_str(), record.key.as_str(), "");
+
+            // 判断源文件是否存在
+            let s_path = Path::new(s_file_name.as_str());
+            if !s_path.exists() {
+                let _ = write_offset_log(&mut offset_log_file, record.offset);
+                continue;
+            }
+
+            let t_path = Path::new(t_file_name.as_str());
+            if let Some(p) = t_path.parent() {
+                std::fs::create_dir_all(p)?;
+            };
+
+            let s_file = OpenOptions::new().read(true).open(s_file_name.as_str())?;
+
+            let mut t_file = OpenOptions::new()
+                .truncate(true)
+                .create(true)
+                .write(true)
+                .open(t_file_name.as_str())?;
+
+            // 目标object存在则不推送
+            if self.target_exist_skip {
+                if t_path.exists() {
+                    let _ = write_offset_log(&mut offset_log_file, record.offset);
+                    continue;
+                }
+            }
+
+            let s_file_len = match s_file.metadata() {
+                Ok(m) => m.len(),
+                Err(e) => {
+                    log::error!("{}", e);
+                    self.error_conter
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    let _ = record.save_json_to_file(&mut error_file);
+                    continue;
+                }
+            };
+
+            let len: usize = match s_file_len.try_into() {
+                Ok(l) => l,
+                Err(e) => {
+                    log::error!("{}", e);
+                    self.error_conter
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    let _ = record.save_json_to_file(&mut error_file);
+                    continue;
+                }
+            };
+
+            // 大文件走 multi part upload 分支
+            match match len > self.large_file_size {
+                true => multi_parts_copy_file(
+                    s_file_name.as_str(),
+                    t_file_name.as_str(),
+                    self.multi_part_chunck,
+                ),
+                false => {
+                    let data = fs::read(s_file_name.as_str())?;
+                    t_file.write_all(&data)?;
+                    t_file.flush()?;
+                    Ok(())
+                }
+            } {
+                Err(e) => {
+                    log::error!("{}", e);
+                    self.error_conter
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    let _ = record.save_json_to_file(&mut error_file);
+                }
+                _ => (),
+            };
+            let _ = write_offset_log(&mut offset_log_file, record.offset);
+        }
+        let _ = offset_log_file.flush();
+        let _ = error_file.flush();
+        match error_file.metadata() {
+            Ok(meta) => {
+                if meta.len() == 0 {
+                    let _ = fs::remove_file(error_file_name.as_str());
+                }
+            }
+            Err(_) => {}
+        };
+
+        let _ = fs::remove_file(offset_log_file_name.as_str());
+        Ok(())
+    }
+}
