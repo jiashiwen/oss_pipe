@@ -1,9 +1,10 @@
-use crate::{checkpoint::Record, exception::record_exception, s3::OSSDescription};
+use crate::{checkpoint::Record, exception::save_error_record, s3::OSSDescription};
 use anyhow::Result;
+use aws_sdk_s3::error::GetObjectErrorKind;
+use dashmap::DashMap;
 use std::{
     fs::{self, OpenOptions},
     io::Write,
-    path::Path,
     sync::{atomic::AtomicUsize, Arc},
 };
 
@@ -14,6 +15,7 @@ pub struct Transfer {
     pub source: OSSDescription,
     pub target: OSSDescription,
     pub error_conter: Arc<AtomicUsize>,
+    pub offset_map: Arc<DashMap<String, usize>>,
     pub meta_dir: String,
     pub prefix: Option<String>,
     // pub filter: Option<String>,
@@ -24,25 +26,13 @@ pub struct Transfer {
 
 impl Transfer {
     // todo
-    // 报错写error file ok
     // key filter 正则表达式支持
-    // 根据 target prefix 拼接新路径 ok
-    // 增加taget 目标存在则不推送参数 ok，
     pub async fn exec(&self, records: Vec<Record>) -> Result<()> {
         let subffix = records[0].offset.to_string();
-        let offset_log_file_name = gen_file_path(&self.meta_dir, OFFSET_EXEC_PREFIX, &subffix);
+        let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
+        offset_key.push_str(&subffix);
+
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
-
-        let path = Path::new(offset_log_file_name.as_str());
-        if let Some(p) = path.parent() {
-            std::fs::create_dir_all(p)?;
-        };
-
-        let mut offset_log_file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(offset_log_file_name.as_str())?;
 
         let mut error_file = OpenOptions::new()
             .create(true)
@@ -59,7 +49,18 @@ impl Transfer {
             {
                 core::result::Result::Ok(b) => b,
                 Err(e) => {
-                    record_exception(e, &self.error_conter, record, &mut error_file);
+                    log::error!("{}", e);
+                    // 源端文件不存在按传输成功处理
+                    match e.into_service_error().kind {
+                        GetObjectErrorKind::InvalidObjectState(_)
+                        | GetObjectErrorKind::Unhandled(_) => {
+                            save_error_record(&self.error_conter, record.clone(), &mut error_file);
+                        }
+                        GetObjectErrorKind::NoSuchKey(_) => {}
+                        _ => {}
+                    }
+
+                    self.offset_map.insert(offset_key.clone(), record.offset);
                     continue;
                 }
             };
@@ -86,6 +87,7 @@ impl Transfer {
                         self.error_conter
                             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         let _ = record.save_json_to_file(&mut error_file);
+                        self.offset_map.insert(offset_key.clone(), record.offset);
                     }
                 }
             }
@@ -97,6 +99,7 @@ impl Transfer {
                     self.error_conter
                         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     let _ = record.save_json_to_file(&mut error_file);
+                    self.offset_map.insert(offset_key.clone(), record.offset);
                     continue;
                 }
             };
@@ -126,12 +129,12 @@ impl Transfer {
                 self.error_conter
                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 let _ = record.save_json_to_file(&mut error_file);
+                self.offset_map.insert(offset_key.clone(), record.offset);
             };
 
-            let _ = offset_log_file.write_all(record.offset.to_string().as_bytes());
-            let _ = offset_log_file.write_all("\n".as_bytes());
+            self.offset_map.insert(offset_key.clone(), record.offset);
         }
-        let _ = offset_log_file.flush();
+        self.offset_map.remove(&offset_key);
         let _ = error_file.flush();
         match error_file.metadata() {
             Ok(meta) => {
@@ -142,7 +145,6 @@ impl Transfer {
             Err(_) => {}
         };
 
-        let _ = fs::remove_file(offset_log_file_name.as_str());
         Ok(())
     }
 }

@@ -197,7 +197,14 @@ impl OssClient {
         Ok(())
     }
 
-    pub async fn get_object(&self, bucket: &str, key: &str) -> Result<GetObjectOutput> {
+    pub async fn get_object(
+        &self,
+        bucket: &str,
+        key: &str,
+    ) -> std::result::Result<
+        aws_sdk_s3::output::GetObjectOutput,
+        aws_sdk_s3::types::SdkError<aws_sdk_s3::error::GetObjectError>,
+    > {
         let resp = self
             .client
             .get_object()
@@ -205,7 +212,7 @@ impl OssClient {
             .key(key.clone())
             .send()
             .await?;
-        Ok(resp)
+        std::result::Result::Ok(resp)
     }
 
     pub async fn get_object_bytes(&self, bucket: &str, key: &str) -> Result<ByteStream> {

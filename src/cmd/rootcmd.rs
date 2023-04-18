@@ -1,21 +1,22 @@
-use crate::cmd::gen_file_cmd::new_gen_file_cmd;
+use crate::cmd::gen_file_cmd::{new_gen_file_cmd, new_gen_files_cmd};
 use crate::cmd::osstaskcmd::new_osstask_cmd;
 use crate::cmd::{new_config_cmd, new_osscfg_cmd};
 use crate::commons::yamlutile::struct_to_yml_file;
-use crate::commons::{generate_file, read_yaml_file, SubCmd};
+use crate::commons::{generate_file, generate_files, read_yaml_file, SubCmd};
 use crate::commons::{struct_to_yaml_string, CommandCompleter};
 use crate::configure::{generate_default_config, set_config_file_path};
 use crate::configure::{get_config_file_path, get_current_config_yml, set_config};
 use crate::interact;
 use crate::osstask::{
-    task_id_generator, Task, TaskDefaultParameters, TaskDescription, TaskDownload,
-    TaskLocalToLocal, TaskTransfer, TaskUpLoad,
+    task_id_generator, Task, TaskDescription, TaskDownload, TaskLocalToLocal, TaskTransfer,
+    TaskUpLoad,
 };
 use crate::s3::oss::OSSDescription;
 use crate::s3::oss::OssProvider;
 use clap::{Arg, ArgMatches};
 use clap::{ArgAction, Command as Clap_Command};
 use lazy_static::lazy_static;
+use rayon::string;
 use std::borrow::Borrow;
 
 pub const APP_NAME: &'static str = "oss_pipe";
@@ -42,7 +43,8 @@ lazy_static! {
         .subcommand(new_osstask_cmd())
         .subcommand(new_config_cmd())
         .subcommand(new_osscfg_cmd())
-        .subcommand(new_gen_file_cmd());
+        .subcommand(new_gen_file_cmd())
+        .subcommand(new_gen_files_cmd());
     static ref SUBCMDS: Vec<SubCmd> = subcommands();
 }
 
@@ -108,85 +110,6 @@ fn cmd_match(matches: &ArgMatches) {
         return;
     }
 
-    // if let Some(ref matches) = matches.subcommand_matches("start") {
-    //     if matches.get_flag("daemon") {
-    //         let args: Vec<String> = env::args().collect();
-    //         if let Ok(Fork::Child) = daemon(true, true) {
-    //             // Start child thread
-    //             let mut cmd = Command::new(&args[0]);
-    //             for idx in 1..args.len() {
-    //                 let arg = args.get(idx).expect("get cmd arg error!");
-    //                 // remove start as daemon variable
-    //                 // 去除后台启动参数,避免重复启动
-    //                 if arg.eq("-d") || arg.eq("-daemon") {
-    //                     continue;
-    //                 }
-    //                 cmd.arg(arg);
-    //             }
-
-    //             let child = cmd.spawn().expect("Child process failed to start.");
-    //             fs::write("pid", child.id().to_string()).expect("Write pid file error!");
-    //         }
-    //         println!("{}", "daemon mod");
-    //         std::process::exit(0);
-    //     }
-
-    //     println!("current pid is:{}", std::process::id());
-
-    //     //校验本地任务目录是否存在，没有就创建
-    //     check_local_desc_path().unwrap();
-
-    //     // check config
-    //     let cfg = get_config().unwrap();
-    //     let task_ping_handle = thread::spawn(move || {
-    //         let c = cfg.clone();
-
-    //         let rt = runtime::Builder::new_multi_thread()
-    //             .worker_threads(c.threads)
-    //             .enable_io()
-    //             .enable_time()
-    //             .build()
-    //             .unwrap();
-
-    //         rt.block_on(async {});
-    //     });
-    //     let cfg = get_config().unwrap();
-    //     let task_curl_handle = thread::spawn(move || {
-    //         let c = cfg.clone();
-    //         let rt = runtime::Builder::new_multi_thread()
-    //             .worker_threads(c.threads)
-    //             .enable_io()
-    //             .enable_time()
-    //             .build()
-    //             .unwrap();
-    //         rt.block_on(async {});
-    //     });
-    //     task_ping_handle.join().unwrap();
-    //     task_curl_handle.join().unwrap();
-    // }
-
-    // if let Some(ref _matches) = matches.subcommand_matches("stop") {
-    //     println!("server stopping...");
-    //     // let sys = System::new_with_specifics(RefreshKind::with_processes(Default::default()));
-    //     let r = RefreshKind::new();
-    //     let r = r.with_processes(ProcessRefreshKind::everything());
-    //     let sys = System::new_with_specifics(r);
-
-    //     let pidstr = String::from_utf8(fs::read("pid").unwrap()).unwrap();
-    //     let pid = Pid::from_str(pidstr.as_str()).unwrap();
-
-    //     if let Some(p) = sys.process(pid) {
-    //         println!("terminal process: {:?}", p.pid());
-    //     } else {
-    //         println!("Server not run!");
-    //         return;
-    //     };
-    //     Command::new("kill")
-    //         .args(["-15", pidstr.as_str()])
-    //         .output()
-    //         .expect("failed to execute process");
-    // }
-
     if let Some(config) = matches.subcommand_matches("config") {
         if let Some(_show) = config.subcommand_matches("show") {
             let yml = get_current_config_yml();
@@ -236,26 +159,6 @@ fn cmd_match(matches: &ArgMatches) {
                 }
             }
             println!("{:?}", now.elapsed());
-
-            // let rt = tokio::runtime::Runtime::new().unwrap();
-            // let async_req = async {
-            //     match upload {
-            //         Ok(t) => {
-            //             log::info!("execute task: {:?}", t.task_id);
-            //             let r = t.task_desc.exec().await;
-            //             match r {
-            //                 Ok(_) => log::info!("task {} execute ok!", t.task_id),
-            //                 Err(e) => {
-            //                     log::error!("{}", e);
-            //                 }
-            //             }
-            //         }
-            //         Err(e) => {
-            //             log::error!("{}", e);
-            //         }
-            //     }
-            // };
-            // rt.block_on(async_req);
         }
 
         if let Some(transfer) = osstask.subcommand_matches("transfer") {
@@ -459,6 +362,38 @@ fn cmd_match(matches: &ArgMatches) {
         };
 
         if let Err(e) = generate_file(file_size, batch, file) {
+            log::error!("{}", e);
+        };
+    }
+
+    if let Some(gen_file) = matches.subcommand_matches("gen_files") {
+        let dir = match gen_file.get_one::<String>("dir") {
+            Some(s) => s,
+            None => {
+                return;
+            }
+        };
+        let file_prefix_len: usize = match gen_file.get_one("file_prefix_len") {
+            Some(s) => *s,
+            None => {
+                return;
+            }
+        };
+        let file_size: usize = match gen_file.get_one("file_size") {
+            Some(s) => *s,
+            None => {
+                return;
+            }
+        };
+
+        let file_quantity: usize = match gen_file.get_one("file_quantity") {
+            Some(s) => *s,
+            None => {
+                return;
+            }
+        };
+
+        if let Err(e) = generate_files(dir.as_str(), file_prefix_len, file_size, file_quantity) {
             log::error!("{}", e);
         };
     }

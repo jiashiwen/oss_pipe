@@ -1,21 +1,21 @@
 use crate::{checkpoint::Record, commons::multi_parts_copy_file};
 use anyhow::Result;
-use std::io::Read;
+use dashmap::DashMap;
 use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::Path,
     sync::{atomic::AtomicUsize, Arc},
 };
-use walkdir::WalkDir;
 
-use super::{gen_file_path, write_offset_log, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
+use super::{gen_file_path, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
 
 #[derive(Debug, Clone)]
 pub struct LocalToLocal {
     pub source_path: String,
     pub target_path: String,
     pub error_conter: Arc<AtomicUsize>,
+    pub offset_map: Arc<DashMap<String, usize>>,
     pub meta_dir: String,
     // pub filter: Option<String>,
     pub target_exist_skip: bool,
@@ -26,14 +26,9 @@ pub struct LocalToLocal {
 impl LocalToLocal {
     pub async fn exec(&self, records: Vec<Record>) -> Result<()> {
         let subffix = records[0].offset.to_string();
-        let offset_log_file_name = gen_file_path(&self.meta_dir, OFFSET_EXEC_PREFIX, &subffix);
+        let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
+        offset_key.push_str(&subffix);
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
-
-        let mut offset_log_file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(offset_log_file_name.as_str())?;
 
         let mut error_file = OpenOptions::new()
             .create(true)
@@ -48,7 +43,7 @@ impl LocalToLocal {
             // 判断源文件是否存在
             let s_path = Path::new(s_file_name.as_str());
             if !s_path.exists() {
-                let _ = write_offset_log(&mut offset_log_file, record.offset);
+                self.offset_map.insert(offset_key.clone(), record.offset);
                 continue;
             }
 
@@ -68,7 +63,7 @@ impl LocalToLocal {
             // 目标object存在则不推送
             if self.target_exist_skip {
                 if t_path.exists() {
-                    let _ = write_offset_log(&mut offset_log_file, record.offset);
+                    self.offset_map.insert(offset_key.clone(), record.offset);
                     continue;
                 }
             }
@@ -117,9 +112,10 @@ impl LocalToLocal {
                 }
                 _ => (),
             };
-            let _ = write_offset_log(&mut offset_log_file, record.offset);
+
+            self.offset_map.insert(offset_key.clone(), record.offset);
         }
-        let _ = offset_log_file.flush();
+
         let _ = error_file.flush();
         match error_file.metadata() {
             Ok(meta) => {
@@ -129,8 +125,9 @@ impl LocalToLocal {
             }
             Err(_) => {}
         };
+        self.offset_map.remove(&offset_key);
+        let _ = fs::remove_file(offset_key.as_str());
 
-        let _ = fs::remove_file(offset_log_file_name.as_str());
         Ok(())
     }
 }
