@@ -33,6 +33,8 @@ time = "0.3.20"
 rand = "0.8.5"
 rust-crypto = "0.2.36"
 num_cpus = "1.15.0"
+dashmap = "5.4.0"
+
 
 
 # env_logger = "0.9.0"
@@ -49,6 +51,7 @@ aws-types = { git = "https://github.com/awslabs/aws-sdk-rust", branch = "main", 
 aws-credential-types = { git = "https://github.com/awslabs/aws-sdk-rust", branch = "main" }
 # aws-smithy-types = "0.55.0"
 aws-smithy-types = { git = "https://github.com/awslabs/aws-sdk-rust", branch = "main" }
+# aws_smithy_http = { git = "https://github.com/awslabs/aws-sdk-rust", branch = "main" }
 
 # aliyun oss
 # oss-rust-sdk = "0.7.1"
@@ -73,11 +76,8 @@ name = "read_bytes"
 path = "examples/read_bytes.rs"
 
 [[example]]
-name = "file_test"
-path = "examples/file_test.rs"
-
-
-
+name = "dashmap"
+path = "examples/dashmap_sample.rs"
 
 [profile.release]
 lto = true

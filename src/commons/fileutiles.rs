@@ -152,6 +152,61 @@ pub fn generate_line_file(line_base_size: usize, lines: usize, file_name: &str) 
     Ok(())
 }
 
+pub fn generate_files(
+    dir: &str,
+    file_prefix_len: usize,
+    file_size: usize,
+    file_quantity: usize,
+) -> Result<()> {
+    let dir_path = Path::new(dir);
+    if !dir_path.exists() {
+        std::fs::create_dir_all(dir_path)?;
+    };
+    let file_prefix = rand_string(file_prefix_len);
+    let batch = file_size / 10485760;
+    let remainder = file_size % 10485760;
+    let mut content = "".to_string();
+    if batch > 0 {
+        let batch_content = rand_string(10485760);
+        for _ in 0..batch {
+            content.push_str(&batch_content);
+        }
+    }
+
+    if remainder > 0 {
+        let remainder_content = rand_string(remainder);
+        content.push_str(&remainder_content);
+    }
+
+    for _ in 0..file_quantity {
+        let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos();
+        let mut file_name = file_prefix.clone();
+        file_name.push_str(now.to_string().as_str());
+
+        let file_path = match dir.ends_with("/") {
+            true => {
+                let mut folder = dir.to_string();
+                folder.push_str(file_name.as_str());
+                folder
+            }
+            false => {
+                let mut folder = dir.to_string();
+                folder.push_str("/");
+                folder.push_str(file_name.as_str());
+                folder
+            }
+        };
+
+        let mut file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(file_path)?;
+        let _ = file.write_all(content.as_bytes());
+        let _ = file.flush();
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use crate::commons::{
