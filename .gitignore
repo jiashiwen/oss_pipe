@@ -1,5 +1,4 @@
 /target
-osscfg*
 .history
 /logs/*
 /task_example_yml   
