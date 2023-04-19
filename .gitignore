@@ -3,3 +3,7 @@
 /logs/*
 /task_example_yml   
 /examples
+osscfg_default.yml
+osscfg.yml
+config.yml
+
