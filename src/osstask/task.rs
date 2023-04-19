@@ -25,7 +25,6 @@ use snowflake::SnowflakeIdGenerator;
 use tokio::{
     runtime,
     task::{self, JoinSet},
-    time::MissedTickBehavior,
 };
 use walkdir::WalkDir;
 
@@ -684,7 +683,7 @@ impl TaskUpLoad {
         }
 
         let mut set: JoinSet<()> = JoinSet::new();
-        let mut file = File::open(object_list_file.as_str())?;
+        let file = File::open(object_list_file.as_str())?;
 
         rt.block_on(async {
             let mut file_position = 0;
