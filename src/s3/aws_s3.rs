@@ -1,5 +1,5 @@
 use std::{
-    fs::{self, OpenOptions},
+    fs::{self, File, OpenOptions},
     io::{LineWriter, Read, Seek, SeekFrom, Write},
     path::Path,
 };
@@ -390,12 +390,11 @@ impl OssClient {
         &self,
         bucket: &str,
         key: &str,
-        file_name: &str,
+        file: &mut File,
         chuck_size: usize,
     ) -> Result<()> {
-        let mut file = fs::File::open(file_name)?;
-        let file_meta = file.metadata()?;
-        let mut stream_counter: u64 = 0;
+        // let mut file = fs::File::open(file_name)?;
+        // let mut stream_counter: u64 = 0;
         let mut part_number = 0;
 
         let mut upload_parts: Vec<CompletedPart> = Vec::new();
@@ -418,24 +417,18 @@ impl OssClient {
         //分段上传文件并记录completer_part
         loop {
             let mut buf = vec![0; chuck_size];
-            file.seek(SeekFrom::Start(stream_counter))?;
+            // file.seek(SeekFrom::Start(stream_counter))?;
             let read_count = file.read(&mut buf)?;
-            let len: u64 = read_count.try_into()?;
-            stream_counter += len;
+            // let len: u64 = read_count.try_into()?;
+            // stream_counter += len;
             part_number += 1;
 
             if read_count == 0 {
                 break;
             }
 
-            let stream = match read_count != chuck_size {
-                true => {
-                    let tmp = &buf[0..read_count];
-                    let v = tmp.to_vec();
-                    ByteStream::from(v)
-                }
-                false => ByteStream::from(buf),
-            };
+            let body = &buf[..read_count];
+            let stream = ByteStream::from(body.to_vec());
 
             let upload_part_res = self
                 .client

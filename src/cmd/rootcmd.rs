@@ -161,99 +161,84 @@ fn cmd_match(matches: &ArgMatches) {
             println!("{:?}", now.elapsed());
         }
 
-        if let Some(transfer) = osstask.subcommand_matches("transfer") {
-            if let Some(f) = transfer.get_one::<String>("filepath") {
-                let task = match read_yaml_file::<Task>(f) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        log::error!("{:?}", e);
-                        return;
-                    }
-                };
-                let r = task.task_desc.exec_multi_threads();
-                match r {
-                    Ok(_) => {
-                        log::info!("transfer task {} execute ok!", task.task_id)
-                    }
-                    Err(e) => {
-                        log::error!("{}", e);
-                    }
-                }
-            }
-        }
+        // if let Some(transfer) = osstask.subcommand_matches("transfer") {
+        //     if let Some(f) = transfer.get_one::<String>("filepath") {
+        //         let task = match read_yaml_file::<Task>(f) {
+        //             Ok(t) => t,
+        //             Err(e) => {
+        //                 log::error!("{:?}", e);
+        //                 return;
+        //             }
+        //         };
+        //         let r = task.task_desc.exec_multi_threads();
+        //         match r {
+        //             Ok(_) => {
+        //                 log::info!("transfer task {} execute ok!", task.task_id)
+        //             }
+        //             Err(e) => {
+        //                 log::error!("{}", e);
+        //             }
+        //         }
+        //     }
+        // }
 
-        if let Some(download) = osstask.subcommand_matches("download") {
-            if let Some(f) = download.get_one::<String>("filepath") {
-                let task = read_yaml_file::<Task>(f);
+        // if let Some(download) = osstask.subcommand_matches("download") {
+        //     if let Some(f) = download.get_one::<String>("filepath") {
+        //         let task = read_yaml_file::<Task>(f);
 
-                match task {
-                    Ok(t) => {
-                        log::info!("execute download task {:?} begin", t.task_id.clone());
-                        let r = t.task_desc.exec_multi_threads();
-                        match r {
-                            Ok(_) => log::info!("download task {} execute ok!", t.task_id),
-                            Err(e) => {
-                                log::error!("{}", e);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("{}", e);
-                    }
-                }
-            }
-        }
+        //         match task {
+        //             Ok(t) => {
+        //                 log::info!("execute download task {:?} begin", t.task_id.clone());
+        //                 let r = t.task_desc.exec_multi_threads();
+        //                 match r {
+        //                     Ok(_) => log::info!("download task {} execute ok!", t.task_id),
+        //                     Err(e) => {
+        //                         log::error!("{}", e);
+        //                     }
+        //                 }
+        //             }
+        //             Err(e) => {
+        //                 log::error!("{}", e);
+        //             }
+        //         }
+        //     }
+        // }
 
-        if let Some(download) = osstask.subcommand_matches("download_multithread") {
-            if let Some(f) = download.get_one::<String>("filepath") {
-                let download = read_yaml_file::<TaskDownload>(f);
-                match download {
-                    Ok(d) => {
-                        let r = d.execute_multi_thread();
-                        println!("{:?}", r);
-                    }
-                    Err(e) => {
-                        log::error!("{}", e);
-                    }
-                }
-            }
-        }
+        // if let Some(download) = osstask.subcommand_matches("download_multithread") {
+        //     if let Some(f) = download.get_one::<String>("filepath") {
+        //         let download = read_yaml_file::<TaskDownload>(f);
+        //         match download {
+        //             Ok(d) => {
+        //                 let r = d.execute_multi_thread();
+        //                 println!("{:?}", r);
+        //             }
+        //             Err(e) => {
+        //                 log::error!("{}", e);
+        //             }
+        //         }
+        //     }
+        // }
 
-        if let Some(download) = osstask.subcommand_matches("download_tokio") {
-            if let Some(f) = download.get_one::<String>("filepath") {
-                let download = read_yaml_file::<TaskDownload>(f);
-                match download {
-                    Ok(d) => {
-                        let r = d.execute_tokio();
-                        println!("{:?}", r);
-                    }
-                    Err(e) => {
-                        log::error!("{}", e);
-                    }
-                }
-            }
-        }
-
-        if let Some(upload) = osstask.subcommand_matches("upload") {
-            if let Some(f) = upload.get_one::<String>("filepath") {
-                let upload = read_yaml_file::<Task>(f);
-                match upload {
-                    Ok(t) => {
-                        log::info!("execute upload task: {:?}", t.task_id);
-                        let r = t.task_desc.exec_multi_threads();
-                        match r {
-                            Ok(_) => log::info!("upload task {} execute ok!", t.task_id),
-                            Err(e) => {
-                                log::error!("{}", e);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("{}", e);
-                    }
-                }
-            }
-        }
+        // if let Some(upload) = osstask.subcommand_matches("upload") {
+        //     if let Some(f) = upload.get_one::<String>("filepath") {
+        //         let upload = read_yaml_file::<Task>(f);
+        //         match upload {
+        //             Ok(t) => {
+        //                 log::info!("execute upload task: {:?}", t.task_id);
+        //                 let r = t.task_desc.exec_multi_threads();
+        //                 match r {
+        //                     Ok(_) => log::info!("upload task {} execute ok!", t.task_id),
+        //                     Err(e) => {
+        //                         log::error!("{}", e);
+        //                     }
+        //                 }
+        //             }
+        //             Err(e) => {
+        //                 log::error!("{}", e);
+        //             }
+        //         }
+        //     }
+        // }
 
         if let Some(template) = osstask.subcommand_matches("template") {
             let task_id = task_id_generator();
