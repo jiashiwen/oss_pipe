@@ -9,14 +9,14 @@ use crate::configure::{get_config_file_path, get_current_config_yml, set_config}
 use crate::interact;
 use crate::osstask::{
     task_id_generator, Task, TaskDescription, TaskDownload, TaskLocalToLocal, TaskTransfer,
-    TaskUpLoad,
+    TaskTruncateBucket, TaskUpLoad,
 };
 use crate::s3::oss::OSSDescription;
 use crate::s3::oss::OssProvider;
 use clap::{Arg, ArgMatches};
 use clap::{ArgAction, Command as Clap_Command};
 use lazy_static::lazy_static;
-use rayon::string;
+
 use std::borrow::Borrow;
 
 pub const APP_NAME: &'static str = "oss_pipe";
@@ -161,85 +161,6 @@ fn cmd_match(matches: &ArgMatches) {
             println!("{:?}", now.elapsed());
         }
 
-        // if let Some(transfer) = osstask.subcommand_matches("transfer") {
-        //     if let Some(f) = transfer.get_one::<String>("filepath") {
-        //         let task = match read_yaml_file::<Task>(f) {
-        //             Ok(t) => t,
-        //             Err(e) => {
-        //                 log::error!("{:?}", e);
-        //                 return;
-        //             }
-        //         };
-        //         let r = task.task_desc.exec_multi_threads();
-        //         match r {
-        //             Ok(_) => {
-        //                 log::info!("transfer task {} execute ok!", task.task_id)
-        //             }
-        //             Err(e) => {
-        //                 log::error!("{}", e);
-        //             }
-        //         }
-        //     }
-        // }
-
-        // if let Some(download) = osstask.subcommand_matches("download") {
-        //     if let Some(f) = download.get_one::<String>("filepath") {
-        //         let task = read_yaml_file::<Task>(f);
-
-        //         match task {
-        //             Ok(t) => {
-        //                 log::info!("execute download task {:?} begin", t.task_id.clone());
-        //                 let r = t.task_desc.exec_multi_threads();
-        //                 match r {
-        //                     Ok(_) => log::info!("download task {} execute ok!", t.task_id),
-        //                     Err(e) => {
-        //                         log::error!("{}", e);
-        //                     }
-        //                 }
-        //             }
-        //             Err(e) => {
-        //                 log::error!("{}", e);
-        //             }
-        //         }
-        //     }
-        // }
-
-        // if let Some(download) = osstask.subcommand_matches("download_multithread") {
-        //     if let Some(f) = download.get_one::<String>("filepath") {
-        //         let download = read_yaml_file::<TaskDownload>(f);
-        //         match download {
-        //             Ok(d) => {
-        //                 let r = d.execute_multi_thread();
-        //                 println!("{:?}", r);
-        //             }
-        //             Err(e) => {
-        //                 log::error!("{}", e);
-        //             }
-        //         }
-        //     }
-        // }
-
-        // if let Some(upload) = osstask.subcommand_matches("upload") {
-        //     if let Some(f) = upload.get_one::<String>("filepath") {
-        //         let upload = read_yaml_file::<Task>(f);
-        //         match upload {
-        //             Ok(t) => {
-        //                 log::info!("execute upload task: {:?}", t.task_id);
-        //                 let r = t.task_desc.exec_multi_threads();
-        //                 match r {
-        //                     Ok(_) => log::info!("upload task {} execute ok!", t.task_id),
-        //                     Err(e) => {
-        //                         log::error!("{}", e);
-        //                     }
-        //                 }
-        //             }
-        //             Err(e) => {
-        //                 log::error!("{}", e);
-        //             }
-        //         }
-        //     }
-        // }
-
         if let Some(template) = osstask.subcommand_matches("template") {
             let task_id = task_id_generator();
             if let Some(_) = template.subcommand_matches("download") {
@@ -293,6 +214,20 @@ fn cmd_match(matches: &ArgMatches) {
                     task_id: task_id.to_string(),
                     name: "local to local task".to_string(),
                     task_desc: TaskDescription::LocalToLocal(task_localtolocal),
+                };
+                let yml = struct_to_yaml_string(&task);
+                match yml {
+                    Ok(str) => println!("{}", str),
+                    Err(e) => eprintln!("{}", e.to_string()),
+                }
+            }
+
+            if let Some(_) = template.subcommand_matches("truncate_bucket") {
+                let task_truncate_table = TaskTruncateBucket::default();
+                let task = Task {
+                    task_id: task_id.to_string(),
+                    name: "truncate bucket task".to_string(),
+                    task_desc: TaskDescription::TruncateBucket(task_truncate_table),
                 };
                 let yml = struct_to_yaml_string(&task);
                 match yml {

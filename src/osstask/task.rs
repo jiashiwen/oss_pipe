@@ -43,6 +43,7 @@ pub enum TaskType {
     Upload,
     Transfer,
     LocalToLocal,
+    TruncateBucket,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -51,6 +52,7 @@ pub enum TaskDescription {
     Upload(TaskUpLoad),
     Transfer(TaskTransfer),
     LocalToLocal(TaskLocalToLocal),
+    TruncateBucket(TaskTruncateBucket),
 }
 
 // ToDo
@@ -62,6 +64,7 @@ impl TaskDescription {
             TaskDescription::Upload(u) => u.exec_multi_threads(),
             TaskDescription::Transfer(t) => t.exec_multi_threads(),
             TaskDescription::LocalToLocal(l) => l.exec_multi_threads(),
+            TaskDescription::TruncateBucket(truncate) => truncate.exec_multi_threads(),
         }
     }
 }
@@ -1064,6 +1067,103 @@ impl TaskLocalToLocal {
                 let _ = fs::remove_file(p);
             }
         }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TaskTruncateBucket {
+    pub oss: OSSDescription,
+    #[serde(default = "TaskDefaultParameters::batch_size_default")]
+    pub bach_size: i32,
+    #[serde(default = "TaskDefaultParameters::task_threads_default")]
+    pub task_threads: usize,
+    #[serde(default = "TaskDefaultParameters::max_errors_default")]
+    pub max_errors: usize,
+    #[serde(default = "TaskDefaultParameters::meta_dir_default")]
+    pub meta_dir: String,
+}
+
+impl Default for TaskTruncateBucket {
+    fn default() -> Self {
+        Self {
+            bach_size: TaskDefaultParameters::batch_size_default(),
+            task_threads: TaskDefaultParameters::task_threads_default(),
+            max_errors: TaskDefaultParameters::max_errors_default(),
+            meta_dir: TaskDefaultParameters::meta_dir_default(),
+            oss: OSSDescription::default(),
+        }
+    }
+}
+impl TaskTruncateBucket {
+    pub fn exec_multi_threads(&self) -> Result<()> {
+        // 遍历bucket
+        let error_times = Arc::new(AtomicUsize::new(0));
+        let mut set: JoinSet<()> = JoinSet::new();
+
+        let rt = runtime::Builder::new_multi_thread()
+            .worker_threads(self.task_threads)
+            .enable_all()
+            .build()?;
+        rt.block_on(async {
+            let client = match self.oss.gen_oss_client() {
+                Ok(c) => c,
+                Err(e) => {
+                    log::error!("{}", e);
+                    return;
+                }
+            };
+            let mut token = None;
+            // ToDo
+            let list = client
+                .list_objects(
+                    self.oss.bucket.clone(),
+                    self.oss.prefix.clone(),
+                    self.bach_size,
+                    None,
+                )
+                .await;
+            match list {
+                Ok(l) => {
+                    if let Some(v) = l.object_list {
+                        for key in v {
+                            let _ = client.remove_object(&self.oss.bucket, key.as_str()).await;
+                        }
+                    }
+                    token = l.next_token
+                }
+                Err(e) => {
+                    log::error!("{}", e);
+                    return;
+                }
+            }
+
+            while token.is_some() {
+                let list = client
+                    .list_objects(
+                        self.oss.bucket.clone(),
+                        self.oss.prefix.clone(),
+                        self.bach_size,
+                        token.clone(),
+                    )
+                    .await;
+                match list {
+                    Ok(l) => {
+                        if let Some(v) = l.object_list {
+                            for key in v {
+                                let _ = client.remove_object(&self.oss.bucket, key.as_str()).await;
+                            }
+                        }
+                        token = l.next_token
+                    }
+                    Err(e) => {
+                        log::error!("{}", e);
+                        return;
+                    }
+                }
+            }
+        });
 
         Ok(())
     }
