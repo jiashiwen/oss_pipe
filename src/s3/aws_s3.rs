@@ -215,6 +215,24 @@ impl OssClient {
         std::result::Result::Ok(resp)
     }
 
+    pub async fn remove_object(
+        &self,
+        bucket: &str,
+        key: &str,
+    ) -> std::result::Result<
+        aws_sdk_s3::output::DeleteObjectOutput,
+        aws_sdk_s3::types::SdkError<aws_sdk_s3::error::DeleteObjectError>,
+    > {
+        let resp = self
+            .client
+            .delete_object()
+            .bucket(bucket)
+            .key(key.clone())
+            .send()
+            .await?;
+        std::result::Result::Ok(resp)
+    }
+
     pub async fn get_object_bytes(&self, bucket: &str, key: &str) -> Result<ByteStream> {
         let resp = self
             .client

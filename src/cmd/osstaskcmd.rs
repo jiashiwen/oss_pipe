@@ -3,56 +3,13 @@ use clap::{Arg, Command};
 pub fn new_osstask_cmd() -> Command {
     clap::Command::new("osstask")
         .about("osstask")
-        // .subcommand(osstask_transfer())
-        // .subcommand(osstask_download())
-        // .subcommand(osstask_download_multithread())
-        // .subcommand(osstask_upload())
+        // .subcommand(osstask_truncatebucket())
         .subcommand(osstask_template())
         .args(&[Arg::new("filepath")
             .value_name("filepath")
             .required(false)
             .index(1)
             .help("transfer task description file")])
-}
-
-fn osstask_transfer() -> Command {
-    clap::Command::new("transfer")
-        .about("execute transfer task")
-        .args(&[Arg::new("filepath")
-            .value_name("filepath")
-            .required(true)
-            .index(1)
-            .help("transfer task description file")])
-}
-
-fn osstask_download() -> Command {
-    clap::Command::new("download")
-        .about("execute download task")
-        .args(&[Arg::new("filepath")
-            .value_name("filepath")
-            .required(true)
-            .index(1)
-            .help("download task description file")])
-}
-
-fn osstask_download_multithread() -> Command {
-    clap::Command::new("download_multithread")
-        .about("execute download multithread task")
-        .args(&[Arg::new("filepath")
-            .value_name("filepath")
-            .required(true)
-            .index(1)
-            .help("download task description file")])
-}
-
-fn osstask_upload() -> Command {
-    clap::Command::new("upload")
-        .about("execute upload task")
-        .args(&[Arg::new("filepath")
-            .value_name("filepath")
-            .required(true)
-            .index(1)
-            .help("download task description file")])
 }
 
 fn osstask_template() -> Command {
@@ -62,6 +19,7 @@ fn osstask_template() -> Command {
         .subcommand(osstask_template_transfer())
         .subcommand(osstask_template_upload())
         .subcommand(osstask_local_to_local())
+        .subcommand(osstask_truncate_bucket())
 }
 
 fn osstask_template_download() -> Command {
@@ -75,7 +33,13 @@ fn osstask_template_transfer() -> Command {
 fn osstask_template_upload() -> Command {
     clap::Command::new("upload").about("generate oss task description template for upload task")
 }
+
 fn osstask_local_to_local() -> Command {
     clap::Command::new("localtolocal")
+        .about("generate oss task description template for local to local task")
+}
+
+fn osstask_truncate_bucket() -> Command {
+    clap::Command::new("truncate_bucket")
         .about("generate oss task description template for local to local task")
 }
