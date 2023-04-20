@@ -1,3 +1,4 @@
+use core::num;
 use std::{
     fs::{self, File},
     io::{self, BufRead, Seek, SeekFrom},
@@ -1103,7 +1104,8 @@ impl TaskTruncateBucket {
         let mut set: JoinSet<()> = JoinSet::new();
 
         let rt = runtime::Builder::new_multi_thread()
-            .worker_threads(self.task_threads)
+            // .worker_threads(self.task_threads)
+            .worker_threads(num_cpus::get())
             .enable_all()
             .build()?;
         rt.block_on(async {
@@ -1126,10 +1128,12 @@ impl TaskTruncateBucket {
                 .await;
             match list {
                 Ok(l) => {
-                    if let Some(v) = l.object_list {
-                        for key in v {
-                            let _ = client.remove_object(&self.oss.bucket, key.as_str()).await;
-                        }
+                    if let Some(keys) = l.object_list {
+                        let c = client.clone();
+                        let bucket = self.oss.bucket.clone();
+                        set.spawn(async move {
+                            let _ = c.remove_objects(&bucket, keys).await;
+                        });
                     }
                     token = l.next_token
                 }
@@ -1140,6 +1144,9 @@ impl TaskTruncateBucket {
             }
 
             while token.is_some() {
+                while set.len() >= self.task_threads {
+                    set.join_next().await;
+                }
                 let list = client
                     .list_objects(
                         self.oss.bucket.clone(),
@@ -1150,10 +1157,12 @@ impl TaskTruncateBucket {
                     .await;
                 match list {
                     Ok(l) => {
-                        if let Some(v) = l.object_list {
-                            for key in v {
-                                let _ = client.remove_object(&self.oss.bucket, key.as_str()).await;
-                            }
+                        if let Some(keys) = l.object_list {
+                            let c = client.clone();
+                            let bucket = self.oss.bucket.clone();
+                            set.spawn(async move {
+                                let _ = c.remove_objects(&bucket, keys).await;
+                            });
                         }
                         token = l.next_token
                     }
@@ -1162,6 +1171,9 @@ impl TaskTruncateBucket {
                         return;
                     }
                 }
+            }
+            if set.len() > 0 {
+                set.join_next().await;
             }
         });
 
