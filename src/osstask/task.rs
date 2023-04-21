@@ -174,7 +174,8 @@ impl TaskTransfer {
         let check_point_file = gen_file_path(self.meta_dir.as_str(), CHECK_POINT_FILE_NAME, "");
 
         let rt = runtime::Builder::new_multi_thread()
-            .worker_threads(self.task_threads)
+            // .worker_threads(self.task_threads)
+            .worker_threads(num_cpus::get())
             .enable_all()
             .max_io_events_per_tick(self.task_threads)
             .build()?;
@@ -1129,7 +1130,13 @@ impl TaskTruncateBucket {
             match list {
                 Ok(l) => {
                     if let Some(keys) = l.object_list {
-                        let c = client.clone();
+                        let c = match self.oss.gen_oss_client() {
+                            Ok(c) => c,
+                            Err(e) => {
+                                log::error!("{}", e);
+                                return;
+                            }
+                        };
                         let bucket = self.oss.bucket.clone();
                         set.spawn(async move {
                             let _ = c.remove_objects(&bucket, keys).await;
@@ -1158,7 +1165,13 @@ impl TaskTruncateBucket {
                 match list {
                     Ok(l) => {
                         if let Some(keys) = l.object_list {
-                            let c = client.clone();
+                            let c = match self.oss.gen_oss_client() {
+                                Ok(c) => c,
+                                Err(e) => {
+                                    log::error!("{}", e);
+                                    continue;
+                                }
+                            };
                             let bucket = self.oss.bucket.clone();
                             set.spawn(async move {
                                 let _ = c.remove_objects(&bucket, keys).await;

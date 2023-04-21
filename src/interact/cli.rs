@@ -131,7 +131,8 @@ pub fn run() {
             }
             Err(ReadlineError::Interrupted) => {
                 println!("CTRL-C");
-                break;
+                continue;
+                // break;
             }
             Err(ReadlineError::Eof) => {
                 println!("CTRL-D");
