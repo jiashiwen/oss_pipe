@@ -240,7 +240,7 @@ impl OssClient {
     ) -> std::result::Result<(), aws_sdk_s3::types::SdkError<aws_sdk_s3::error::DeleteObjectError>>
     {
         for key in keys {
-            if let Err(_) = self
+            if let Err(e) = self
                 .client
                 .delete_object()
                 .bucket(bucket)
@@ -248,6 +248,7 @@ impl OssClient {
                 .send()
                 .await
             {
+                log::error!("{}", e);
                 continue;
             };
         }
