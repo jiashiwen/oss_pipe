@@ -14,6 +14,8 @@ use aws_sdk_s3::{
 use aws_smithy_types::date_time::DateTime;
 use tokio::io::AsyncReadExt;
 
+use crate::checkpoint::Record;
+
 use super::OssObjectsList;
 
 #[derive(Debug, Clone)]
@@ -236,7 +238,7 @@ impl OssClient {
     pub async fn remove_objects(
         &self,
         bucket: &str,
-        keys: Vec<String>,
+        keys: Vec<Record>,
     ) -> std::result::Result<(), aws_sdk_s3::types::SdkError<aws_sdk_s3::error::DeleteObjectError>>
     {
         for key in keys {
@@ -244,7 +246,7 @@ impl OssClient {
                 .client
                 .delete_object()
                 .bucket(bucket)
-                .key(key.clone())
+                .key(key.key.clone())
                 .send()
                 .await
             {

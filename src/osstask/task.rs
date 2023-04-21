@@ -1100,91 +1100,103 @@ impl Default for TaskTruncateBucket {
 }
 impl TaskTruncateBucket {
     pub fn exec_multi_threads(&self) -> Result<()> {
-        // 遍历bucket
         let error_times = Arc::new(AtomicUsize::new(0));
-        let mut set: JoinSet<()> = JoinSet::new();
-
+        let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_NAME, "");
         let rt = runtime::Builder::new_multi_thread()
-            // .worker_threads(self.task_threads)
             .worker_threads(num_cpus::get())
             .enable_all()
             .build()?;
+
+        // 预清理meta目录
+        let _ = fs::remove_dir_all(self.meta_dir.as_str());
+        let mut interrupted = false;
+
         rt.block_on(async {
-            let client = match self.oss.gen_oss_client() {
-                Ok(c) => c,
+            let client_source = match self.oss.gen_oss_client() {
+                Result::Ok(c) => c,
                 Err(e) => {
                     log::error!("{}", e);
+                    interrupted = true;
                     return;
                 }
             };
-            let mut token = None;
-            // ToDo
-            let list = client
-                .list_objects(
+            if let Err(e) = client_source
+                .append_all_object_list_to_file(
                     self.oss.bucket.clone(),
                     self.oss.prefix.clone(),
                     self.bach_size,
-                    None,
+                    object_list_file.clone(),
                 )
-                .await;
-            match list {
-                Ok(l) => {
-                    if let Some(keys) = l.object_list {
-                        let c = match self.oss.gen_oss_client() {
-                            Ok(c) => c,
-                            Err(e) => {
-                                log::error!("{}", e);
-                                return;
-                            }
+                .await
+            {
+                log::error!("{}", e);
+                interrupted = true;
+                return;
+            };
+        });
+
+        if interrupted {
+            return Err(anyhow!("get object list error"));
+        }
+
+        let mut set: JoinSet<()> = JoinSet::new();
+        let mut file = File::open(object_list_file.as_str())?;
+
+        rt.block_on(async {
+            let mut file_position = 0;
+            let mut vec_keys: Vec<Record> = vec![];
+
+            // 按列表传输object from source to target
+            let lines = io::BufReader::new(file).lines();
+            for line in lines {
+                if let Result::Ok(key) = line {
+                    let len = key.bytes().len() + "\n".bytes().len();
+                    file_position += len;
+                    if !key.ends_with("/") {
+                        let record = Record {
+                            key,
+                            offset: file_position,
                         };
-                        let bucket = self.oss.bucket.clone();
-                        set.spawn(async move {
-                            let _ = c.remove_objects(&bucket, keys).await;
-                        });
+                        vec_keys.push(record);
                     }
-                    token = l.next_token
-                }
-                Err(e) => {
-                    log::error!("{}", e);
-                    return;
+                };
+                if vec_keys.len().to_string().eq(&self.bach_size.to_string()) {
+                    while set.len() >= self.task_threads {
+                        set.join_next().await;
+                    }
+                    let c = match self.oss.gen_oss_client() {
+                        Ok(c) => c,
+                        Err(e) => {
+                            log::error!("{}", e);
+                            return;
+                        }
+                    };
+                    let keys = vec_keys.clone();
+                    let bucket = self.oss.bucket.clone();
+                    set.spawn(async move {
+                        let _ = c.remove_objects(&bucket, keys).await;
+                    });
                 }
             }
 
-            while token.is_some() {
+            if vec_keys.len() > 0 {
                 while set.len() >= self.task_threads {
                     set.join_next().await;
                 }
-                let list = client
-                    .list_objects(
-                        self.oss.bucket.clone(),
-                        self.oss.prefix.clone(),
-                        self.bach_size,
-                        token.clone(),
-                    )
-                    .await;
-                match list {
-                    Ok(l) => {
-                        if let Some(keys) = l.object_list {
-                            let c = match self.oss.gen_oss_client() {
-                                Ok(c) => c,
-                                Err(e) => {
-                                    log::error!("{}", e);
-                                    continue;
-                                }
-                            };
-                            let bucket = self.oss.bucket.clone();
-                            set.spawn(async move {
-                                let _ = c.remove_objects(&bucket, keys).await;
-                            });
-                        }
-                        token = l.next_token
-                    }
+                let c = match self.oss.gen_oss_client() {
+                    Ok(c) => c,
                     Err(e) => {
                         log::error!("{}", e);
                         return;
                     }
-                }
+                };
+                let keys = vec_keys.clone();
+                let bucket = self.oss.bucket.clone();
+                set.spawn(async move {
+                    let _ = c.remove_objects(&bucket, keys).await;
+                });
             }
+
             if set.len() > 0 {
                 set.join_next().await;
             }
