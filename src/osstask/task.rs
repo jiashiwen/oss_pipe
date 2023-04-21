@@ -1168,7 +1168,7 @@ impl TaskTruncateBucket {
                         Ok(c) => c,
                         Err(e) => {
                             log::error!("{}", e);
-                            return;
+                            continue;
                         }
                     };
                     let keys = vec_keys.clone();
