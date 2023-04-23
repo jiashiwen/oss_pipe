@@ -18,6 +18,7 @@ use crate::{
 };
 use anyhow::{anyhow, Result};
 
+use aws_sdk_s3::model::ObjectIdentifier;
 use dashmap::DashMap;
 use rayon::ThreadPoolBuilder;
 use serde::{Deserialize, Serialize};
@@ -1140,11 +1141,11 @@ impl TaskTruncateBucket {
         }
 
         let mut set: JoinSet<()> = JoinSet::new();
-        let mut file = File::open(object_list_file.as_str())?;
+        let file = File::open(object_list_file.as_str())?;
 
         rt.block_on(async {
             let mut file_position = 0;
-            let mut vec_keys: Vec<Record> = vec![];
+            let mut vec_keys: Vec<ObjectIdentifier> = vec![];
 
             // 按列表传输object from source to target
             let lines = io::BufReader::new(file).lines();
@@ -1153,11 +1154,12 @@ impl TaskTruncateBucket {
                     let len = key.bytes().len() + "\n".bytes().len();
                     file_position += len;
                     if !key.ends_with("/") {
-                        let record = Record {
-                            key,
-                            offset: file_position,
-                        };
-                        vec_keys.push(record);
+                        let obj_id = ObjectIdentifier::builder().set_key(Some(key)).build();
+                        // let record = Record {
+                        //     key,
+                        //     offset: file_position,
+                        // };
+                        vec_keys.push(obj_id);
                     }
                 };
                 if vec_keys.len().to_string().eq(&self.bach_size.to_string()) {
@@ -1174,12 +1176,7 @@ impl TaskTruncateBucket {
                     let keys = vec_keys.clone();
                     let bucket = self.oss.bucket.clone();
                     set.spawn(async move {
-                        for key in keys {
-                            if let Err(e) = c.remove_object(&bucket, &key.key).await {
-                                log::error!("{}", e);
-                                continue;
-                            };
-                        }
+                        c.remove_objects(bucket.as_str(), keys).await;
                     });
                 }
             }
@@ -1198,12 +1195,8 @@ impl TaskTruncateBucket {
                 let keys = vec_keys.clone();
                 let bucket = self.oss.bucket.clone();
                 set.spawn(async move {
-                    for key in keys {
-                        if let Err(e) = c.remove_object(&bucket, &key.key).await {
-                            log::error!("{}", e);
-                            continue;
-                        };
-                    }
+                    let r = c.remove_objects(&bucket, keys).await;
+                    println!("{:?}", r);
                 });
             }
 

@@ -1,12 +1,12 @@
 use std::{
-    fs::{self, File, OpenOptions},
-    io::{LineWriter, Read, Seek, SeekFrom, Write},
+    fs::{File, OpenOptions},
+    io::{LineWriter, Read, Write},
     path::Path,
 };
 
 use anyhow::{anyhow, Ok, Result};
 use aws_sdk_s3::{
-    model::{CompletedMultipartUpload, CompletedPart},
+    model::{CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier},
     output::{CreateMultipartUploadOutput, GetObjectOutput},
     types::ByteStream,
     Client,
@@ -238,24 +238,19 @@ impl OssClient {
     pub async fn remove_objects(
         &self,
         bucket: &str,
-        keys: Vec<Record>,
-    ) -> std::result::Result<(), aws_sdk_s3::types::SdkError<aws_sdk_s3::error::DeleteObjectError>>
-    {
-        for key in keys {
-            if let Err(e) = self
-                .client
-                .delete_object()
-                .bucket(bucket)
-                .key(key.key.clone())
-                .send()
-                .await
-            {
-                log::error!("{}", e);
-                continue;
-            };
-        }
+        keys: Vec<ObjectIdentifier>,
+    ) -> std::result::Result<
+        aws_sdk_s3::output::DeleteObjectsOutput,
+        aws_sdk_s3::types::SdkError<aws_sdk_s3::error::DeleteObjectsError>,
+    > {
+        self.client
+            .delete_objects()
+            .bucket(bucket)
+            .delete(Delete::builder().set_objects(Some(keys)).build())
+            .send()
+            .await
 
-        std::result::Result::Ok(())
+        // std::result::Result::Ok(())
     }
 
     pub async fn get_object_bytes(&self, bucket: &str, key: &str) -> Result<ByteStream> {
