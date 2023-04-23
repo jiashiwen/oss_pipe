@@ -1177,9 +1177,11 @@ impl TaskTruncateBucket {
                     let keys = vec_keys.clone();
                     let bucket = self.oss.bucket.clone();
                     set.spawn(async move {
-                        c.remove_objects(bucket.as_str(), keys).await;
+                        if let Err(e) = c.remove_objects(bucket.as_str(), keys).await {
+                            log::error!("{}", e);
+                        };
                     });
-                    // c.remove_objects(self.oss.bucket.as_str(), keys).await;
+
                     vec_keys.clear();
                 }
             }
@@ -1198,8 +1200,9 @@ impl TaskTruncateBucket {
                 let keys = vec_keys.clone();
                 let bucket = self.oss.bucket.clone();
                 set.spawn(async move {
-                    let r = c.remove_objects(&bucket, keys).await;
-                    println!("{:?}", r);
+                    if let Err(e) = c.remove_objects(bucket.as_str(), keys).await {
+                        log::error!("{}", e);
+                    };
                 });
             }
 

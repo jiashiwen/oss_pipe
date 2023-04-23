@@ -330,6 +330,7 @@ impl OssClient {
         &self,
         bucket: &str,
         key: &str,
+        expires: Option<aws_smithy_types::DateTime>,
         body_len: usize,
         chunk_size: usize,
         body: ByteStream,
@@ -342,13 +343,26 @@ impl OssClient {
         let mut upload_parts: Vec<CompletedPart> = Vec::new();
 
         //获取上传id
-        let multipart_upload_res: CreateMultipartUploadOutput = self
-            .client
-            .create_multipart_upload()
-            .bucket(bucket)
-            .key(key)
-            .send()
-            .await?;
+        let multipart_upload_res = match expires {
+            Some(datatime) => {
+                self.client
+                    .create_multipart_upload()
+                    .bucket(bucket)
+                    .key(key)
+                    .expires(datatime)
+                    .send()
+                    .await
+            }
+            None => {
+                self.client
+                    .create_multipart_upload()
+                    .bucket(bucket)
+                    .key(key)
+                    .send()
+                    .await
+            }
+        }?;
+
         let upload_id = match multipart_upload_res.upload_id() {
             Some(id) => id,
             None => {
@@ -546,15 +560,19 @@ impl OssClient {
         &self,
         bucket: &str,
         key: &str,
+        expires: Option<aws_smithy_types::DateTime>,
         content: ByteStream,
     ) -> Result<()> {
-        self.client
+        let mut upload = self
+            .client
             .put_object()
             .bucket(bucket)
             .key(key)
-            .body(content)
-            .send()
-            .await?;
+            .body(content);
+        if let Some(exp) = expires {
+            upload = upload.expires(exp);
+        };
+        upload.send().await?;
         Ok(())
     }
 
