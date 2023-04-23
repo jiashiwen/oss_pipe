@@ -8,6 +8,7 @@ use std::{
     },
     thread,
     time::Duration,
+    vec,
 };
 
 use crate::{
@@ -1178,6 +1179,8 @@ impl TaskTruncateBucket {
                     set.spawn(async move {
                         c.remove_objects(bucket.as_str(), keys).await;
                     });
+                    // c.remove_objects(self.oss.bucket.as_str(), keys).await;
+                    vec_keys.clear();
                 }
             }
 
