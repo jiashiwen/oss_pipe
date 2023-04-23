@@ -105,12 +105,18 @@ impl Transfer {
                 }
             };
 
+            let expr = match resp.expires() {
+                Some(datetime) => Some(*datetime),
+                None => None,
+            };
+
             // 大文件走 multi part upload 分支
             if let Err(e) = match content_len > self.large_file_size {
                 true => {
                     c_t.multipart_upload_byte_stream(
                         self.target.bucket.as_str(),
                         target_key.as_str(),
+                        expr,
                         content_len,
                         self.multi_part_chunck,
                         resp.body,
@@ -121,6 +127,7 @@ impl Transfer {
                     c_t.upload_object_bytes(
                         self.target.bucket.as_str(),
                         target_key.as_str(),
+                        expr,
                         resp.body,
                     )
                     .await

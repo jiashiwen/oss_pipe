@@ -126,6 +126,7 @@ impl UpLoad {
                     c_t.upload_object_bytes(
                         self.target.bucket.as_str(),
                         target_key.as_str(),
+                        None,
                         ByteStream::from(body),
                     )
                     .await
