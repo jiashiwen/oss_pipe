@@ -1,15 +1,17 @@
 use crate::cmd::gen_file_cmd::{new_gen_file_cmd, new_gen_files_cmd};
 use crate::cmd::osstaskcmd::new_osstask_cmd;
-use crate::cmd::{new_config_cmd, new_osscfg_cmd};
+use crate::cmd::{new_config_cmd, new_exit_cmd, new_osscfg_cmd, new_parameters_cmd, new_template};
 use crate::commons::yamlutile::struct_to_yml_file;
-use crate::commons::{generate_file, generate_files, read_yaml_file, SubCmd};
+use crate::commons::{
+    generate_file, generate_files, read_yaml_file, struct_to_json_string, SubCmd,
+};
 use crate::commons::{struct_to_yaml_string, CommandCompleter};
 use crate::configure::{generate_default_config, set_config_file_path};
 use crate::configure::{get_config_file_path, get_current_config_yml, set_config};
 use crate::interact;
 use crate::osstask::{
-    task_id_generator, Task, TaskDescription, TaskDownload, TaskLocalToLocal, TaskTransfer,
-    TaskTruncateBucket, TaskUpLoad,
+    task_id_generator, Task, TaskDescription, TaskDownload, TaskLocalToLocal, TaskOssCompare,
+    TaskTransfer, TaskTruncateBucket, TaskType, TaskUpLoad,
 };
 use crate::s3::oss::OSSDescription;
 use crate::s3::oss::OssProvider;
@@ -17,9 +19,12 @@ use clap::{Arg, ArgMatches};
 use clap::{ArgAction, Command as Clap_Command};
 use lazy_static::lazy_static;
 
+use crate::interact::INTERACT_STATUS;
 use std::borrow::Borrow;
 
 pub const APP_NAME: &'static str = "oss_pipe";
+// pub const INTERACT_STATUS: &'static bool = &false;
+
 lazy_static! {
     static ref CLIAPP: Clap_Command = Clap_Command::new(APP_NAME)
         .version("1.0")
@@ -41,10 +46,13 @@ lazy_static! {
                 .help("run as interact mod")
         )
         .subcommand(new_osstask_cmd())
+        .subcommand(new_template())
+        .subcommand(new_parameters_cmd())
         .subcommand(new_config_cmd())
         .subcommand(new_osscfg_cmd())
         .subcommand(new_gen_file_cmd())
-        .subcommand(new_gen_files_cmd());
+        .subcommand(new_gen_files_cmd())
+        .subcommand(new_exit_cmd());
     static ref SUBCMDS: Vec<SubCmd> = subcommands();
 }
 
@@ -106,8 +114,11 @@ fn cmd_match(matches: &ArgMatches) {
     }
 
     if matches.get_flag("interact") {
-        interact::run();
-        return;
+        if !INTERACT_STATUS.load(std::sync::atomic::Ordering::SeqCst) {
+            interact::run();
+
+            return;
+        }
     }
 
     if let Some(config) = matches.subcommand_matches("config") {
@@ -160,81 +171,113 @@ fn cmd_match(matches: &ArgMatches) {
             }
             println!("{:?}", now.elapsed());
         }
+    }
+    if let Some(template) = matches.subcommand_matches("template") {
+        let task_id = task_id_generator();
+        if let Some(_) = template.subcommand_matches("download") {
+            let task_download = TaskDownload::default();
+            let task = Task {
+                task_id: task_id.to_string(),
+                name: "download task".to_string(),
+                task_desc: TaskDescription::Download(task_download),
+            };
+            let yml = struct_to_yaml_string(&task);
+            match yml {
+                Ok(str) => println!("{}", str),
+                Err(e) => eprintln!("{}", e.to_string()),
+            }
+        }
 
-        if let Some(template) = osstask.subcommand_matches("template") {
+        if let Some(_) = template.subcommand_matches("transfer") {
             let task_id = task_id_generator();
-            if let Some(_) = template.subcommand_matches("download") {
-                let task_download = TaskDownload::default();
-                let task = Task {
-                    task_id: task_id.to_string(),
-                    name: "download task".to_string(),
-                    task_desc: TaskDescription::Download(task_download),
-                };
-                let yml = struct_to_yaml_string(&task);
-                match yml {
-                    Ok(str) => println!("{}", str),
-                    Err(e) => eprintln!("{}", e.to_string()),
-                }
+            let mut task_transfer = TaskTransfer::default();
+            task_transfer.source.provider = OssProvider::Ali;
+            task_transfer.source.endpoint = "http://oss-cn-beijing.aliyuncs.com".to_string();
+            let task = Task {
+                task_id: task_id.to_string(),
+                name: "transfer task".to_string(),
+                task_desc: TaskDescription::Transfer(task_transfer),
+            };
+            let yml = struct_to_yaml_string(&task);
+            match yml {
+                Ok(str) => println!("{}", str),
+                Err(e) => eprintln!("{}", e.to_string()),
             }
+        }
 
-            if let Some(_) = template.subcommand_matches("transfer") {
-                let task_id = task_id_generator();
-                let mut task_transfer = TaskTransfer::default();
-                task_transfer.source.provider = OssProvider::Ali;
-                task_transfer.source.endpoint = "http://oss-cn-beijing.aliyuncs.com".to_string();
-                let task = Task {
-                    task_id: task_id.to_string(),
-                    name: "transfer task".to_string(),
-                    task_desc: TaskDescription::Transfer(task_transfer),
-                };
-                let yml = struct_to_yaml_string(&task);
-                match yml {
-                    Ok(str) => println!("{}", str),
-                    Err(e) => eprintln!("{}", e.to_string()),
-                }
+        if let Some(_) = template.subcommand_matches("upload") {
+            let task_upload = TaskUpLoad::default();
+            let task = Task {
+                task_id: task_id.to_string(),
+                name: "upload task".to_string(),
+                task_desc: TaskDescription::Upload(task_upload),
+            };
+            let yml = struct_to_yaml_string(&task);
+            match yml {
+                Ok(str) => println!("{}", str),
+                Err(e) => eprintln!("{}", e.to_string()),
             }
+        }
 
-            if let Some(_) = template.subcommand_matches("upload") {
-                let task_upload = TaskUpLoad::default();
-                let task = Task {
-                    task_id: task_id.to_string(),
-                    name: "upload task".to_string(),
-                    task_desc: TaskDescription::Upload(task_upload),
-                };
-                let yml = struct_to_yaml_string(&task);
-                match yml {
-                    Ok(str) => println!("{}", str),
-                    Err(e) => eprintln!("{}", e.to_string()),
-                }
+        if let Some(_) = template.subcommand_matches("localtolocal") {
+            let task_localtolocal = TaskLocalToLocal::default();
+            let task = Task {
+                task_id: task_id.to_string(),
+                name: "local to local task".to_string(),
+                task_desc: TaskDescription::LocalToLocal(task_localtolocal),
+            };
+            let yml = struct_to_yaml_string(&task);
+            match yml {
+                Ok(str) => println!("{}", str),
+                Err(e) => eprintln!("{}", e.to_string()),
             }
+        }
 
-            if let Some(_) = template.subcommand_matches("localtolocal") {
-                let task_localtolocal = TaskLocalToLocal::default();
-                let task = Task {
-                    task_id: task_id.to_string(),
-                    name: "local to local task".to_string(),
-                    task_desc: TaskDescription::LocalToLocal(task_localtolocal),
-                };
-                let yml = struct_to_yaml_string(&task);
-                match yml {
-                    Ok(str) => println!("{}", str),
-                    Err(e) => eprintln!("{}", e.to_string()),
-                }
+        if let Some(_) = template.subcommand_matches("truncate_bucket") {
+            let task_truncate_bucket = TaskTruncateBucket::default();
+            let task = Task {
+                task_id: task_id.to_string(),
+                name: "truncate bucket task".to_string(),
+                task_desc: TaskDescription::TruncateBucket(task_truncate_bucket),
+            };
+            let yml = struct_to_yaml_string(&task);
+            match yml {
+                Ok(str) => println!("{}", str),
+                Err(e) => eprintln!("{}", e.to_string()),
             }
+        }
 
-            if let Some(_) = template.subcommand_matches("truncate_bucket") {
-                let task_truncate_table = TaskTruncateBucket::default();
-                let task = Task {
-                    task_id: task_id.to_string(),
-                    name: "truncate bucket task".to_string(),
-                    task_desc: TaskDescription::TruncateBucket(task_truncate_table),
-                };
-                let yml = struct_to_yaml_string(&task);
-                match yml {
-                    Ok(str) => println!("{}", str),
-                    Err(e) => eprintln!("{}", e.to_string()),
-                }
+        if let Some(_) = template.subcommand_matches("oss_compare") {
+            let mut task_oss_compare = TaskOssCompare::default();
+            task_oss_compare.source.provider = OssProvider::Ali;
+            task_oss_compare.source.endpoint = "http://oss-cn-beijing.aliyuncs.com".to_string();
+            let task = Task {
+                task_id: task_id.to_string(),
+                name: "truncate bucket task".to_string(),
+                task_desc: TaskDescription::OssCompare(task_oss_compare),
+            };
+            let yml = struct_to_yaml_string(&task);
+            match yml {
+                Ok(str) => println!("{}", str),
+                Err(e) => eprintln!("{}", e.to_string()),
             }
+        }
+    }
+
+    if let Some(parameters) = matches.subcommand_matches("parameters") {
+        if let Some(_) = parameters.subcommand_matches("provider") {
+            println!("{:?}", OssProvider::AWS);
+            println!("{:?}", OssProvider::Ali);
+            println!("{:?}", OssProvider::JD);
+            println!("{:?}", OssProvider::JRSS);
+        }
+
+        if let Some(_) = parameters.subcommand_matches("task_type") {
+            println!("{:?}", TaskType::Download);
+            println!("{:?}", TaskType::LocalToLocal);
+            println!("{:?}", TaskType::Transfer);
+            println!("{:?}", TaskType::TruncateBucket);
+            println!("{:?}", TaskType::Upload);
         }
     }
 
