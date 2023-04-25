@@ -10,6 +10,9 @@ use rustyline::{validate, CompletionType, Config, Context, Editor, OutputStreamT
 use rustyline_derive::Helper;
 use shellwords::split;
 use std::borrow::Cow::{self, Borrowed, Owned};
+use std::sync::atomic::AtomicBool;
+
+pub static INTERACT_STATUS: AtomicBool = AtomicBool::new(false);
 
 #[derive(Helper)]
 struct MyHelper {
@@ -97,12 +100,13 @@ pub fn run() {
     };
 
     let mut rl = Editor::with_config(config);
-    // let mut rl = Editor::<()>::new();
     rl.set_helper(Some(h));
 
     if rl.load_history("./.history").is_err() {
         println!("No previous history.");
     }
+
+    INTERACT_STATUS.store(true, std::sync::atomic::Ordering::SeqCst);
 
     loop {
         let p = format!("{}> ", APP_NAME);
@@ -132,7 +136,6 @@ pub fn run() {
             Err(ReadlineError::Interrupted) => {
                 println!("CTRL-C");
                 continue;
-                // break;
             }
             Err(ReadlineError::Eof) => {
                 println!("CTRL-D");

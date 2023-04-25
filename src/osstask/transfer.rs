@@ -17,7 +17,6 @@ pub struct Transfer {
     pub error_conter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, usize>>,
     pub meta_dir: String,
-    // pub prefix: Option<String>,
     // pub filter: Option<String>,
     pub target_exist_skip: bool,
     pub large_file_size: usize,

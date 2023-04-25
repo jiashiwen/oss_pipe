@@ -10,7 +10,6 @@ use aws_credential_types::{provider::SharedCredentialsProvider, Credentials};
 
 use aws_sdk_s3::Region;
 use bytes::Bytes;
-use log::Level;
 use serde::{Deserialize, Serialize};
 
 #[async_trait]
