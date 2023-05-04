@@ -74,12 +74,11 @@ pub fn scan_folder_files_to_file(folder: &str, file_name: &str) -> Result<()> {
             if p.eq(folder) {
                 continue;
             }
-            let mut key: &str = "";
-            if folder.ends_with("/") {
-                key = &p[folder.len()..];
-            } else {
-                key = &p[folder.len() + 1..];
-            }
+
+            let key = match folder.ends_with("/") {
+                true => &p[folder.len()..],
+                false => &p[folder.len() + 1..],
+            };
 
             let _ = file.write_all(key.as_bytes());
             let _ = file.write_all("\n".as_bytes());

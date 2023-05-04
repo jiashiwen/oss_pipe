@@ -1,4 +1,5 @@
 use crate::{checkpoint::Record, s3::OSSDescription};
+use anyhow::anyhow;
 use anyhow::Result;
 use aws_sdk_s3::types::ByteStream;
 use dashmap::DashMap;
@@ -9,27 +10,71 @@ use std::{
     sync::{atomic::AtomicUsize, Arc},
 };
 
-use super::{gen_file_path, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
+use super::{
+    gen_file_path, Task, TaskDescription, TaskUpLoad, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX,
+};
 
 #[derive(Debug, Clone)]
 pub struct UpLoad {
     pub local_path: String,
     pub target: OSSDescription,
-    pub error_conter: Arc<AtomicUsize>,
+    pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, usize>>,
     pub meta_dir: String,
     // pub filter: Option<String>,
     pub target_exist_skip: bool,
     pub large_file_size: usize,
-    pub multi_part_chunck: usize,
+    pub multi_part_chunk: usize,
 }
 
 impl UpLoad {
+    pub fn from_taskupload(
+        task_upload: &TaskUpLoad,
+        err_counter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, usize>>,
+    ) -> Self {
+        Self {
+            local_path: task_upload.local_path.clone(),
+            target: task_upload.target.clone(),
+            err_counter,
+            offset_map,
+            meta_dir: task_upload.meta_dir.clone(),
+            target_exist_skip: task_upload.target_exists_skip,
+            large_file_size: task_upload.large_file_size,
+            multi_part_chunk: task_upload.multi_part_chunk,
+        }
+    }
+
+    pub fn from_task(
+        task: &Task,
+        err_counter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, usize>>,
+    ) -> Result<Self> {
+        if let TaskDescription::Upload(upload) = task.task_desc.clone() {
+            let up = Self {
+                local_path: upload.local_path.clone(),
+                target: upload.target.clone(),
+                err_counter,
+                offset_map,
+                meta_dir: upload.meta_dir.clone(),
+                target_exist_skip: upload.target_exists_skip,
+                large_file_size: upload.large_file_size,
+                multi_part_chunk: upload.multi_part_chunk,
+            };
+            return Ok(up);
+        }
+        Err(anyhow!("task type not upload"))
+    }
+
     pub async fn exec(&self, records: Vec<Record>) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
         offset_key.push_str(&subffix);
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
+
+        // 先写首行日志，避免错误漏记
+        self.offset_map
+            .insert(offset_key.clone(), records[0].offset);
 
         let mut error_file = OpenOptions::new()
             .create(true)
@@ -70,7 +115,7 @@ impl UpLoad {
                     }
                     Err(e) => {
                         log::error!("{}", e);
-                        self.error_conter
+                        self.err_counter
                             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         let _ = record.save_json_to_file(&mut error_file);
                         self.offset_map.insert(offset_key.clone(), record.offset);
@@ -82,7 +127,7 @@ impl UpLoad {
                 Ok(m) => m.len(),
                 Err(e) => {
                     log::error!("{}", e);
-                    self.error_conter
+                    self.err_counter
                         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     let _ = record.save_json_to_file(&mut error_file);
                     self.offset_map.insert(offset_key.clone(), record.offset);
@@ -94,7 +139,7 @@ impl UpLoad {
                 Ok(l) => l,
                 Err(e) => {
                     log::error!("{}", e);
-                    self.error_conter
+                    self.err_counter
                         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     let _ = record.save_json_to_file(&mut error_file);
                     self.offset_map.insert(offset_key.clone(), record.offset);
@@ -109,7 +154,7 @@ impl UpLoad {
                         self.target.bucket.as_str(),
                         target_key.as_str(),
                         &mut s_file,
-                        self.multi_part_chunck,
+                        self.multi_part_chunk,
                     )
                     .await
                 }
@@ -117,7 +162,7 @@ impl UpLoad {
                     let mut body = vec![];
                     if let Err(e) = s_file.read_to_end(&mut body) {
                         log::error!("{}", e);
-                        self.error_conter
+                        self.err_counter
                             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         let _ = record.save_json_to_file(&mut error_file);
                         self.offset_map.insert(offset_key.clone(), record.offset);
@@ -133,7 +178,7 @@ impl UpLoad {
                 }
             } {
                 log::error!("{}", e);
-                self.error_conter
+                self.err_counter
                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 let _ = record.save_json_to_file(&mut error_file);
                 self.offset_map.insert(offset_key.clone(), record.offset);

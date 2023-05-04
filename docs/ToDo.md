@@ -16,8 +16,8 @@
 - [x] jrss适配，相关文档http://jrss-portal-public.jdfmgt.com/
 - [x] 多线程验证rayon 和 tokio两个方案
 - [x] 编写多线程程序
-- [ ] checkpoint 设计与实现 transfer
-- [ ] checkpoint 设计与实现 download
+- [x] checkpoint 设计与实现 transfer
+- [x] checkpoint 设计与实现 download
 - [ ] checkpoint 设计与实现 upload
 - [x] 最大错误数机制，到达最大错误数，任务停止
 - [ ] 错误数据持久化与解析，配合checkpoint实现断点续传
@@ -37,6 +37,9 @@
   - [ ] target 是否存在
   - [ ] 过期时间差值是否在一个范围之内
   - [ ] content_length 源于目标是否一致
+- [ ] 支持oss存储类型，通过 set_storage_class 实现
+- [ ] 新增precheck，并给出校验清单
+  - [ ] 归档文件不能访问需提前校验
 
 ## 校验项
 
@@ -66,11 +69,11 @@
   - 知道新增更新在一个可接接受的范围，切换应用
   - 再次同步，只同步新增和修改(时间戳大于目标的)
 
-# 面临问题 -- sdk 兼容性问题，需要实验
+## 面临问题 -- sdk 兼容性问题，需要实验
 
-- [ ] 如何获取object属性
-- [ ] 如何判断object是否存在
-- [ ] 文件追加和覆盖哪个效率更高待验证
+- [x] 如何获取object属性
+- [x] 如何判断object是否存在
+- [x] 文件追加和覆盖哪个效率更高待验证
 
 ## 测试验证
 
@@ -87,3 +90,6 @@
 ## 分布式改造
 
 - [ ]
+
+
+ai 大赛，只能导购助理，通过对话方式筛选商品

@@ -30,7 +30,7 @@ use tokio::{
 };
 use walkdir::WalkDir;
 
-use super::{osscompare::OssCompare, UpLoad};
+use super::{osscompare::OssCompare, DownLoad, UpLoad};
 
 pub const OBJECT_LIST_FILE_NAME: &'static str = "objlist";
 pub const CHECK_POINT_FILE_NAME: &'static str = "checkpoint.yml";
@@ -40,7 +40,7 @@ pub const OFFSET_EXEC_PREFIX: &'static str = "offset_exec_";
 pub const OFFSET_TASK_PREFIX: &'static str = "offset_task_";
 pub const COMPARE_OBJECT_DIFF_PREFIX: &'static str = "diff_object_";
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub enum TaskType {
     Download,
     Upload,
@@ -66,7 +66,7 @@ impl TaskDescription {
         match self {
             TaskDescription::Download(d) => d.exec_multi_threads(),
             TaskDescription::Upload(u) => u.exec_multi_threads(),
-            TaskDescription::Transfer(t) => t.exec_multi_threads(),
+            TaskDescription::Transfer(transfer) => transfer.exec_multi_threads(),
             TaskDescription::LocalToLocal(l) => l.exec_multi_threads(),
             TaskDescription::TruncateBucket(truncate) => truncate.exec_multi_threads(),
             TaskDescription::OssCompare(oss_compare) => oss_compare.exec_multi_threads(),
@@ -82,6 +82,10 @@ impl TaskDefaultParameters {
 
     pub fn name_default() -> String {
         "default_name".to_string()
+    }
+
+    pub fn error_counter() -> Arc<AtomicUsize> {
+        Arc::new(AtomicUsize::new(0))
     }
 
     pub fn batch_size_default() -> i32 {
@@ -111,7 +115,7 @@ impl TaskDefaultParameters {
         // 100M
         104857600
     }
-    pub fn multi_part_chunck_default() -> usize {
+    pub fn multi_part_chunk_default() -> usize {
         // 10M
         10485760
     }
@@ -148,8 +152,8 @@ pub struct TaskTransfer {
     pub start_from_checkpoint: bool,
     #[serde(default = "TaskDefaultParameters::large_file_size_default")]
     pub large_file_size: usize,
-    #[serde(default = "TaskDefaultParameters::multi_part_chunck_default")]
-    pub multi_part_chunck: usize,
+    #[serde(default = "TaskDefaultParameters::multi_part_chunk_default")]
+    pub multi_part_chunk: usize,
 }
 
 impl Default for TaskTransfer {
@@ -164,7 +168,7 @@ impl Default for TaskTransfer {
             target_exists_skip: TaskDefaultParameters::target_exists_skip_default(),
             start_from_checkpoint: TaskDefaultParameters::start_from_checkpoint_default(),
             large_file_size: TaskDefaultParameters::large_file_size_default(),
-            multi_part_chunck: TaskDefaultParameters::multi_part_chunck_default(),
+            multi_part_chunk: TaskDefaultParameters::multi_part_chunk_default(),
         }
     }
 }
@@ -297,7 +301,7 @@ impl TaskTransfer {
                         // prefix: self.target.prefix.clone(),
                         target_exist_skip: self.target_exists_skip,
                         large_file_size: self.large_file_size,
-                        multi_part_chunck: self.multi_part_chunck,
+                        multi_part_chunk: self.multi_part_chunk,
                     };
                     set.spawn(async move {
                         if let Err(e) = transfer.exec(vk).await {
@@ -330,7 +334,7 @@ impl TaskTransfer {
                     offset_map: Arc::clone(&offset_map),
                     target_exist_skip: false,
                     large_file_size: self.large_file_size,
-                    multi_part_chunck: self.multi_part_chunck,
+                    multi_part_chunk: self.multi_part_chunk,
                     meta_dir: self.meta_dir.clone(),
                 };
 
@@ -406,7 +410,7 @@ impl TaskTransfer {
                             // prefix: self.target.prefix.clone(),
                             target_exist_skip: self.target_exists_skip,
                             large_file_size: self.large_file_size,
-                            multi_part_chunck: self.multi_part_chunck,
+                            multi_part_chunk: self.multi_part_chunk,
                             offset_map: Arc::new(DashMap::<String, usize>::new()),
                         };
                         let _ = copy.exec(record_vec);
@@ -442,6 +446,10 @@ pub struct TaskDownload {
     pub target_exists_skip: bool,
     #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
     pub start_from_checkpoint: bool,
+    #[serde(default = "TaskDefaultParameters::large_file_size_default")]
+    pub large_file_size: usize,
+    #[serde(default = "TaskDefaultParameters::multi_part_chunk_default")]
+    pub multi_part_chunk: usize,
 }
 
 impl Default for TaskDownload {
@@ -455,6 +463,8 @@ impl Default for TaskDownload {
             meta_dir: TaskDefaultParameters::meta_dir_default(),
             target_exists_skip: TaskDefaultParameters::target_exists_skip_default(),
             start_from_checkpoint: TaskDefaultParameters::start_from_checkpoint_default(),
+            large_file_size: TaskDefaultParameters::large_file_size_default(),
+            multi_part_chunk: TaskDefaultParameters::multi_part_chunk_default(),
         }
     }
 }
@@ -465,7 +475,7 @@ impl TaskDownload {
     }
 
     // 多线程 rayon方案
-    pub fn execute_multi_thread(&self) -> Result<()> {
+    pub fn execute_by_rayon(&self) -> Result<()> {
         println!("exec download multhithread");
         let rt = tokio::runtime::Runtime::new().unwrap();
         let client = self.source.gen_oss_client_ref()?;
@@ -581,48 +591,169 @@ impl TaskDownload {
 
     //基于aws client 通用方案
     pub fn exec_multi_threads(&self) -> Result<()> {
-        let client = self.source.gen_oss_client()?;
+        let err_counter = Arc::new(AtomicUsize::new(0));
+        let stop_offset_save_mark = Arc::new(AtomicBool::new(false));
+        let offset_map = Arc::new(DashMap::<String, usize>::new());
+
+        let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_NAME, "");
+        let check_point_file = gen_file_path(self.meta_dir.as_str(), CHECK_POINT_FILE_NAME, "");
+
         let rt = runtime::Builder::new_multi_thread()
-            .worker_threads(self.task_threads)
+            .worker_threads(num_cpus::get())
             .enable_all()
             .max_io_events_per_tick(self.task_threads)
             .build()?;
 
-        rt.block_on(async {
-            // 生成文件清单，文件清单默认文件存储在文件存储目录下 .objlist
-            let object_list_file = self.local_path.clone() + "/" + OBJECT_LIST_FILE_NAME;
-            let _ = fs::remove_file(object_list_file.clone());
+        // 若不从checkpoint开始，重新生成文件清单
+        if !self.start_from_checkpoint {
+            // 预清理meta目录
+            let _ = fs::remove_dir_all(self.meta_dir.as_str());
+            let mut interrupted = false;
 
-            let r = client
-                .append_all_object_list_to_file(
-                    self.source.bucket.clone(),
-                    self.source.prefix.clone(),
-                    self.bach_size,
-                    object_list_file.clone(),
-                )
-                .await;
-            if let Err(e) = r {
-                log::error!("{}", e);
-            };
-
-            // 根据清单下载文件
-            let lines = read_lines(object_list_file.clone()).unwrap();
-            for line in lines {
-                if let Result::Ok(f) = line {
-                    if !f.ends_with("/") {
-                        let r = client
-                            .download_object_to_local(
-                                self.source.bucket.clone(),
-                                f.clone(),
-                                self.local_path.clone(),
-                            )
-                            .await;
-                        if let Err(e) = r {
-                            log::error!("{}", e);
-                        };
+            rt.block_on(async {
+                let client_source = match self.source.gen_oss_client() {
+                    Result::Ok(c) => c,
+                    Err(e) => {
+                        log::error!("{}", e);
+                        interrupted = true;
+                        return;
                     }
                 };
+                if let Err(e) = client_source
+                    .append_all_object_list_to_file(
+                        self.source.bucket.clone(),
+                        self.source.prefix.clone(),
+                        self.bach_size,
+                        object_list_file.clone(),
+                    )
+                    .await
+                {
+                    log::error!("{}", e);
+                    interrupted = true;
+                    return;
+                };
+            });
+
+            if interrupted {
+                return Err(anyhow!("get object list error"));
             }
+        }
+
+        let mut set: JoinSet<()> = JoinSet::new();
+        let file = File::open(object_list_file.as_str())?;
+
+        rt.block_on(async {
+            let mut file_position = 0;
+            let mut vec_keys: Vec<Record> = vec![];
+
+            if self.start_from_checkpoint {
+                // 执行错误补偿，重新执行错误日志中的记录
+                todo!()
+            }
+
+            // 启动checkpoint记录线程
+            let map = Arc::clone(&offset_map);
+            let stop_mark = Arc::clone(&stop_offset_save_mark);
+            let obj_list = object_list_file.clone();
+            let save_to = check_point_file.clone();
+            task::spawn(async move {
+                snapshot_offset_to_file(save_to.as_str(), obj_list, stop_mark, map)
+            });
+
+            // 按列表传输object from source to target
+            let lines = io::BufReader::new(file).lines();
+            for line in lines {
+                // 若错误达到上限，则停止任务
+                if err_counter.load(std::sync::atomic::Ordering::SeqCst) >= self.max_errors {
+                    break;
+                }
+                if let Result::Ok(key) = line {
+                    let len = key.bytes().len() + "\n".bytes().len();
+                    file_position += len;
+                    if !key.ends_with("/") {
+                        let record = Record {
+                            key,
+                            offset: file_position,
+                        };
+                        vec_keys.push(record);
+                    }
+                };
+
+                if vec_keys.len().to_string().eq(&self.bach_size.to_string()) {
+                    while set.len() >= self.task_threads {
+                        set.join_next().await;
+                    }
+                    let vk = vec_keys.clone();
+
+                    let download = DownLoad {
+                        local_path: self.local_path.clone(),
+                        source: self.source.clone(),
+                        error_conter: Arc::clone(&err_counter),
+                        offset_map: Arc::clone(&offset_map),
+                        meta_dir: self.meta_dir.clone(),
+                        target_exist_skip: self.target_exists_skip,
+                        large_file_size: self.large_file_size,
+                        multi_part_chunk: self.multi_part_chunk,
+                    };
+                    set.spawn(async move {
+                        if let Err(e) = download.exec(vk).await {
+                            download
+                                .error_conter
+                                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            log::error!("{}", e);
+                        };
+                    });
+
+                    // 清理临时key vec
+                    vec_keys.clear();
+                }
+            }
+
+            // 处理集合中的剩余数据，若错误达到上限，则不执行后续操作
+            if vec_keys.len() > 0
+                && err_counter.load(std::sync::atomic::Ordering::SeqCst) < self.max_errors
+            {
+                while set.len() >= self.task_threads {
+                    set.join_next().await;
+                }
+
+                let vk = vec_keys.clone();
+
+                let download = DownLoad {
+                    local_path: self.local_path.clone(),
+                    source: self.source.clone(),
+                    error_conter: Arc::clone(&err_counter),
+                    offset_map: Arc::clone(&offset_map),
+                    meta_dir: self.meta_dir.clone(),
+                    target_exist_skip: false,
+                    large_file_size: self.large_file_size,
+                    multi_part_chunk: self.multi_part_chunk,
+                };
+
+                set.spawn(async move {
+                    if let Err(e) = download.exec(vk).await {
+                        download
+                            .error_conter
+                            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        log::error!("{}", e);
+                    };
+                });
+            }
+
+            while set.len() > 0 {
+                set.join_next().await;
+            }
+            // 配置停止 offset save 标识为 true
+            stop_offset_save_mark.store(true, std::sync::atomic::Ordering::Relaxed);
+            // 记录checkpoint
+            let position: u64 = file_position.try_into().unwrap();
+            let checkpoint = CheckPoint {
+                execute_file_path: object_list_file.clone(),
+                execute_position: position,
+            };
+            if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
+                log::error!("{}", e);
+            };
         });
 
         Ok(())
@@ -648,8 +779,8 @@ pub struct TaskUpLoad {
     pub start_from_checkpoint: bool,
     #[serde(default = "TaskDefaultParameters::large_file_size_default")]
     pub large_file_size: usize,
-    #[serde(default = "TaskDefaultParameters::multi_part_chunck_default")]
-    pub multi_part_chunck: usize,
+    #[serde(default = "TaskDefaultParameters::multi_part_chunk_default")]
+    pub multi_part_chunk: usize,
 }
 
 impl Default for TaskUpLoad {
@@ -664,7 +795,7 @@ impl Default for TaskUpLoad {
             target_exists_skip: TaskDefaultParameters::target_exists_skip_default(),
             start_from_checkpoint: TaskDefaultParameters::start_from_checkpoint_default(),
             large_file_size: TaskDefaultParameters::large_file_size_default(),
-            multi_part_chunck: TaskDefaultParameters::multi_part_chunck_default(),
+            multi_part_chunk: TaskDefaultParameters::multi_part_chunk_default(),
         }
     }
 }
@@ -675,7 +806,7 @@ impl TaskUpLoad {
     }
 
     pub fn exec_multi_threads(&self) -> Result<()> {
-        let error_conter = Arc::new(AtomicUsize::new(0));
+        let error_counter = Arc::new(AtomicUsize::new(0));
         let stop_offset_save_mark = Arc::new(AtomicBool::new(false));
         let offset_map = Arc::new(DashMap::<String, usize>::new());
 
@@ -704,27 +835,7 @@ impl TaskUpLoad {
             //Todo
             // 断点续传补偿逻辑
             if self.start_from_checkpoint {
-                // 执行错误补偿，重新执行错误日志中的记录
-                // match self.error_retry() {
-                //     Ok(_) => {}
-                //     Err(e) => {
-                //         log::error!("{}", e);
-                //         return;
-                //     }
-                // };
-
-                // let checkpoint =
-                //     match get_task_checkpoint(check_point_file.as_str(), self.meta_dir.as_str()) {
-                //         Ok(c) => c,
-                //         Err(e) => {
-                //             log::error!("{}", e);
-                //             return;
-                //         }
-                //     };
-                // if let Err(e) = file.seek(SeekFrom::Start(checkpoint.execute_position)) {
-                //     log::error!("{}", e);
-                //     return;
-                // };
+                todo!()
             }
 
             // 启动定时checkpoint线程
@@ -740,7 +851,7 @@ impl TaskUpLoad {
             let lines = io::BufReader::new(file).lines();
             for line in lines {
                 // 若错误达到上限，则停止任务
-                if error_conter.load(std::sync::atomic::Ordering::SeqCst) >= self.max_errors {
+                if error_counter.load(std::sync::atomic::Ordering::SeqCst) >= self.max_errors {
                     break;
                 }
                 if let Result::Ok(key) = line {
@@ -761,20 +872,15 @@ impl TaskUpLoad {
                     }
                     let vk = vec_keys.clone();
 
-                    let upload = UpLoad {
-                        local_path: self.local_path.clone(),
-                        target: self.target.clone(),
-                        error_conter: Arc::clone(&error_conter),
-                        offset_map: Arc::clone(&offset_map),
-                        meta_dir: self.meta_dir.clone(),
-                        target_exist_skip: self.target_exists_skip,
-                        large_file_size: self.large_file_size,
-                        multi_part_chunck: self.multi_part_chunck,
-                    };
+                    let upload = UpLoad::from_taskupload(
+                        self,
+                        Arc::clone(&error_counter),
+                        Arc::clone(&offset_map),
+                    );
                     set.spawn(async move {
                         if let Err(e) = upload.exec(vk).await {
                             upload
-                                .error_conter
+                                .err_counter
                                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                             log::error!("{}", e);
                         };
@@ -787,7 +893,7 @@ impl TaskUpLoad {
 
             // 处理集合中的剩余数据，若错误达到上限，则不执行后续操作
             if vec_keys.len() > 0
-                && error_conter.load(std::sync::atomic::Ordering::SeqCst) < self.max_errors
+                && error_counter.load(std::sync::atomic::Ordering::SeqCst) < self.max_errors
             {
                 while set.len() >= self.task_threads {
                     set.join_next().await;
@@ -795,20 +901,15 @@ impl TaskUpLoad {
 
                 let vk = vec_keys.clone();
 
-                let upload = UpLoad {
-                    local_path: self.local_path.clone(),
-                    target: self.target.clone(),
-                    error_conter: Arc::clone(&error_conter),
-                    offset_map: Arc::clone(&offset_map),
-                    meta_dir: self.meta_dir.clone(),
-                    target_exist_skip: self.target_exists_skip,
-                    large_file_size: self.large_file_size,
-                    multi_part_chunck: self.multi_part_chunck,
-                };
+                let upload = UpLoad::from_taskupload(
+                    self,
+                    Arc::clone(&error_counter),
+                    Arc::clone(&offset_map),
+                );
                 set.spawn(async move {
                     if let Err(e) = upload.exec(vk).await {
                         upload
-                            .error_conter
+                            .err_counter
                             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         log::error!("{}", e);
                     };
@@ -853,8 +954,8 @@ pub struct TaskLocalToLocal {
     pub start_from_checkpoint: bool,
     #[serde(default = "TaskDefaultParameters::large_file_size_default")]
     pub large_file_size: usize,
-    #[serde(default = "TaskDefaultParameters::multi_part_chunck_default")]
-    pub multi_part_chunck: usize,
+    #[serde(default = "TaskDefaultParameters::multi_part_chunk_default")]
+    pub multi_part_chunk: usize,
 }
 
 impl Default for TaskLocalToLocal {
@@ -869,7 +970,7 @@ impl Default for TaskLocalToLocal {
             target_exists_skip: TaskDefaultParameters::target_exists_skip_default(),
             start_from_checkpoint: TaskDefaultParameters::start_from_checkpoint_default(),
             large_file_size: TaskDefaultParameters::large_file_size_default(),
-            multi_part_chunck: TaskDefaultParameters::multi_part_chunck_default(),
+            multi_part_chunk: TaskDefaultParameters::multi_part_chunk_default(),
         }
     }
 }
@@ -957,7 +1058,7 @@ impl TaskLocalToLocal {
                         meta_dir: self.meta_dir.clone(),
                         target_exist_skip: self.target_exists_skip,
                         large_file_size: self.large_file_size,
-                        multi_part_chunck: self.multi_part_chunck,
+                        multi_part_chunk: self.multi_part_chunk,
                         offset_map: Arc::clone(&offset_map),
                     };
                     // let pre_offset = pre_batch_last_offset;
@@ -991,7 +1092,7 @@ impl TaskLocalToLocal {
                     meta_dir: self.meta_dir.clone(),
                     target_exist_skip: false,
                     large_file_size: self.large_file_size,
-                    multi_part_chunck: self.multi_part_chunck,
+                    multi_part_chunk: self.multi_part_chunk,
                     offset_map: Arc::clone(&offset_map),
                 };
 
@@ -1066,7 +1167,7 @@ impl TaskLocalToLocal {
                             meta_dir: self.meta_dir.clone(),
                             target_exist_skip: self.target_exists_skip,
                             large_file_size: self.large_file_size,
-                            multi_part_chunck: self.multi_part_chunck,
+                            multi_part_chunk: self.multi_part_chunk,
                             offset_map: Arc::new(DashMap::<String, usize>::new()),
                         };
                         let _ = copy.exec(record_vec);
@@ -1107,7 +1208,6 @@ impl Default for TaskTruncateBucket {
 }
 impl TaskTruncateBucket {
     pub fn exec_multi_threads(&self) -> Result<()> {
-        let error_times = Arc::new(AtomicUsize::new(0));
         let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_NAME, "");
         let rt = runtime::Builder::new_multi_thread()
             .worker_threads(num_cpus::get())
@@ -1150,21 +1250,14 @@ impl TaskTruncateBucket {
         let file = File::open(object_list_file.as_str())?;
 
         rt.block_on(async {
-            let mut file_position = 0;
             let mut vec_keys: Vec<ObjectIdentifier> = vec![];
 
             // 按列表传输object from source to target
             let lines = io::BufReader::new(file).lines();
             for line in lines {
                 if let Result::Ok(key) = line {
-                    let len = key.bytes().len() + "\n".bytes().len();
-                    file_position += len;
                     if !key.ends_with("/") {
                         let obj_id = ObjectIdentifier::builder().set_key(Some(key)).build();
-                        // let record = Record {
-                        //     key,
-                        //     offset: file_position,
-                        // };
                         vec_keys.push(obj_id);
                     }
                 };
@@ -1538,34 +1631,5 @@ mod test {
             thread::sleep(Duration::from_secs(10));
             mark.store(true, std::sync::atomic::Ordering::Relaxed);
         });
-    }
-
-    //cargo test osstask::task::test::test_task -- --nocapture
-    #[test]
-    fn test_task() {
-        let task_desc = TaskDownload {
-            source: OSSDescription::default(),
-            local_path: "/tmp".to_string(),
-            bach_size: 200,
-            task_threads: 2,
-            max_errors: TaskDefaultParameters::max_errors_default(),
-            meta_dir: TaskDefaultParameters::meta_dir_default(),
-            target_exists_skip: TaskDefaultParameters::target_exists_skip_default(),
-            start_from_checkpoint: TaskDefaultParameters::start_from_checkpoint_default(),
-        };
-
-        let task = Task {
-            task_id: task_id_generator().to_string(),
-            name: "desc".to_string(),
-            task_desc: TaskDescription::Download(task_desc),
-        };
-
-        println!("struct {:?}", task);
-
-        let task_yml = struct_to_yaml_string(&task).unwrap();
-        println!("yaml is {}", task_yml);
-
-        let t_json = struct_to_json_string(&task).unwrap();
-        println!("json {}", t_json);
     }
 }
