@@ -14,8 +14,6 @@ use aws_sdk_s3::{
 use aws_smithy_types::date_time::DateTime;
 use tokio::io::AsyncReadExt;
 
-use crate::checkpoint::Record;
-
 use super::OssObjectsList;
 
 #[derive(Debug, Clone)]
@@ -172,8 +170,7 @@ impl OssClient {
                 .bucket(&bucket)
                 .key(key.clone())
                 .send()
-                .await
-                .unwrap();
+                .await?;
 
             let data = resp.body.collect().await?;
             let bytes = data.into_bytes();
@@ -250,8 +247,6 @@ impl OssClient {
             .delete(Delete::builder().set_objects(Some(keys)).build())
             .send()
             .await
-
-        // std::result::Result::Ok(())
     }
 
     pub async fn get_object_bytes(&self, bucket: &str, key: &str) -> Result<ByteStream> {
@@ -470,10 +465,7 @@ impl OssClient {
         //分段上传文件并记录completer_part
         loop {
             let mut buf = vec![0; chuck_size];
-            // file.seek(SeekFrom::Start(stream_counter))?;
             let read_count = file.read(&mut buf)?;
-            // let len: u64 = read_count.try_into()?;
-            // stream_counter += len;
             part_number += 1;
 
             if read_count == 0 {
@@ -494,12 +486,12 @@ impl OssClient {
                 .send()
                 .await?;
 
-            let completer_part = CompletedPart::builder()
+            let completed_part = CompletedPart::builder()
                 .e_tag(upload_part_res.e_tag.unwrap_or_default())
                 .part_number(part_number)
                 .build();
 
-            upload_parts.push(completer_part);
+            upload_parts.push(completed_part);
 
             if read_count != chuck_size {
                 break;
@@ -594,4 +586,39 @@ impl OssClient {
 
         Ok(())
     }
+}
+
+pub async fn byte_stream_to_file(b: ByteStream, file: &mut File) -> Result<()> {
+    let content = b.collect().await?;
+    let bytes = content.into_bytes();
+    file.write_all(&bytes)?;
+    file.flush()?;
+    Ok(())
+}
+
+pub async fn byte_stream_multi_partes_to_file(
+    resp: GetObjectOutput,
+    file: &mut File,
+    chunk_size: usize,
+) -> Result<()> {
+    let content_len = resp.content_length();
+    let mut byte_stream_async_reader = resp.body.into_async_read();
+    let mut content_len_usize: usize = content_len.try_into()?;
+    loop {
+        if content_len_usize > chunk_size {
+            let mut buffer = vec![0; chunk_size];
+            let _ = byte_stream_async_reader.read_exact(&mut buffer).await?;
+            file.write_all(&buffer)?;
+            content_len_usize -= chunk_size;
+            continue;
+        } else {
+            let mut buffer = vec![0; content_len_usize];
+            let _ = byte_stream_async_reader.read_exact(&mut buffer).await?;
+            file.write_all(&buffer)?;
+            break;
+        }
+    }
+    file.flush()?;
+
+    Ok(())
 }

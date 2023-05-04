@@ -27,6 +27,7 @@ impl FromStr for CheckPoint {
         Ok(r)
     }
 }
+
 impl CheckPoint {
     pub fn save_to(&self, path: &str) -> Result<()> {
         let mut file = OpenOptions::new()

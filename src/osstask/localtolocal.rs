@@ -1,4 +1,4 @@
-use crate::{checkpoint::Record, commons::multi_parts_copy_file};
+use crate::{checkpoint::Record, commons::multi_parts_copy_file, exception::save_error_record};
 use anyhow::Result;
 use dashmap::DashMap;
 use std::{
@@ -20,7 +20,7 @@ pub struct LocalToLocal {
     // pub filter: Option<String>,
     pub target_exist_skip: bool,
     pub large_file_size: usize,
-    pub multi_part_chunck: usize,
+    pub multi_part_chunk: usize,
 }
 
 impl LocalToLocal {
@@ -29,6 +29,10 @@ impl LocalToLocal {
         let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
         offset_key.push_str(&subffix);
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
+
+        // 先写首行日志，避免错误漏记
+        self.offset_map
+            .insert(offset_key.clone(), records[0].offset);
 
         let mut error_file = OpenOptions::new()
             .create(true)
@@ -49,16 +53,38 @@ impl LocalToLocal {
 
             let t_path = Path::new(t_file_name.as_str());
             if let Some(p) = t_path.parent() {
-                std::fs::create_dir_all(p)?;
+                if let Err(e) = std::fs::create_dir_all(p) {
+                    log::error!("{}", e);
+                    save_error_record(&self.error_conter, record.clone(), &mut error_file);
+                    self.offset_map.insert(offset_key.clone(), record.offset);
+                    continue;
+                };
             };
 
-            let s_file = OpenOptions::new().read(true).open(s_file_name.as_str())?;
+            let s_file = match OpenOptions::new().read(true).open(s_file_name.as_str()) {
+                Ok(p) => p,
+                Err(e) => {
+                    log::error!("{}", e);
+                    save_error_record(&self.error_conter, record.clone(), &mut error_file);
+                    self.offset_map.insert(offset_key.clone(), record.offset);
+                    continue;
+                }
+            };
 
-            let mut t_file = OpenOptions::new()
+            let mut t_file = match OpenOptions::new()
                 .truncate(true)
                 .create(true)
                 .write(true)
-                .open(t_file_name.as_str())?;
+                .open(t_file_name.as_str())
+            {
+                Ok(p) => p,
+                Err(e) => {
+                    log::error!("{}", e);
+                    save_error_record(&self.error_conter, record.clone(), &mut error_file);
+                    self.offset_map.insert(offset_key.clone(), record.offset);
+                    continue;
+                }
+            };
 
             // 目标object存在则不推送
             if self.target_exist_skip {
@@ -95,7 +121,7 @@ impl LocalToLocal {
                 true => multi_parts_copy_file(
                     s_file_name.as_str(),
                     t_file_name.as_str(),
-                    self.multi_part_chunck,
+                    self.multi_part_chunk,
                 ),
                 false => {
                     let data = fs::read(s_file_name.as_str())?;
