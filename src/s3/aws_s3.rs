@@ -332,6 +332,7 @@ impl OssClient {
         body: ByteStream,
     ) -> Result<()> {
         // 计算上传分片
+        let mut content_len = body_len;
         let batch = body_len / chunk_size;
         let remainder = body_len % chunk_size;
 
@@ -365,6 +366,44 @@ impl OssClient {
                 return Err(anyhow!("upload id is None"));
             }
         };
+
+        // let mut part_num = 0;
+        // loop {
+        //     let buffer = match content_len >= chunk_size {
+        //         true => {
+        //             let mut buffer = vec![0; chunk_size];
+        //             let _ = byte_stream_async_reader.read_exact(&mut buffer).await?;
+        //             content_len -= chunk_size;
+        //             buffer
+        //         }
+        //         false => {
+        //             let mut buffer = vec![0; content_len];
+        //             let _ = byte_stream_async_reader.read_exact(&mut buffer).await?;
+        //             buffer
+        //         }
+        //     };
+        //     let buf_len = buffer.len();
+        //     let upload_part_res = self
+        //         .client
+        //         .upload_part()
+        //         .key(key)
+        //         .bucket(bucket)
+        //         .upload_id(upload_id)
+        //         .body(ByteStream::from(buffer))
+        //         .part_number(part_num)
+        //         .send()
+        //         .await?;
+        //     let completer_part = CompletedPart::builder()
+        //         .e_tag(upload_part_res.e_tag.unwrap_or_default())
+        //         .part_number(part_num)
+        //         .build();
+        //     upload_parts.push(completer_part);
+        //     part_num += 1;
+
+        //     if content_len == 0 || buf_len < chunk_size {
+        //         break;
+        //     }
+        // }
 
         // multipartes upload
         for i in 0..batch {
@@ -441,10 +480,7 @@ impl OssClient {
         file: &mut File,
         chuck_size: usize,
     ) -> Result<()> {
-        // let mut file = fs::File::open(file_name)?;
-        // let mut stream_counter: u64 = 0;
         let mut part_number = 0;
-
         let mut upload_parts: Vec<CompletedPart> = Vec::new();
 
         //获取上传id
