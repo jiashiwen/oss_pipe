@@ -2,9 +2,7 @@ use crate::cmd::gen_file_cmd::{new_gen_file_cmd, new_gen_files_cmd};
 use crate::cmd::osstaskcmd::new_osstask_cmd;
 use crate::cmd::{new_config_cmd, new_exit_cmd, new_osscfg_cmd, new_parameters_cmd, new_template};
 use crate::commons::yamlutile::struct_to_yml_file;
-use crate::commons::{
-    generate_file, generate_files, read_yaml_file, struct_to_json_string, SubCmd,
-};
+use crate::commons::{byte_size_to_usize, generate_file, generate_files, read_yaml_file, SubCmd};
 use crate::commons::{struct_to_yaml_string, CommandCompleter};
 use crate::configure::{generate_default_config, set_config_file_path};
 use crate::configure::{get_config_file_path, get_current_config_yml, set_config};
@@ -116,7 +114,6 @@ fn cmd_match(matches: &ArgMatches) {
     if matches.get_flag("interact") {
         if !INTERACT_STATUS.load(std::sync::atomic::Ordering::SeqCst) {
             interact::run();
-
             return;
         }
     }
@@ -174,21 +171,37 @@ fn cmd_match(matches: &ArgMatches) {
     }
     if let Some(template) = matches.subcommand_matches("template") {
         let task_id = task_id_generator();
-        if let Some(_) = template.subcommand_matches("download") {
+        if let Some(download) = template.subcommand_matches("download") {
+            let file = download.get_one::<String>("file");
             let task_download = TaskDownload::default();
             let task = Task {
                 task_id: task_id.to_string(),
                 name: "download task".to_string(),
                 task_desc: TaskDescription::Download(task_download),
             };
-            let yml = struct_to_yaml_string(&task);
-            match yml {
-                Ok(str) => println!("{}", str),
-                Err(e) => eprintln!("{}", e.to_string()),
-            }
+            match file {
+                Some(f) => {
+                    match struct_to_yml_file(&task, f) {
+                        Ok(_) => {
+                            println!("Generate {} succeed", f)
+                        }
+                        Err(e) => {
+                            log::error!("{}", e);
+                        }
+                    };
+                }
+                None => {
+                    let yml = struct_to_yaml_string(&task);
+                    match yml {
+                        Ok(str) => println!("{}", str),
+                        Err(e) => log::error!("{}", e),
+                    }
+                }
+            };
         }
 
-        if let Some(_) = template.subcommand_matches("transfer") {
+        if let Some(transfer) = template.subcommand_matches("transfer") {
+            let file = transfer.get_one::<String>("file");
             let task_id = task_id_generator();
             let mut task_transfer = TaskTransfer::default();
             task_transfer.source.provider = OssProvider::Ali;
@@ -198,69 +211,143 @@ fn cmd_match(matches: &ArgMatches) {
                 name: "transfer task".to_string(),
                 task_desc: TaskDescription::Transfer(task_transfer),
             };
-            let yml = struct_to_yaml_string(&task);
-            match yml {
-                Ok(str) => println!("{}", str),
-                Err(e) => eprintln!("{}", e.to_string()),
-            }
+            match file {
+                Some(f) => {
+                    match struct_to_yml_file(&task, f) {
+                        Ok(_) => {
+                            println!("Generate {} succeed", f)
+                        }
+                        Err(e) => {
+                            log::error!("{}", e);
+                        }
+                    };
+                }
+                None => {
+                    let yml = struct_to_yaml_string(&task);
+                    match yml {
+                        Ok(str) => println!("{}", str),
+                        Err(e) => log::error!("{}", e),
+                    }
+                }
+            };
         }
 
-        if let Some(_) = template.subcommand_matches("upload") {
+        if let Some(upload) = template.subcommand_matches("upload") {
+            let file = upload.get_one::<String>("file");
             let task_upload = TaskUpLoad::default();
             let task = Task {
                 task_id: task_id.to_string(),
                 name: "upload task".to_string(),
                 task_desc: TaskDescription::Upload(task_upload),
             };
-            let yml = struct_to_yaml_string(&task);
-            match yml {
-                Ok(str) => println!("{}", str),
-                Err(e) => eprintln!("{}", e.to_string()),
-            }
+            match file {
+                Some(f) => {
+                    match struct_to_yml_file(&task, f) {
+                        Ok(_) => {
+                            println!("Generate {} succeed", f)
+                        }
+                        Err(e) => {
+                            log::error!("{}", e);
+                        }
+                    };
+                }
+                None => {
+                    let yml = struct_to_yaml_string(&task);
+                    match yml {
+                        Ok(str) => println!("{}", str),
+                        Err(e) => log::error!("{}", e),
+                    }
+                }
+            };
         }
 
-        if let Some(_) = template.subcommand_matches("localtolocal") {
+        if let Some(localtolocal) = template.subcommand_matches("localtolocal") {
+            let file = localtolocal.get_one::<String>("file");
             let task_localtolocal = TaskLocalToLocal::default();
             let task = Task {
                 task_id: task_id.to_string(),
                 name: "local to local task".to_string(),
                 task_desc: TaskDescription::LocalToLocal(task_localtolocal),
             };
-            let yml = struct_to_yaml_string(&task);
-            match yml {
-                Ok(str) => println!("{}", str),
-                Err(e) => eprintln!("{}", e.to_string()),
-            }
+            match file {
+                Some(f) => {
+                    match struct_to_yml_file(&task, f) {
+                        Ok(_) => {
+                            println!("Generate {} succeed", f)
+                        }
+                        Err(e) => {
+                            log::error!("{}", e);
+                        }
+                    };
+                }
+                None => {
+                    let yml = struct_to_yaml_string(&task);
+                    match yml {
+                        Ok(str) => println!("{}", str),
+                        Err(e) => log::error!("{}", e),
+                    }
+                }
+            };
         }
 
-        if let Some(_) = template.subcommand_matches("truncate_bucket") {
+        if let Some(truncate_bucket) = template.subcommand_matches("truncate_bucket") {
+            let file = truncate_bucket.get_one::<String>("file");
             let task_truncate_bucket = TaskTruncateBucket::default();
             let task = Task {
                 task_id: task_id.to_string(),
                 name: "truncate bucket task".to_string(),
                 task_desc: TaskDescription::TruncateBucket(task_truncate_bucket),
             };
-            let yml = struct_to_yaml_string(&task);
-            match yml {
-                Ok(str) => println!("{}", str),
-                Err(e) => eprintln!("{}", e.to_string()),
-            }
+            match file {
+                Some(f) => {
+                    match struct_to_yml_file(&task, f) {
+                        Ok(_) => {
+                            println!("Generate {} succeed", f)
+                        }
+                        Err(e) => {
+                            log::error!("{}", e);
+                        }
+                    };
+                }
+                None => {
+                    let yml = struct_to_yaml_string(&task);
+                    match yml {
+                        Ok(str) => println!("{}", str),
+                        Err(e) => log::error!("{}", e),
+                    }
+                }
+            };
         }
 
-        if let Some(_) = template.subcommand_matches("oss_compare") {
+        if let Some(oss_compare) = template.subcommand_matches("oss_compare") {
+            let file = oss_compare.get_one::<String>("file");
             let mut task_oss_compare = TaskOssCompare::default();
             task_oss_compare.source.provider = OssProvider::Ali;
             task_oss_compare.source.endpoint = "http://oss-cn-beijing.aliyuncs.com".to_string();
             let task = Task {
                 task_id: task_id.to_string(),
-                name: "truncate bucket task".to_string(),
+                name: "oss compare task".to_string(),
                 task_desc: TaskDescription::OssCompare(task_oss_compare),
             };
-            let yml = struct_to_yaml_string(&task);
-            match yml {
-                Ok(str) => println!("{}", str),
-                Err(e) => eprintln!("{}", e.to_string()),
-            }
+            match file {
+                Some(f) => {
+                    match struct_to_yml_file(&task, f) {
+                        Ok(_) => {
+                            println!("Generate {} succeed", f)
+                        }
+                        Err(e) => {
+                            log::error!("{}", e);
+                        }
+                    };
+                }
+                None => {
+                    let yml = struct_to_yaml_string(&task);
+                    match yml {
+                        Ok(str) => println!("{}", str),
+                        Err(e) => log::error!("{}", e),
+                    }
+                }
+            };
         }
     }
 
@@ -304,8 +391,17 @@ fn cmd_match(matches: &ArgMatches) {
     }
 
     if let Some(gen_file) = matches.subcommand_matches("gen_file") {
-        let file_size: usize = match gen_file.get_one("file_size") {
-            Some(s) => *s,
+        let file_size = match gen_file.get_one::<String>("file_size") {
+            Some(s) => {
+                let size = byte_size_to_usize(s);
+                match size {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::error!("{}", e);
+                        return;
+                    }
+                }
+            }
             None => {
                 return;
             }
@@ -342,8 +438,18 @@ fn cmd_match(matches: &ArgMatches) {
                 return;
             }
         };
-        let file_size: usize = match gen_file.get_one("file_size") {
-            Some(s) => *s,
+
+        let file_size = match gen_file.get_one::<String>("file_size") {
+            Some(s) => {
+                let size = byte_size_to_usize(s);
+                match size {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::error!("{}", e);
+                        return;
+                    }
+                }
+            }
             None => {
                 return;
             }

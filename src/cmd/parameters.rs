@@ -5,10 +5,6 @@ pub fn new_parameters_cmd() -> Command {
         .about("show task config parameters list")
         .subcommand(parameters_provider())
         .subcommand(parameters_task_type())
-    // .subcommand(template_upload())
-    // .subcommand(local_to_local())
-    // .subcommand(truncate_bucket())
-    // .subcommand(oss_compare())
 }
 
 fn parameters_provider() -> Command {
