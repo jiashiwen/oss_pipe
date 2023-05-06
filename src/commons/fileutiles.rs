@@ -103,7 +103,7 @@ pub fn generate_file(file_size: usize, batch: usize, file_name: &str) -> Result<
     let file_ref = OpenOptions::new()
         .create(true)
         .write(true)
-        .append(true)
+        .truncate(true)
         .open(file_name.clone())?;
     let mut file = LineWriter::new(file_ref);
     let str = rand_string(batch);

@@ -333,8 +333,8 @@ impl OssClient {
     ) -> Result<()> {
         // 计算上传分片
         let mut content_len = body_len;
-        let batch = body_len / chunk_size;
-        let remainder = body_len % chunk_size;
+        // let batch = body_len / chunk_size;
+        // let remainder = body_len % chunk_size;
 
         let mut byte_stream_async_reader = body.into_async_read();
         let mut upload_parts: Vec<CompletedPart> = Vec::new();
@@ -367,22 +367,50 @@ impl OssClient {
             }
         };
 
-        // let mut part_num = 0;
-        // loop {
-        //     let buffer = match content_len >= chunk_size {
-        //         true => {
-        //             let mut buffer = vec![0; chunk_size];
-        //             let _ = byte_stream_async_reader.read_exact(&mut buffer).await?;
-        //             content_len -= chunk_size;
-        //             buffer
-        //         }
-        //         false => {
-        //             let mut buffer = vec![0; content_len];
-        //             let _ = byte_stream_async_reader.read_exact(&mut buffer).await?;
-        //             buffer
-        //         }
-        //     };
-        //     let buf_len = buffer.len();
+        let mut part_num = 0;
+        loop {
+            let buffer = match content_len >= chunk_size {
+                true => {
+                    let mut buffer = vec![0; chunk_size];
+                    let _ = byte_stream_async_reader.read_exact(&mut buffer).await?;
+                    content_len -= chunk_size;
+                    buffer
+                }
+                false => {
+                    let mut buffer = vec![0; content_len];
+                    let _ = byte_stream_async_reader.read_exact(&mut buffer).await?;
+                    buffer
+                }
+            };
+            let buf_len = buffer.len();
+            let upload_part_res = self
+                .client
+                .upload_part()
+                .key(key)
+                .bucket(bucket)
+                .upload_id(upload_id)
+                .body(ByteStream::from(buffer))
+                .part_number(part_num)
+                .send()
+                .await?;
+            let completer_part = CompletedPart::builder()
+                .e_tag(upload_part_res.e_tag.unwrap_or_default())
+                .part_number(part_num)
+                .build();
+            upload_parts.push(completer_part);
+            part_num += 1;
+
+            if content_len == 0 || buf_len < chunk_size {
+                break;
+            }
+        }
+
+        // multipartes upload
+        // for i in 0..batch {
+        //     let mut buffer = vec![0; chunk_size];
+        //     let _ = byte_stream_async_reader.read_exact(&mut buffer).await?;
+        //     let part_number: i32 = i.try_into()?;
+
         //     let upload_part_res = self
         //         .client
         //         .upload_part()
@@ -390,68 +418,40 @@ impl OssClient {
         //         .bucket(bucket)
         //         .upload_id(upload_id)
         //         .body(ByteStream::from(buffer))
-        //         .part_number(part_num)
+        //         .part_number(part_number)
         //         .send()
         //         .await?;
+
         //     let completer_part = CompletedPart::builder()
         //         .e_tag(upload_part_res.e_tag.unwrap_or_default())
-        //         .part_number(part_num)
+        //         .part_number(part_number)
         //         .build();
-        //     upload_parts.push(completer_part);
-        //     part_num += 1;
 
-        //     if content_len == 0 || buf_len < chunk_size {
-        //         break;
-        //     }
+        //     upload_parts.push(completer_part);
         // }
 
-        // multipartes upload
-        for i in 0..batch {
-            let mut buffer = vec![0; chunk_size];
-            let _ = byte_stream_async_reader.read_exact(&mut buffer).await?;
-            let part_number: i32 = i.try_into()?;
+        // if remainder > 0 {
+        //     let mut buffer = vec![0; remainder];
+        //     let _ = byte_stream_async_reader.read_exact(&mut buffer).await?;
+        //     let part_number: i32 = batch.try_into()?;
+        //     let upload_part_res = self
+        //         .client
+        //         .upload_part()
+        //         .key(key)
+        //         .bucket(bucket)
+        //         .upload_id(upload_id)
+        //         .body(ByteStream::from(buffer))
+        //         .part_number(part_number + 1)
+        //         .send()
+        //         .await?;
 
-            let upload_part_res = self
-                .client
-                .upload_part()
-                .key(key)
-                .bucket(bucket)
-                .upload_id(upload_id)
-                .body(ByteStream::from(buffer))
-                .part_number(part_number)
-                .send()
-                .await?;
+        //     let completer_part = CompletedPart::builder()
+        //         .e_tag(upload_part_res.e_tag.unwrap_or_default())
+        //         .part_number(part_number + 1)
+        //         .build();
 
-            let completer_part = CompletedPart::builder()
-                .e_tag(upload_part_res.e_tag.unwrap_or_default())
-                .part_number(part_number)
-                .build();
-
-            upload_parts.push(completer_part);
-        }
-
-        if remainder > 0 {
-            let mut buffer = vec![0; remainder];
-            let _ = byte_stream_async_reader.read_exact(&mut buffer).await?;
-            let part_number: i32 = batch.try_into()?;
-            let upload_part_res = self
-                .client
-                .upload_part()
-                .key(key)
-                .bucket(bucket)
-                .upload_id(upload_id)
-                .body(ByteStream::from(buffer))
-                .part_number(part_number + 1)
-                .send()
-                .await?;
-
-            let completer_part = CompletedPart::builder()
-                .e_tag(upload_part_res.e_tag.unwrap_or_default())
-                .part_number(part_number + 1)
-                .build();
-
-            upload_parts.push(completer_part);
-        }
+        //     upload_parts.push(completer_part);
+        // }
 
         // 完成上传文件合并
         let completed_multipart_upload: CompletedMultipartUpload =
