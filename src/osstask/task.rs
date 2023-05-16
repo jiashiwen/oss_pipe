@@ -236,7 +236,7 @@ impl TaskTransfer {
 
             if self.start_from_checkpoint {
                 // 执行错误补偿，重新执行错误日志中的记录
-                match self.error_retry() {
+                match self.error_record_retry() {
                     Ok(_) => {}
                     Err(e) => {
                         log::error!("{}", e);
@@ -264,7 +264,7 @@ impl TaskTransfer {
             let obj_list = object_list_file.clone();
             let save_to = check_point_file.clone();
             task::spawn(async move {
-                snapshot_offset_to_file(save_to.as_str(), obj_list, stop_mark, map)
+                snapshot_offset_to_file(save_to.as_str(), obj_list, stop_mark, map, 3)
             });
 
             // 按列表传输object from source to target
@@ -298,7 +298,6 @@ impl TaskTransfer {
                         error_conter: Arc::clone(&error_conter),
                         offset_map: Arc::clone(&offset_map),
                         meta_dir: self.meta_dir.clone(),
-                        // prefix: self.target.prefix.clone(),
                         target_exist_skip: self.target_exists_skip,
                         large_file_size: self.large_file_size,
                         multi_part_chunk: self.multi_part_chunk,
@@ -366,7 +365,7 @@ impl TaskTransfer {
         Ok(())
     }
 
-    pub fn error_retry(&self) -> Result<()> {
+    pub fn error_record_retry(&self) -> Result<()> {
         // 遍历错误记录
         for entry in WalkDir::new(self.meta_dir.as_str())
             .into_iter()
@@ -407,7 +406,6 @@ impl TaskTransfer {
                             target: self.target.clone(),
                             error_conter: Arc::new(AtomicUsize::new(0)),
                             meta_dir: self.meta_dir.clone(),
-                            // prefix: self.target.prefix.clone(),
                             target_exist_skip: self.target_exists_skip,
                             large_file_size: self.large_file_size,
                             multi_part_chunk: self.multi_part_chunk,
@@ -657,7 +655,7 @@ impl TaskDownload {
             let obj_list = object_list_file.clone();
             let save_to = check_point_file.clone();
             task::spawn(async move {
-                snapshot_offset_to_file(save_to.as_str(), obj_list, stop_mark, map)
+                snapshot_offset_to_file(save_to.as_str(), obj_list, stop_mark, map, 3)
             });
 
             // 按列表传输object from source to target
@@ -684,25 +682,31 @@ impl TaskDownload {
                         set.join_next().await;
                     }
                     let vk = vec_keys.clone();
+                    self.execute_download(
+                        &mut set,
+                        vk,
+                        Arc::clone(&err_counter),
+                        Arc::clone(&offset_map),
+                    );
 
-                    let download = DownLoad {
-                        local_path: self.local_path.clone(),
-                        source: self.source.clone(),
-                        error_conter: Arc::clone(&err_counter),
-                        offset_map: Arc::clone(&offset_map),
-                        meta_dir: self.meta_dir.clone(),
-                        target_exist_skip: self.target_exists_skip,
-                        large_file_size: self.large_file_size,
-                        multi_part_chunk: self.multi_part_chunk,
-                    };
-                    set.spawn(async move {
-                        if let Err(e) = download.exec(vk).await {
-                            download
-                                .error_conter
-                                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                            log::error!("{}", e);
-                        };
-                    });
+                    // let download = DownLoad {
+                    //     local_path: self.local_path.clone(),
+                    //     source: self.source.clone(),
+                    //     error_conter: Arc::clone(&err_counter),
+                    //     offset_map: Arc::clone(&offset_map),
+                    //     meta_dir: self.meta_dir.clone(),
+                    //     target_exist_skip: self.target_exists_skip,
+                    //     large_file_size: self.large_file_size,
+                    //     multi_part_chunk: self.multi_part_chunk,
+                    // };
+                    // set.spawn(async move {
+                    //     if let Err(e) = download.exec(vk).await {
+                    //         download
+                    //             .error_conter
+                    //             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    //         log::error!("{}", e);
+                    //     };
+                    // });
 
                     // 清理临时key vec
                     vec_keys.clear();
@@ -718,26 +722,32 @@ impl TaskDownload {
                 }
 
                 let vk = vec_keys.clone();
+                self.execute_download(
+                    &mut set,
+                    vk,
+                    Arc::clone(&err_counter),
+                    Arc::clone(&offset_map),
+                )
 
-                let download = DownLoad {
-                    local_path: self.local_path.clone(),
-                    source: self.source.clone(),
-                    error_conter: Arc::clone(&err_counter),
-                    offset_map: Arc::clone(&offset_map),
-                    meta_dir: self.meta_dir.clone(),
-                    target_exist_skip: false,
-                    large_file_size: self.large_file_size,
-                    multi_part_chunk: self.multi_part_chunk,
-                };
+                // let download = DownLoad {
+                //     local_path: self.local_path.clone(),
+                //     source: self.source.clone(),
+                //     error_conter: Arc::clone(&err_counter),
+                //     offset_map: Arc::clone(&offset_map),
+                //     meta_dir: self.meta_dir.clone(),
+                //     target_exist_skip: false,
+                //     large_file_size: self.large_file_size,
+                //     multi_part_chunk: self.multi_part_chunk,
+                // };
 
-                set.spawn(async move {
-                    if let Err(e) = download.exec(vk).await {
-                        download
-                            .error_conter
-                            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                        log::error!("{}", e);
-                    };
-                });
+                // set.spawn(async move {
+                //     if let Err(e) = download.exec(vk).await {
+                //         download
+                //             .error_conter
+                //             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                //         log::error!("{}", e);
+                //     };
+                // });
             }
 
             while set.len() > 0 {
@@ -755,8 +765,35 @@ impl TaskDownload {
                 log::error!("{}", e);
             };
         });
-
         Ok(())
+    }
+
+    pub fn execute_download(
+        &self,
+        joinset: &mut JoinSet<()>,
+        records: Vec<Record>,
+        error_conter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, usize>>,
+    ) {
+        let download = DownLoad {
+            local_path: self.local_path.clone(),
+            source: self.source.clone(),
+            error_conter,
+            offset_map,
+            meta_dir: self.meta_dir.clone(),
+            target_exist_skip: false,
+            large_file_size: self.large_file_size,
+            multi_part_chunk: self.multi_part_chunk,
+        };
+
+        joinset.spawn(async move {
+            if let Err(e) = download.exec(records).await {
+                download
+                    .error_conter
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                log::error!("{}", e);
+            };
+        });
     }
 }
 
@@ -844,7 +881,7 @@ impl TaskUpLoad {
             let obj_list = object_list_file.clone();
             let save_to = check_point_file.clone();
             task::spawn(async move {
-                snapshot_offset_to_file(save_to.as_str(), obj_list, stop_mark, map)
+                snapshot_offset_to_file(save_to.as_str(), obj_list, stop_mark, map, 3)
             });
 
             // 按列表传输object from source to target
@@ -1023,7 +1060,7 @@ impl TaskLocalToLocal {
             let mut vec_keys: Vec<Record> = vec![];
             let obj_list = object_list_file.clone();
             task::spawn(async move {
-                snapshot_offset_to_file(check_point_file.as_str(), obj_list, stop_mark, map)
+                snapshot_offset_to_file(check_point_file.as_str(), obj_list, stop_mark, map, 3)
             });
 
             // 按列表传输object from source to target
@@ -1337,6 +1374,7 @@ pub fn snapshot_offset_to_file(
     execute_file_path: String,
     stop_save_mark: Arc<AtomicBool>,
     offset_map: Arc<DashMap<String, usize>>,
+    interval: u64,
 ) {
     while !stop_save_mark.load(std::sync::atomic::Ordering::Relaxed) {
         let offset: Option<usize> = offset_map
@@ -1356,7 +1394,7 @@ pub fn snapshot_offset_to_file(
                 _ => (),
             }
         }
-        thread::sleep(Duration::from_secs(3));
+        thread::sleep(Duration::from_secs(interval));
     }
 }
 
@@ -1473,7 +1511,7 @@ impl TaskOssCompare {
             let obj_list = object_list_file.clone();
             let save_to = check_point_file.clone();
             task::spawn(async move {
-                snapshot_offset_to_file(save_to.as_str(), obj_list, stop_mark, map)
+                snapshot_offset_to_file(save_to.as_str(), obj_list, stop_mark, map, 3)
             });
 
             // 按列表传输object from source to target
@@ -1575,7 +1613,7 @@ impl TaskOssCompare {
 #[cfg(test)]
 mod test {
     use std::{
-        fs::{self, create_dir_all, OpenOptions},
+        fs::{create_dir_all, OpenOptions},
         path::Path,
         sync::{atomic::AtomicBool, Arc},
         thread,
@@ -1585,13 +1623,7 @@ mod test {
     use dashmap::DashMap;
     use tokio::{runtime::Runtime, task};
 
-    use crate::{
-        commons::{struct_to_json_string, struct_to_yaml_string},
-        osstask::{snapshot_offset_to_file, TaskDefaultParameters, OFFSET_PREFIX},
-        s3::OSSDescription,
-    };
-
-    use super::{task_id_generator, Task, TaskDescription, TaskDownload};
+    use crate::osstask::{snapshot_offset_to_file, OFFSET_PREFIX};
 
     //cargo test osstask::task::test::test_save_offset -- --nocapture
     #[test]
@@ -1625,6 +1657,7 @@ mod test {
                     "xxx/xx/objlist".to_string(),
                     Arc::clone(&stop_mark),
                     Arc::clone(&offset_map),
+                    3,
                 );
             });
 

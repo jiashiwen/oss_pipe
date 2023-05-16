@@ -19,7 +19,6 @@ impl FromStr for Record {
 
 impl Record {
     pub fn save_json_to_file(&self, file: &mut File) -> Result<()> {
-        // 获取文件路径，若不存在则创建路径
         let mut json = serde_json::to_string(self)?;
         json.push_str("\n");
         file.write_all(json.as_bytes())?;

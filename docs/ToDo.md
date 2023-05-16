@@ -18,19 +18,18 @@
 - [x] 编写多线程程序
 - [x] checkpoint 设计与实现 transfer
 - [x] checkpoint 设计与实现 download
-- [ ] checkpoint 设计与实现 upload
+- [x] checkpoint 设计与实现 upload
 - [x] 最大错误数机制，到达最大错误数，任务停止
 - [ ] 错误数据持久化与解析，配合checkpoint实现断点续传
 - [ ] 实现获取object属性函数
-- [ ] 支持过期时间
-- [ ] 支持文件过期时间
+- [x] 支持文件过期时间
 - [x] 大文件支持https://docs.aws.amazon.com/sdk-for-rust/latest/dg/rust_s3_code_examples.html
   - [x] 大文件分片上传
   - [ ] 大文件分片下载
 - [ ] 多任务模式，统一描述文件支持多任务同事运行 
 - [x] 增加local_to_local 任务，多线程复制目录文件
-  - [ ] 大文件文件流切分
-  - [ ] 大文件流写入
+  - [x] 大文件文件流切分
+  - [x] 大文件流写入
 - [ ] 当源端文件不存在则视作成功处理，记录offset
 - [ ] 支持oss文件过期时间
 - [ ] 静态校验功能
