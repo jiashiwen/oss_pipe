@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use snowflake::SnowflakeIdGenerator;
 
 use tokio::{
-    runtime,
+    runtime::{self, Runtime},
     task::{self, JoinSet},
 };
 use walkdir::WalkDir;
@@ -37,7 +37,7 @@ pub const CHECK_POINT_FILE_NAME: &'static str = "checkpoint.yml";
 pub const ERROR_RECORD_PREFIX: &'static str = "error_record_";
 pub const OFFSET_PREFIX: &'static str = "offset_";
 pub const OFFSET_EXEC_PREFIX: &'static str = "offset_exec_";
-pub const OFFSET_TASK_PREFIX: &'static str = "offset_task_";
+// pub const OFFSET_TASK_PREFIX: &'static str = "offset_task_";
 pub const COMPARE_OBJECT_DIFF_PREFIX: &'static str = "diff_object_";
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
@@ -174,8 +174,13 @@ impl Default for TaskTransfer {
 }
 
 impl TaskTransfer {
+    pub fn from_taskdesc(desc: &TaskDescription) -> Option<Self> {
+        match desc {
+            TaskDescription::Transfer(transfer) => Some(transfer.clone()),
+            _ => None,
+        }
+    }
     //Todo
-    // 增加多线程及checkpoint
     // 增加错误输出及任务停止条件
     pub fn exec_multi_threads(&self) -> Result<()> {
         let error_conter = Arc::new(AtomicUsize::new(0));
@@ -604,41 +609,13 @@ impl TaskDownload {
 
         // 若不从checkpoint开始，重新生成文件清单
         if !self.start_from_checkpoint {
-            // 预清理meta目录
-            let _ = fs::remove_dir_all(self.meta_dir.as_str());
-            let mut interrupted = false;
-
-            rt.block_on(async {
-                let client_source = match self.source.gen_oss_client() {
-                    Result::Ok(c) => c,
-                    Err(e) => {
-                        log::error!("{}", e);
-                        interrupted = true;
-                        return;
-                    }
-                };
-                if let Err(e) = client_source
-                    .append_all_object_list_to_file(
-                        self.source.bucket.clone(),
-                        self.source.prefix.clone(),
-                        self.bach_size,
-                        object_list_file.clone(),
-                    )
-                    .await
-                {
-                    log::error!("{}", e);
-                    interrupted = true;
-                    return;
-                };
-            });
-
-            if interrupted {
-                return Err(anyhow!("get object list error"));
-            }
+            if let Err(e) = self.generate_object_list(&rt, object_list_file.clone()) {
+                return Err(e);
+            };
         }
 
         let mut set: JoinSet<()> = JoinSet::new();
-        let file = File::open(object_list_file.as_str())?;
+        let mut file = File::open(object_list_file.as_str())?;
 
         rt.block_on(async {
             let mut file_position = 0;
@@ -646,7 +623,26 @@ impl TaskDownload {
 
             if self.start_from_checkpoint {
                 // 执行错误补偿，重新执行错误日志中的记录
-                todo!()
+                match self.error_record_retry() {
+                    Ok(_) => {}
+                    Err(e) => {
+                        log::error!("{}", e);
+                        return;
+                    }
+                };
+
+                let checkpoint =
+                    match get_task_checkpoint(check_point_file.as_str(), self.meta_dir.as_str()) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            log::error!("{}", e);
+                            return;
+                        }
+                    };
+                if let Err(e) = file.seek(SeekFrom::Start(checkpoint.execute_position)) {
+                    log::error!("{}", e);
+                    return;
+                };
             }
 
             // 启动checkpoint记录线程
@@ -689,25 +685,6 @@ impl TaskDownload {
                         Arc::clone(&offset_map),
                     );
 
-                    // let download = DownLoad {
-                    //     local_path: self.local_path.clone(),
-                    //     source: self.source.clone(),
-                    //     error_conter: Arc::clone(&err_counter),
-                    //     offset_map: Arc::clone(&offset_map),
-                    //     meta_dir: self.meta_dir.clone(),
-                    //     target_exist_skip: self.target_exists_skip,
-                    //     large_file_size: self.large_file_size,
-                    //     multi_part_chunk: self.multi_part_chunk,
-                    // };
-                    // set.spawn(async move {
-                    //     if let Err(e) = download.exec(vk).await {
-                    //         download
-                    //             .error_conter
-                    //             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    //         log::error!("{}", e);
-                    //     };
-                    // });
-
                     // 清理临时key vec
                     vec_keys.clear();
                 }
@@ -728,26 +705,6 @@ impl TaskDownload {
                     Arc::clone(&err_counter),
                     Arc::clone(&offset_map),
                 )
-
-                // let download = DownLoad {
-                //     local_path: self.local_path.clone(),
-                //     source: self.source.clone(),
-                //     error_conter: Arc::clone(&err_counter),
-                //     offset_map: Arc::clone(&offset_map),
-                //     meta_dir: self.meta_dir.clone(),
-                //     target_exist_skip: false,
-                //     large_file_size: self.large_file_size,
-                //     multi_part_chunk: self.multi_part_chunk,
-                // };
-
-                // set.spawn(async move {
-                //     if let Err(e) = download.exec(vk).await {
-                //         download
-                //             .error_conter
-                //             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                //         log::error!("{}", e);
-                //     };
-                // });
             }
 
             while set.len() > 0 {
@@ -765,6 +722,98 @@ impl TaskDownload {
                 log::error!("{}", e);
             };
         });
+        Ok(())
+    }
+
+    pub fn error_record_retry(&self) -> Result<()> {
+        // 遍历错误记录
+        for entry in WalkDir::new(self.meta_dir.as_str())
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|e| !e.file_type().is_dir() && e.file_name().to_str().is_some())
+        {
+            let file_name = entry.file_name().to_str().unwrap();
+
+            if !file_name.starts_with(ERROR_RECORD_PREFIX) {
+                continue;
+            };
+
+            if let Some(p) = entry.path().to_str() {
+                if let Ok(lines) = read_lines(p) {
+                    let mut record_vec = vec![];
+                    for line in lines {
+                        match line {
+                            Ok(content) => {
+                                let record = match json_to_struct::<Record>(content.as_str()) {
+                                    Ok(r) => r,
+                                    Err(e) => {
+                                        log::error!("{}", e);
+                                        continue;
+                                    }
+                                };
+                                record_vec.push(record);
+                            }
+                            Err(e) => {
+                                log::error!("{}", e);
+                                continue;
+                            }
+                        }
+                    }
+
+                    if record_vec.len() > 0 {
+                        let download = DownLoad {
+                            local_path: self.local_path.clone(),
+                            source: self.source.clone(),
+                            error_conter: Arc::new(AtomicUsize::new(0)),
+                            offset_map: Arc::new(DashMap::<String, usize>::new()),
+                            meta_dir: self.meta_dir.clone(),
+                            target_exist_skip: self.target_exists_skip,
+                            large_file_size: self.large_file_size,
+                            multi_part_chunk: self.multi_part_chunk,
+                        };
+                        let _ = download.exec(record_vec);
+                    }
+                }
+
+                let _ = fs::remove_file(p);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn generate_object_list(&self, rt: &Runtime, object_list_file: String) -> Result<()> {
+        // 预清理meta目录
+        let _ = fs::remove_dir_all(self.meta_dir.as_str());
+        let mut interrupted = false;
+
+        rt.block_on(async {
+            let client_source = match self.source.gen_oss_client() {
+                Result::Ok(c) => c,
+                Err(e) => {
+                    log::error!("{}", e);
+                    interrupted = true;
+                    return;
+                }
+            };
+            if let Err(e) = client_source
+                .append_all_object_list_to_file(
+                    self.source.bucket.clone(),
+                    self.source.prefix.clone(),
+                    self.bach_size,
+                    object_list_file.clone(),
+                )
+                .await
+            {
+                log::error!("{}", e);
+                interrupted = true;
+                return;
+            };
+        });
+
+        if interrupted {
+            return Err(anyhow!("get object list error"));
+        }
         Ok(())
     }
 

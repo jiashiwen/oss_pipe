@@ -10,6 +10,10 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 * 构建
 
+```
+apt install -y pkg-config
+```
+
 ```shell
 git clone https://github.com/jiashiwen/oss_pipe.git
 cd oss_pipe
@@ -26,5 +30,6 @@ cargo build --release
 oss_pipe template transfer /tmp/transfer.yml
 ```
 
+template 命令按照任务类型创建模版，支持的任务类型请参考参考手册
 
 ### 执行任务

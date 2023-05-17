@@ -73,5 +73,9 @@ path = "examples/read_bytes.rs"
 name = "dashmap"
 path = "examples/dashmap_sample.rs"
 
+[[example]]
+name = "huawei"
+path = "examples/huawei.rs"
+
 [profile.release]
 lto = true
