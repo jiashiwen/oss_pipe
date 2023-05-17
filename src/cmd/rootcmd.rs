@@ -204,7 +204,7 @@ fn cmd_match(matches: &ArgMatches) {
             let file = transfer.get_one::<String>("file");
             let task_id = task_id_generator();
             let mut task_transfer = TaskTransfer::default();
-            task_transfer.source.provider = OssProvider::Ali;
+            task_transfer.source.provider = OssProvider::ALI;
             task_transfer.source.endpoint = "http://oss-cn-beijing.aliyuncs.com".to_string();
             let task = Task {
                 task_id: task_id.to_string(),
@@ -322,7 +322,7 @@ fn cmd_match(matches: &ArgMatches) {
         if let Some(oss_compare) = template.subcommand_matches("oss_compare") {
             let file = oss_compare.get_one::<String>("file");
             let mut task_oss_compare = TaskOssCompare::default();
-            task_oss_compare.source.provider = OssProvider::Ali;
+            task_oss_compare.source.provider = OssProvider::ALI;
             task_oss_compare.source.endpoint = "http://oss-cn-beijing.aliyuncs.com".to_string();
             let task = Task {
                 task_id: task_id.to_string(),
@@ -354,9 +354,10 @@ fn cmd_match(matches: &ArgMatches) {
     if let Some(parameters) = matches.subcommand_matches("parameters") {
         if let Some(_) = parameters.subcommand_matches("provider") {
             println!("{:?}", OssProvider::AWS);
-            println!("{:?}", OssProvider::Ali);
+            println!("{:?}", OssProvider::ALI);
             println!("{:?}", OssProvider::JD);
             println!("{:?}", OssProvider::JRSS);
+            println!("{:?}", OssProvider::HUAWEI);
         }
 
         if let Some(_) = parameters.subcommand_matches("task_type") {
@@ -379,7 +380,7 @@ fn cmd_match(matches: &ArgMatches) {
             }
             let oss_jd = OSSDescription::default();
             let mut oss_ali = OSSDescription::default();
-            oss_ali.provider = OssProvider::Ali;
+            oss_ali.provider = OssProvider::ALI;
             oss_ali.endpoint = "oss-cn-beijing.aliyuncs.com".to_string();
             let vec_oss = vec![oss_jd, oss_ali];
             if let Err(e) = struct_to_yml_file(&vec_oss, file.as_str()) {

@@ -78,8 +78,9 @@ pub trait OSSActions {
 pub enum OssProvider {
     JD,
     JRSS,
-    Ali,
+    ALI,
     AWS,
+    HUAWEI,
 }
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct OssObjectsList {
@@ -141,7 +142,7 @@ impl OSSDescription {
                 let jdclient = OssJdClient { client };
                 Ok(Box::new(jdclient))
             }
-            OssProvider::Ali => {
+            OssProvider::ALI => {
                 let bucket = BucketName::new(self.bucket.clone())?;
                 let endpoint = EndPoint::from_str(self.endpoint.as_str())?;
                 let client = aliyun_oss_client::Client::new(
@@ -175,6 +176,7 @@ impl OSSDescription {
             }
 
             OssProvider::AWS => todo!(),
+            OssProvider::HUAWEI => todo!(),
         }
     }
 
@@ -197,7 +199,7 @@ impl OSSDescription {
                 let oss_client = OssClient { client };
                 Ok(oss_client)
             }
-            OssProvider::Ali => {
+            OssProvider::ALI => {
                 let shared_config = SdkConfig::builder()
                     .credentials_provider(SharedCredentialsProvider::new(Credentials::new(
                         self.access_key_id.clone(),
@@ -253,6 +255,23 @@ impl OSSDescription {
                 let oss_client = OssClient { client };
                 Ok(oss_client)
             }
+            OssProvider::HUAWEI => {
+                let shared_config = SdkConfig::builder()
+                    .credentials_provider(SharedCredentialsProvider::new(Credentials::new(
+                        self.access_key_id.clone(),
+                        self.secret_access_key.clone(),
+                        None,
+                        None,
+                        "Static",
+                    )))
+                    .endpoint_url(self.endpoint.clone())
+                    .region(Region::new(self.region.clone()))
+                    .build();
+                let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+                let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
+                let oss_client = OssClient { client };
+                Ok(oss_client)
+            }
         }
     }
 }
@@ -288,7 +307,7 @@ mod test {
         let vec_oss = read_yaml_file::<Vec<OSSDescription>>("osscfg.yml").unwrap();
         let mut oss_ali = OSSDescription::default();
         for item in vec_oss.iter() {
-            if item.provider == OssProvider::Ali {
+            if item.provider == OssProvider::ALI {
                 oss_ali = item.clone();
             }
         }

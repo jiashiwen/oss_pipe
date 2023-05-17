@@ -21,7 +21,7 @@ pub struct OssAliClient {
 #[async_trait]
 impl OSSActions for OssAliClient {
     fn oss_client_type(&self) -> OssProvider {
-        OssProvider::Ali
+        OssProvider::ALI
     }
 
     async fn list_objects(
