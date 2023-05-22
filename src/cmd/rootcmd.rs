@@ -148,10 +148,10 @@ fn cmd_match(matches: &ArgMatches) {
 
     if let Some(osstask) = matches.subcommand_matches("osstask") {
         if let Some(f) = osstask.get_one::<String>("filepath") {
-            let upload = read_yaml_file::<Task>(f);
+            let task = read_yaml_file::<Task>(f);
             let now = time::Instant::now();
 
-            match upload {
+            match task {
                 Ok(t) => {
                     log::info!("execute task: {:?}", t.task_id);
                     let r = t.task_desc.exec_multi_threads();
@@ -173,7 +173,9 @@ fn cmd_match(matches: &ArgMatches) {
         let task_id = task_id_generator();
         if let Some(download) = template.subcommand_matches("download") {
             let file = download.get_one::<String>("file");
-            let task_download = TaskDownload::default();
+            let mut task_download = TaskDownload::default();
+            let filter = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
+            task_download.filter = Some(filter);
             let task = Task {
                 task_id: task_id.to_string(),
                 name: "download task".to_string(),

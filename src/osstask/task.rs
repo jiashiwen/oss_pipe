@@ -21,6 +21,7 @@ use anyhow::{anyhow, Result};
 use aws_sdk_s3::model::ObjectIdentifier;
 use dashmap::DashMap;
 use rayon::ThreadPoolBuilder;
+use regex::RegexSet;
 use serde::{Deserialize, Serialize};
 use snowflake::SnowflakeIdGenerator;
 
@@ -122,6 +123,10 @@ impl TaskDefaultParameters {
 
     pub fn meta_dir_default() -> String {
         "/tmp/meta_dir".to_string()
+    }
+
+    pub fn filter_default() -> Option<Vec<String>> {
+        None
     }
 }
 
@@ -453,6 +458,8 @@ pub struct TaskDownload {
     pub large_file_size: usize,
     #[serde(default = "TaskDefaultParameters::multi_part_chunk_default")]
     pub multi_part_chunk: usize,
+    #[serde(default = "TaskDefaultParameters::filter_default")]
+    pub filter: Option<Vec<String>>,
 }
 
 impl Default for TaskDownload {
@@ -468,6 +475,7 @@ impl Default for TaskDownload {
             start_from_checkpoint: TaskDefaultParameters::start_from_checkpoint_default(),
             large_file_size: TaskDefaultParameters::large_file_size_default(),
             multi_part_chunk: TaskDefaultParameters::multi_part_chunk_default(),
+            filter: TaskDefaultParameters::filter_default(),
         }
     }
 }
@@ -600,6 +608,12 @@ impl TaskDownload {
 
         let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_NAME, "");
         let check_point_file = gen_file_path(self.meta_dir.as_str(), CHECK_POINT_FILE_NAME, "");
+        let mut regex_set: Option<RegexSet> = None;
+
+        if let Some(vec_regex_str) = self.filter.clone() {
+            let set = RegexSet::new(&vec_regex_str)?;
+            regex_set = Some(set);
+        };
 
         let rt = runtime::Builder::new_multi_thread()
             .worker_threads(num_cpus::get())
@@ -669,7 +683,17 @@ impl TaskDownload {
                             key,
                             offset: file_position,
                         };
-                        vec_keys.push(record);
+                        match regex_set {
+                            Some(ref set) => {
+                                if set.is_match(&record.key) {
+                                    vec_keys.push(record);
+                                }
+                            }
+                            None => {
+                                vec_keys.push(record);
+                            }
+                        }
+                        // vec_keys.push(record);
                     }
                 };
 
