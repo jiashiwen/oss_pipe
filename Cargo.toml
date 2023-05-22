@@ -34,6 +34,7 @@ rand = "0.8.5"
 rust-crypto = "0.2.36"
 num_cpus = "1.15.0"
 dashmap = "5.4.0"
+regex = "1.8.1"
 
 # jd and aws oss
 # jdcloud_signer = { git = "https://github.com/shijunLee/jdcloud-sdk-rust-signer" }
@@ -58,14 +59,6 @@ name = "jrss"
 path = "examples/jrss_sample.rs"
 
 [[example]]
-name = "aws_ali"
-path = "examples/ali_sample_with_aws_s3.rs"
-
-[[example]]
-name = "aws_jd"
-path = "examples/jd_s3.rs"
-
-[[example]]
 name = "read_bytes"
 path = "examples/read_bytes.rs"
 
@@ -76,6 +69,10 @@ path = "examples/dashmap_sample.rs"
 [[example]]
 name = "huawei"
 path = "examples/huawei.rs"
+
+[[example]]
+name = "regex"
+path = "examples/regex_sample.rs"
 
 [profile.release]
 lto = true
