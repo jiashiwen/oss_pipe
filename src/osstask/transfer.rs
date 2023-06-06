@@ -17,15 +17,12 @@ pub struct Transfer {
     pub error_conter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, usize>>,
     pub meta_dir: String,
-    // pub filter: Option<String>,
     pub target_exist_skip: bool,
     pub large_file_size: usize,
     pub multi_part_chunk: usize,
 }
 
 impl Transfer {
-    // todo
-    // key filter 正则表达式支持
     pub async fn exec(&self, records: Vec<Record>) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
@@ -67,10 +64,11 @@ impl Transfer {
                 }
             };
 
-            let mut target_key = "".to_string();
-            if let Some(s) = self.target.prefix.clone() {
-                target_key.push_str(&s);
+            let mut target_key = match self.target.prefix.clone() {
+                Some(s) => s,
+                None => "".to_string(),
             };
+
             target_key.push_str(&record.key);
 
             // 目标object存在则不推送

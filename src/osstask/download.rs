@@ -25,7 +25,6 @@ pub struct DownLoad {
     pub error_conter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, usize>>,
     pub meta_dir: String,
-    // pub filter: Option<String>,
     pub target_exist_skip: bool,
     pub large_file_size: usize,
     pub multi_part_chunk: usize,

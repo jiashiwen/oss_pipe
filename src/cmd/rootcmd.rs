@@ -174,8 +174,11 @@ fn cmd_match(matches: &ArgMatches) {
         if let Some(download) = template.subcommand_matches("download") {
             let file = download.get_one::<String>("file");
             let mut task_download = TaskDownload::default();
-            let filter = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
-            task_download.filter = Some(filter);
+            let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
+            let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
+            task_download.exclude = Some(exclude_vec);
+            task_download.include = Some(include_vec);
+
             let task = Task {
                 task_id: task_id.to_string(),
                 name: "download task".to_string(),
@@ -206,6 +209,10 @@ fn cmd_match(matches: &ArgMatches) {
             let file = transfer.get_one::<String>("file");
             let task_id = task_id_generator();
             let mut task_transfer = TaskTransfer::default();
+            let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
+            let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
+            task_transfer.exclude = Some(exclude_vec);
+            task_transfer.include = Some(include_vec);
             task_transfer.source.provider = OssProvider::ALI;
             task_transfer.source.endpoint = "http://oss-cn-beijing.aliyuncs.com".to_string();
             let task = Task {
@@ -236,7 +243,11 @@ fn cmd_match(matches: &ArgMatches) {
 
         if let Some(upload) = template.subcommand_matches("upload") {
             let file = upload.get_one::<String>("file");
-            let task_upload = TaskUpLoad::default();
+            let mut task_upload = TaskUpLoad::default();
+            let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
+            let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
+            task_upload.include = Some(include_vec);
+            task_upload.exclude = Some(exclude_vec);
             let task = Task {
                 task_id: task_id.to_string(),
                 name: "upload task".to_string(),
@@ -265,7 +276,12 @@ fn cmd_match(matches: &ArgMatches) {
 
         if let Some(localtolocal) = template.subcommand_matches("localtolocal") {
             let file = localtolocal.get_one::<String>("file");
+
             let task_localtolocal = TaskLocalToLocal::default();
+            // let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
+            // let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
+            // task_localtolocal.exclude = Some(exclude_vec);
+            // task_localtolocal.include = Some(include_vec);
             let task = Task {
                 task_id: task_id.to_string(),
                 name: "local to local task".to_string(),

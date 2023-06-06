@@ -2,6 +2,7 @@ mod download;
 mod localtolocal;
 mod osscompare;
 mod task;
+mod task_actions;
 pub mod transfer;
 mod upload;
 
