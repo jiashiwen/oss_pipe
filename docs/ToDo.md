@@ -25,7 +25,7 @@
 - [x] 支持文件过期时间
 - [x] 大文件支持https://docs.aws.amazon.com/sdk-for-rust/latest/dg/rust_s3_code_examples.html
   - [x] 大文件分片上传
-  - [ ] 大文件分片下载
+  - [x] 大文件分片下载
 - [ ] 多任务模式，统一描述文件支持多任务同事运行 
 - [x] 增加local_to_local 任务，多线程复制目录文件
   - [x] 大文件文件流切分
@@ -33,13 +33,14 @@
 - [ ] 当源端文件不存在则视作成功处理，记录offset
 - [ ] 支持oss文件过期时间
 - [ ] 静态校验功能
-  - [ ] target 是否存在
+  - [x] target 是否存在
   - [ ] 过期时间差值是否在一个范围之内
   - [ ] content_length 源于目标是否一致
 - [ ] 支持oss存储类型，通过 set_storage_class 实现
 - [ ] 增加模板输出功能，增加文件名参数。
 - [ ] 新增precheck，并给出校验清单
   - [ ] 归档文件不能访问需提前校验
+- [ ] transfer 添加no_source_path 参数，用来在target只存文件命名
 
 ## 校验项
 

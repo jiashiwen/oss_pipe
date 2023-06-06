@@ -405,54 +405,6 @@ impl OssClient {
             }
         }
 
-        // multipartes upload
-        // for i in 0..batch {
-        //     let mut buffer = vec![0; chunk_size];
-        //     let _ = byte_stream_async_reader.read_exact(&mut buffer).await?;
-        //     let part_number: i32 = i.try_into()?;
-
-        //     let upload_part_res = self
-        //         .client
-        //         .upload_part()
-        //         .key(key)
-        //         .bucket(bucket)
-        //         .upload_id(upload_id)
-        //         .body(ByteStream::from(buffer))
-        //         .part_number(part_number)
-        //         .send()
-        //         .await?;
-
-        //     let completer_part = CompletedPart::builder()
-        //         .e_tag(upload_part_res.e_tag.unwrap_or_default())
-        //         .part_number(part_number)
-        //         .build();
-
-        //     upload_parts.push(completer_part);
-        // }
-
-        // if remainder > 0 {
-        //     let mut buffer = vec![0; remainder];
-        //     let _ = byte_stream_async_reader.read_exact(&mut buffer).await?;
-        //     let part_number: i32 = batch.try_into()?;
-        //     let upload_part_res = self
-        //         .client
-        //         .upload_part()
-        //         .key(key)
-        //         .bucket(bucket)
-        //         .upload_id(upload_id)
-        //         .body(ByteStream::from(buffer))
-        //         .part_number(part_number + 1)
-        //         .send()
-        //         .await?;
-
-        //     let completer_part = CompletedPart::builder()
-        //         .e_tag(upload_part_res.e_tag.unwrap_or_default())
-        //         .part_number(part_number + 1)
-        //         .build();
-
-        //     upload_parts.push(completer_part);
-        // }
-
         // 完成上传文件合并
         let completed_multipart_upload: CompletedMultipartUpload =
             CompletedMultipartUpload::builder()

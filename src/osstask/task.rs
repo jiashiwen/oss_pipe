@@ -65,10 +65,10 @@ pub enum TaskDescription {
 impl TaskDescription {
     pub fn exec_multi_threads(&self) -> Result<()> {
         match self {
-            TaskDescription::Download(d) => d.exec_multi_threads(),
-            TaskDescription::Upload(u) => u.exec_multi_threads(),
+            TaskDescription::Download(download) => download.exec_multi_threads(),
+            TaskDescription::Upload(upload) => upload.exec_multi_threads(),
             TaskDescription::Transfer(transfer) => transfer.exec_multi_threads(),
-            TaskDescription::LocalToLocal(l) => l.exec_multi_threads(),
+            TaskDescription::LocalToLocal(local_to_local) => local_to_local.exec_multi_threads(),
             TaskDescription::TruncateBucket(truncate) => truncate.exec_multi_threads(),
             TaskDescription::OssCompare(oss_compare) => oss_compare.exec_multi_threads(),
         }
@@ -159,6 +159,10 @@ pub struct TaskTransfer {
     pub large_file_size: usize,
     #[serde(default = "TaskDefaultParameters::multi_part_chunk_default")]
     pub multi_part_chunk: usize,
+    #[serde(default = "TaskDefaultParameters::filter_default")]
+    pub exclude: Option<Vec<String>>,
+    #[serde(default = "TaskDefaultParameters::filter_default")]
+    pub include: Option<Vec<String>>,
 }
 
 impl Default for TaskTransfer {
@@ -174,6 +178,8 @@ impl Default for TaskTransfer {
             start_from_checkpoint: TaskDefaultParameters::start_from_checkpoint_default(),
             large_file_size: TaskDefaultParameters::large_file_size_default(),
             multi_part_chunk: TaskDefaultParameters::multi_part_chunk_default(),
+            exclude: TaskDefaultParameters::filter_default(),
+            include: TaskDefaultParameters::filter_default(),
         }
     }
 }
@@ -194,6 +200,19 @@ impl TaskTransfer {
 
         let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_NAME, "");
         let check_point_file = gen_file_path(self.meta_dir.as_str(), CHECK_POINT_FILE_NAME, "");
+
+        let mut exclude_regex_set: Option<RegexSet> = None;
+        let mut include_regex_set: Option<RegexSet> = None;
+
+        if let Some(vec_regex_str) = self.exclude.clone() {
+            let set = RegexSet::new(&vec_regex_str)?;
+            exclude_regex_set = Some(set);
+        };
+
+        if let Some(vec_regex_str) = self.include.clone() {
+            let set = RegexSet::new(&vec_regex_str)?;
+            include_regex_set = Some(set);
+        };
 
         let rt = runtime::Builder::new_multi_thread()
             // .worker_threads(self.task_threads)
@@ -292,7 +311,24 @@ impl TaskTransfer {
                             key,
                             offset: file_position,
                         };
-                        vec_keys.push(record);
+                        match exclude_regex_set {
+                            Some(ref exclude) => {
+                                if exclude.is_match(&record.key) {
+                                    continue;
+                                }
+                            }
+                            None => {}
+                        }
+                        match include_regex_set {
+                            Some(ref set) => {
+                                if set.is_match(&record.key) {
+                                    vec_keys.push(record);
+                                }
+                            }
+                            None => {
+                                vec_keys.push(record);
+                            }
+                        }
                     }
                 };
 
@@ -459,7 +495,9 @@ pub struct TaskDownload {
     #[serde(default = "TaskDefaultParameters::multi_part_chunk_default")]
     pub multi_part_chunk: usize,
     #[serde(default = "TaskDefaultParameters::filter_default")]
-    pub filter: Option<Vec<String>>,
+    pub exclude: Option<Vec<String>>,
+    #[serde(default = "TaskDefaultParameters::filter_default")]
+    pub include: Option<Vec<String>>,
 }
 
 impl Default for TaskDownload {
@@ -475,7 +513,8 @@ impl Default for TaskDownload {
             start_from_checkpoint: TaskDefaultParameters::start_from_checkpoint_default(),
             large_file_size: TaskDefaultParameters::large_file_size_default(),
             multi_part_chunk: TaskDefaultParameters::multi_part_chunk_default(),
-            filter: TaskDefaultParameters::filter_default(),
+            include: TaskDefaultParameters::filter_default(),
+            exclude: TaskDefaultParameters::filter_default(),
         }
     }
 }
@@ -608,11 +647,17 @@ impl TaskDownload {
 
         let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_NAME, "");
         let check_point_file = gen_file_path(self.meta_dir.as_str(), CHECK_POINT_FILE_NAME, "");
-        let mut regex_set: Option<RegexSet> = None;
+        let mut exclude_regex_set: Option<RegexSet> = None;
+        let mut include_regex_set: Option<RegexSet> = None;
 
-        if let Some(vec_regex_str) = self.filter.clone() {
+        if let Some(vec_regex_str) = self.exclude.clone() {
             let set = RegexSet::new(&vec_regex_str)?;
-            regex_set = Some(set);
+            exclude_regex_set = Some(set);
+        };
+
+        if let Some(vec_regex_str) = self.include.clone() {
+            let set = RegexSet::new(&vec_regex_str)?;
+            include_regex_set = Some(set);
         };
 
         let rt = runtime::Builder::new_multi_thread()
@@ -683,7 +728,15 @@ impl TaskDownload {
                             key,
                             offset: file_position,
                         };
-                        match regex_set {
+                        match exclude_regex_set {
+                            Some(ref exclude) => {
+                                if exclude.is_match(&record.key) {
+                                    continue;
+                                }
+                            }
+                            None => {}
+                        }
+                        match include_regex_set {
                             Some(ref set) => {
                                 if set.is_match(&record.key) {
                                     vec_keys.push(record);
@@ -891,6 +944,10 @@ pub struct TaskUpLoad {
     pub large_file_size: usize,
     #[serde(default = "TaskDefaultParameters::multi_part_chunk_default")]
     pub multi_part_chunk: usize,
+    #[serde(default = "TaskDefaultParameters::filter_default")]
+    pub exclude: Option<Vec<String>>,
+    #[serde(default = "TaskDefaultParameters::filter_default")]
+    pub include: Option<Vec<String>>,
 }
 
 impl Default for TaskUpLoad {
@@ -906,6 +963,8 @@ impl Default for TaskUpLoad {
             start_from_checkpoint: TaskDefaultParameters::start_from_checkpoint_default(),
             large_file_size: TaskDefaultParameters::large_file_size_default(),
             multi_part_chunk: TaskDefaultParameters::multi_part_chunk_default(),
+            exclude: TaskDefaultParameters::filter_default(),
+            include: TaskDefaultParameters::filter_default(),
         }
     }
 }
@@ -923,6 +982,19 @@ impl TaskUpLoad {
         let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_NAME, "");
         let check_point_file = gen_file_path(self.meta_dir.as_str(), CHECK_POINT_FILE_NAME, "");
 
+        let mut exclude_regex_set: Option<RegexSet> = None;
+        let mut include_regex_set: Option<RegexSet> = None;
+
+        if let Some(vec_regex_str) = self.exclude.clone() {
+            let set = RegexSet::new(&vec_regex_str)?;
+            exclude_regex_set = Some(set);
+        };
+
+        if let Some(vec_regex_str) = self.include.clone() {
+            let set = RegexSet::new(&vec_regex_str)?;
+            include_regex_set = Some(set);
+        };
+
         let rt = runtime::Builder::new_multi_thread()
             .worker_threads(self.task_threads)
             .enable_all()
@@ -936,7 +1008,7 @@ impl TaskUpLoad {
         }
 
         let mut set: JoinSet<()> = JoinSet::new();
-        let file = File::open(object_list_file.as_str())?;
+        let mut file = File::open(object_list_file.as_str())?;
 
         rt.block_on(async {
             let mut file_position = 0;
@@ -945,7 +1017,27 @@ impl TaskUpLoad {
             //Todo
             // 断点续传补偿逻辑
             if self.start_from_checkpoint {
-                todo!()
+                // 执行错误补偿，重新执行错误日志中的记录
+                match self.error_record_retry() {
+                    Ok(_) => {}
+                    Err(e) => {
+                        log::error!("{}", e);
+                        return;
+                    }
+                };
+
+                let checkpoint =
+                    match get_task_checkpoint(check_point_file.as_str(), self.meta_dir.as_str()) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            log::error!("{}", e);
+                            return;
+                        }
+                    };
+                if let Err(e) = file.seek(SeekFrom::Start(checkpoint.execute_position)) {
+                    log::error!("{}", e);
+                    return;
+                };
             }
 
             // 启动定时checkpoint线程
@@ -972,7 +1064,24 @@ impl TaskUpLoad {
                             key,
                             offset: file_position,
                         };
-                        vec_keys.push(record);
+                        match exclude_regex_set {
+                            Some(ref exclude) => {
+                                if exclude.is_match(&record.key) {
+                                    continue;
+                                }
+                            }
+                            None => {}
+                        }
+                        match include_regex_set {
+                            Some(ref set) => {
+                                if set.is_match(&record.key) {
+                                    vec_keys.push(record);
+                                }
+                            }
+                            None => {
+                                vec_keys.push(record);
+                            }
+                        }
                     }
                 };
 
@@ -1044,6 +1153,63 @@ impl TaskUpLoad {
 
         Ok(())
     }
+
+    pub fn error_record_retry(&self) -> Result<()> {
+        // 遍历错误记录
+        for entry in WalkDir::new(self.meta_dir.as_str())
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|e| !e.file_type().is_dir() && e.file_name().to_str().is_some())
+        {
+            let file_name = entry.file_name().to_str().unwrap();
+
+            if !file_name.starts_with(ERROR_RECORD_PREFIX) {
+                continue;
+            };
+
+            if let Some(p) = entry.path().to_str() {
+                if let Ok(lines) = read_lines(p) {
+                    let mut record_vec = vec![];
+                    for line in lines {
+                        match line {
+                            Ok(content) => {
+                                let record = match json_to_struct::<Record>(content.as_str()) {
+                                    Ok(r) => r,
+                                    Err(e) => {
+                                        log::error!("{}", e);
+                                        continue;
+                                    }
+                                };
+                                record_vec.push(record);
+                            }
+                            Err(e) => {
+                                log::error!("{}", e);
+                                continue;
+                            }
+                        }
+                    }
+
+                    if record_vec.len() > 0 {
+                        let upload = UpLoad {
+                            local_path: self.local_path.clone(),
+                            target: self.target.clone(),
+                            err_counter: Arc::new(AtomicUsize::new(0)),
+                            offset_map: Arc::new(DashMap::<String, usize>::new()),
+                            meta_dir: self.meta_dir.clone(),
+                            target_exist_skip: self.target_exists_skip,
+                            large_file_size: self.large_file_size,
+                            multi_part_chunk: self.multi_part_chunk,
+                        };
+                        let _ = upload.exec(record_vec);
+                    }
+                }
+
+                let _ = fs::remove_file(p);
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -1066,6 +1232,10 @@ pub struct TaskLocalToLocal {
     pub large_file_size: usize,
     #[serde(default = "TaskDefaultParameters::multi_part_chunk_default")]
     pub multi_part_chunk: usize,
+    #[serde(default = "TaskDefaultParameters::filter_default")]
+    pub exclude: Option<Vec<String>>,
+    #[serde(default = "TaskDefaultParameters::filter_default")]
+    pub include: Option<Vec<String>>,
 }
 
 impl Default for TaskLocalToLocal {
@@ -1081,6 +1251,8 @@ impl Default for TaskLocalToLocal {
             start_from_checkpoint: TaskDefaultParameters::start_from_checkpoint_default(),
             large_file_size: TaskDefaultParameters::large_file_size_default(),
             multi_part_chunk: TaskDefaultParameters::multi_part_chunk_default(),
+            exclude: TaskDefaultParameters::filter_default(),
+            include: TaskDefaultParameters::filter_default(),
         }
     }
 }
@@ -1092,6 +1264,17 @@ impl TaskLocalToLocal {
         let offset_map = Arc::new(DashMap::<String, usize>::new());
         let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_NAME, "");
         let check_point_file = gen_file_path(self.meta_dir.as_str(), CHECK_POINT_FILE_NAME, "");
+
+        let mut exclude_regex_set: Option<RegexSet> = None;
+        let mut include_regex_set: Option<RegexSet> = None;
+        if let Some(vec_regex_str) = self.exclude.clone() {
+            let set = RegexSet::new(&vec_regex_str)?;
+            exclude_regex_set = Some(set);
+        };
+        if let Some(vec_regex_str) = self.include.clone() {
+            let set = RegexSet::new(&vec_regex_str)?;
+            include_regex_set = Some(set);
+        };
 
         // 若不从checkpoint开始，重新生成文件清单
         if !self.start_from_checkpoint {
@@ -1151,7 +1334,26 @@ impl TaskLocalToLocal {
                             key,
                             offset: file_position,
                         };
-                        vec_keys.push(record);
+                        match exclude_regex_set {
+                            Some(ref exclude) => {
+                                if exclude.is_match(&record.key) {
+                                    continue;
+                                }
+                            }
+                            None => {}
+                        }
+                        match include_regex_set {
+                            Some(ref set) => {
+                                if set.is_match(&record.key) {
+                                    vec_keys.push(record);
+                                }
+                            }
+                            None => {
+                                vec_keys.push(record);
+                            }
+                        }
+
+                        // vec_keys.push(record);
                     }
                 };
 
