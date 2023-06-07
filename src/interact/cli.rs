@@ -125,7 +125,8 @@ pub fn run() {
                             println!("bye!");
                             break;
                         }
-                        arg.insert(0, "clisample".to_string());
+                        arg.insert(0, "".to_string());
+                        println!("{:?}", arg);
                         run_from(arg.to_vec())
                     }
                     Err(err) => {

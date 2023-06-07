@@ -1,3 +1,4 @@
+mod command_tree_cmd;
 mod configcmd;
 mod exit;
 mod gen_file_cmd;
@@ -6,6 +7,7 @@ pub mod osstaskcmd;
 mod parameters;
 mod rootcmd;
 mod template;
+pub use command_tree_cmd::*;
 pub use configcmd::new_config_cmd;
 pub use exit::new_exit_cmd;
 pub use gen_file_cmd::new_gen_file_cmd;

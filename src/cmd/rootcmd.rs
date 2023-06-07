@@ -1,6 +1,9 @@
 use crate::cmd::gen_file_cmd::{new_gen_file_cmd, new_gen_files_cmd};
 use crate::cmd::osstaskcmd::new_osstask_cmd;
-use crate::cmd::{new_config_cmd, new_exit_cmd, new_osscfg_cmd, new_parameters_cmd, new_template};
+use crate::cmd::{
+    new_command_tree_cmd, new_config_cmd, new_exit_cmd, new_osscfg_cmd, new_parameters_cmd,
+    new_template,
+};
 use crate::commons::yamlutile::struct_to_yml_file;
 use crate::commons::{byte_size_to_usize, generate_file, generate_files, read_yaml_file, SubCmd};
 use crate::commons::{struct_to_yaml_string, CommandCompleter};
@@ -50,7 +53,8 @@ lazy_static! {
         .subcommand(new_osscfg_cmd())
         .subcommand(new_gen_file_cmd())
         .subcommand(new_gen_files_cmd())
-        .subcommand(new_exit_cmd());
+        .subcommand(new_exit_cmd())
+        .subcommand(new_command_tree_cmd());
     static ref SUBCMDS: Vec<SubCmd> = subcommands();
 }
 
@@ -91,6 +95,19 @@ pub fn all_subcommand(app: &Clap_Command, beginlevel: usize, input: &mut Vec<Sub
         subcommands: subcmds,
     };
     input.push(subcommand);
+}
+
+pub fn get_cmd_tree(cmd: &Clap_Command) -> termtree::Tree<String> {
+    let mut tree = termtree::Tree::new(cmd.get_name().to_string());
+    if cmd.has_subcommands() {
+        let mut vec_t = vec![];
+        for item in cmd.get_subcommands() {
+            let t = get_cmd_tree(item);
+            vec_t.push(t);
+        }
+        tree = tree.with_leaves(vec_t);
+    }
+    tree
 }
 
 pub fn get_command_completer() -> CommandCompleter {
@@ -484,5 +501,22 @@ fn cmd_match(matches: &ArgMatches) {
         if let Err(e) = generate_files(dir.as_str(), file_prefix_len, file_size, file_quantity) {
             log::error!("{}", e);
         };
+    }
+
+    if let Some(_) = matches.subcommand_matches("tree") {
+        let tree = get_cmd_tree(&CLIAPP);
+        println!("{}", tree);
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::cmd::rootcmd::{get_cmd_tree, CLIAPP};
+
+    //cargo test cmd::rootcmd::test::test_get_command_tree -- --nocapture
+    #[test]
+    fn test_get_command_tree() {
+        let tree = get_cmd_tree(&CLIAPP);
+        println!("{}", tree);
     }
 }

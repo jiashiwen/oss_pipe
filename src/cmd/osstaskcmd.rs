@@ -5,7 +5,7 @@ pub fn new_osstask_cmd() -> Command {
         .about("osstask")
         .args(&[Arg::new("filepath")
             .value_name("filepath")
-            .required(false)
+            .required(true)
             .index(1)
             .help("transfer task description file")])
 }
