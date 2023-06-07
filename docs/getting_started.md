@@ -1,4 +1,4 @@
-# quick start
+# Getting Stated
 
 ## How to build
 
@@ -21,6 +21,15 @@ cargo build --release
 ```
 
 ## 基本使用
+
+oss_pipe 支持命令执行模式和交互式执行模式。
+您可以通过 oss_pipe [subcommand] 执行执行任务，比如
+
+```shell
+oss_pipe parameters provider
+```
+
+也可以通过 oss_pipe -i 命里进入交互模式。交互模式支持按 'tab' 键进行子命令提示。
 
 ### 定义任务
 
@@ -64,6 +73,12 @@ task_desc: !Transfer
   include: null
 ```
 
-修改 access_key_id secret_access_key 等参数，适配自己的任务。template 命令按照任务类型创建模版，支持的任务类型请参考参考手册。parameters 支持参数查询，包括支持的provider 以及 任务类型
+修改 access_key_id secret_access_key 等参数，适配自己的任务。template 命令按照任务类型创建模版,模板描述请参考[参考手册](reference_cn.md)。parameters 支持参数查询，包括支持的provider 以及 任务类型
 
 ### 执行任务
+
+osstask 子命令用于执行任务
+
+```shell
+oss_pipe osstask filepath/task.yml
+```
