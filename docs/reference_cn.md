@@ -1,5 +1,87 @@
 # 参考手册
 
+## 命令详解
+
+oss_pipe 同时支持命令行模式和交互模式 oss_pipe -i 进入交互模式。交互模式使用'tab'键进行子命令提示。
+
+* osstask  
+  通过yaml描述文件执行相关任务
+  * 命令格式
+  
+    ```shell
+    osstask <filepath>
+    ```
+
+  * 命令行模式示例
+
+    ```shell
+    oss_pipe osstask yourpath/exec.yml
+    ```
+
+  * 交互模式示例
+
+    ```shell
+    oss_pipe> osstask yourpath/exec.yml
+    ```
+
+* template  
+  生成任务模板,通过子命令指定任务类型
+  * 命令格式
+  
+    ```shell
+    template [subcommand] [file]
+    ```
+
+  * 命令行模式示例
+
+    ```shell
+    template transfer /tmp/transfer.yml
+    ```
+
+  * 交互模式示例
+
+    ```shell
+    oss_pipe> template transfer /tmp/transfer.yml
+    ```
+
+* parameters  
+  参数查询，输出所支持的 oss 供应商，以及任务类型。
+  * 命令格式
+  
+    ```shell
+    parameters [subcommand]
+    ```
+
+  * 命令行模式示例
+
+    ```shell
+    parameters provider
+    ```
+
+  * 交互模式示例
+
+    ```shell
+    oss_pipe> template parameters task_type
+    ```
+
+* tree  
+  显示命令树。
+  * 命令格式
+  
+    ```shell
+    tree
+    ```
+
+* exit  
+  退出交互模式。
+  * 命令格式
+  
+    ```shell
+    exit
+    ```
+
+ 
+ 
 ## Oss 提供商支持
 
 | 提供商代码 | 提供商描述          |
