@@ -20,4 +20,3 @@ OSS PIPE 是一个用于 S3 兼容对象存储间进行文件迁移的工具。
 ## 如何使用
 
 参考 [quick_start](docs/quick_start.md)
-
