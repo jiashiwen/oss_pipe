@@ -61,6 +61,10 @@ name = "read_bytes"
 path = "examples/read_bytes.rs"
 
 [[example]]
+name = "cos"
+path = "examples/cos.rs"
+
+[[example]]
 name = "dashmap"
 path = "examples/dashmap_sample.rs"
 

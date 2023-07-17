@@ -81,6 +81,7 @@ pub enum OssProvider {
     ALI,
     AWS,
     HUAWEI,
+    COS,
 }
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct OssObjectsList {
@@ -177,6 +178,7 @@ impl OSSDescription {
 
             OssProvider::AWS => todo!(),
             OssProvider::HUAWEI => todo!(),
+            OssProvider::COS => todo!(),
         }
     }
 
@@ -256,6 +258,24 @@ impl OSSDescription {
                 Ok(oss_client)
             }
             OssProvider::HUAWEI => {
+                let shared_config = SdkConfig::builder()
+                    .credentials_provider(SharedCredentialsProvider::new(Credentials::new(
+                        self.access_key_id.clone(),
+                        self.secret_access_key.clone(),
+                        None,
+                        None,
+                        "Static",
+                    )))
+                    .endpoint_url(self.endpoint.clone())
+                    .region(Region::new(self.region.clone()))
+                    .build();
+                let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+                let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
+                let oss_client = OssClient { client };
+                Ok(oss_client)
+            }
+
+            OssProvider::COS => {
                 let shared_config = SdkConfig::builder()
                     .credentials_provider(SharedCredentialsProvider::new(Credentials::new(
                         self.access_key_id.clone(),

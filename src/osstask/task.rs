@@ -1869,7 +1869,7 @@ impl TaskOssCompare {
                 set.join_next().await;
             }
             // 配置停止 offset save 标识为 true
-            stop_offset_save_mark.store(true, std::sync::atomic::Ordering::Relaxed);
+            stop_offset_save_mark.store(true, std::sync::atomic::Ordering::SeqCst);
             // 记录checkpoint
             let position: u64 = file_position.try_into().unwrap();
             let checkpoint = CheckPoint {
