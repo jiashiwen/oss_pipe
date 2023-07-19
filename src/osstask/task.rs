@@ -1,18 +1,21 @@
+use core::result::Result::Ok;
+
 use std::{
     fs::{self, File},
     io::{self, BufRead, Seek, SeekFrom},
+    string,
     sync::{
         atomic::{AtomicBool, AtomicUsize},
         Arc,
     },
     thread,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
     vec,
 };
 
 use crate::{
     checkpoint::{get_task_checkpoint, CheckPoint, Record},
-    commons::{json_to_struct, read_lines, scan_folder_files_to_file},
+    commons::{json_to_struct, read_lines, read_yaml_file, scan_folder_files_to_file},
     osstask::{LocalToLocal, Transfer},
     s3::OSSDescription,
 };
@@ -33,12 +36,11 @@ use walkdir::WalkDir;
 
 use super::{osscompare::OssCompare, DownLoad, UpLoad};
 
-pub const OBJECT_LIST_FILE_NAME: &'static str = "objlist";
+pub const OBJECT_LIST_FILE_PREFIX: &'static str = "objlist_";
 pub const CHECK_POINT_FILE_NAME: &'static str = "checkpoint.yml";
 pub const ERROR_RECORD_PREFIX: &'static str = "error_record_";
 pub const OFFSET_PREFIX: &'static str = "offset_";
 pub const OFFSET_EXEC_PREFIX: &'static str = "offset_exec_";
-// pub const OFFSET_TASK_PREFIX: &'static str = "offset_task_";
 pub const COMPARE_OBJECT_DIFF_PREFIX: &'static str = "diff_object_";
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
@@ -67,7 +69,7 @@ impl TaskDescription {
         match self {
             TaskDescription::Download(download) => download.exec_multi_threads(),
             TaskDescription::Upload(upload) => upload.exec_multi_threads(),
-            TaskDescription::Transfer(transfer) => transfer.exec_multi_threads(),
+            TaskDescription::Transfer(transfer) => transfer.exec_multi_threads(true),
             TaskDescription::LocalToLocal(local_to_local) => local_to_local.exec_multi_threads(),
             TaskDescription::TruncateBucket(truncate) => truncate.exec_multi_threads(),
             TaskDescription::OssCompare(oss_compare) => oss_compare.exec_multi_threads(),
@@ -128,6 +130,9 @@ impl TaskDefaultParameters {
     pub fn filter_default() -> Option<Vec<String>> {
         None
     }
+    pub fn continuous_default() -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -163,6 +168,8 @@ pub struct TaskTransfer {
     pub exclude: Option<Vec<String>>,
     #[serde(default = "TaskDefaultParameters::filter_default")]
     pub include: Option<Vec<String>>,
+    #[serde(default = "TaskDefaultParameters::continuous_default")]
+    pub continuous: bool,
 }
 
 impl Default for TaskTransfer {
@@ -180,6 +187,7 @@ impl Default for TaskTransfer {
             multi_part_chunk: TaskDefaultParameters::multi_part_chunk_default(),
             exclude: TaskDefaultParameters::filter_default(),
             include: TaskDefaultParameters::filter_default(),
+            continuous: false,
         }
     }
 }
@@ -193,14 +201,44 @@ impl TaskTransfer {
     }
     //Todo
     // 增加错误输出及任务停止条件
-    pub fn exec_multi_threads(&self) -> Result<()> {
+    pub fn exec_multi_threads(&self, init: bool) -> Result<()> {
+        // 预清理meta目录,任务首次运行清理meta目录
+        if init {
+            let _ = fs::remove_dir_all(self.meta_dir.as_str());
+        }
+
         let error_conter = Arc::new(AtomicUsize::new(0));
         let stop_offset_save_mark = Arc::new(AtomicBool::new(false));
         let offset_map = Arc::new(DashMap::<String, usize>::new());
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        let mut last_modify_timestamp = 0;
 
-        let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_NAME, "");
+        let object_list_file = gen_file_path(
+            self.meta_dir.as_str(),
+            OBJECT_LIST_FILE_PREFIX,
+            now.as_secs().to_string().as_str(),
+        );
+
         let check_point_file = gen_file_path(self.meta_dir.as_str(), CHECK_POINT_FILE_NAME, "");
+        // 持续同步逻辑
+        if self.continuous {
+            match read_yaml_file::<CheckPoint>(check_point_file.as_str()) {
+                Ok(checkpoint) => {
+                    let v = checkpoint
+                        .execute_file_path
+                        .split("_")
+                        .collect::<Vec<&str>>();
 
+                    if let Some(s) = v.last() {
+                        match s.parse::<i64>() {
+                            Ok(i) => last_modify_timestamp = i,
+                            Err(_) => {}
+                        }
+                    }
+                }
+                Err(_) => {}
+            }
+        }
         let mut exclude_regex_set: Option<RegexSet> = None;
         let mut include_regex_set: Option<RegexSet> = None;
 
@@ -223,10 +261,7 @@ impl TaskTransfer {
 
         // 若不从checkpoint开始，重新生成文件清单
         if !self.start_from_checkpoint {
-            // 预清理meta目录
-            let _ = fs::remove_dir_all(self.meta_dir.as_str());
             let mut interrupted = false;
-
             rt.block_on(async {
                 let client_source = match self.source.gen_oss_client() {
                     Result::Ok(c) => c,
@@ -236,15 +271,31 @@ impl TaskTransfer {
                         return;
                     }
                 };
-                if let Err(e) = client_source
-                    .append_all_object_list_to_file(
-                        self.source.bucket.clone(),
-                        self.source.prefix.clone(),
-                        self.bach_size,
-                        object_list_file.clone(),
-                    )
-                    .await
-                {
+
+                // 若为持续同步模式，且 last_modify_timestamp 大于 0，则将 last_modify 属性大于last_modify_timestamp变量的对象加入执行列表
+                if let Err(e) = match last_modify_timestamp > 0 {
+                    true => {
+                        client_source
+                            .append_last_modify_greater_object_to_file(
+                                self.source.bucket.clone(),
+                                self.source.prefix.clone(),
+                                self.bach_size,
+                                object_list_file.clone(),
+                                last_modify_timestamp,
+                            )
+                            .await
+                    }
+                    false => {
+                        client_source
+                            .append_all_object_list_to_file(
+                                self.source.bucket.clone(),
+                                self.source.prefix.clone(),
+                                self.bach_size,
+                                object_list_file.clone(),
+                            )
+                            .await
+                    }
+                } {
                     log::error!("{}", e);
                     interrupted = true;
                     return;
@@ -253,6 +304,11 @@ impl TaskTransfer {
 
             if interrupted {
                 return Err(anyhow!("get object list error"));
+            }
+
+            let obj_list_file_len = fs::metadata(&object_list_file)?.len();
+            if obj_list_file_len.eq(&0) {
+                return Ok(());
             }
         }
 
@@ -289,7 +345,7 @@ impl TaskTransfer {
 
             // 启动checkpoint记录线程
             let map = Arc::clone(&offset_map);
-            let stop_mark = Arc::clone(&stop_offset_save_mark);
+            let stop_mark: Arc<AtomicBool> = Arc::clone(&stop_offset_save_mark);
             let obj_list = object_list_file.clone();
             let save_to = check_point_file.clone();
             task::spawn(async move {
@@ -408,6 +464,11 @@ impl TaskTransfer {
                 log::error!("{}", e);
             };
         });
+
+        if self.continuous {
+            self.exec_multi_threads(false)?;
+        }
+
         Ok(())
     }
 
@@ -529,7 +590,7 @@ impl TaskDownload {
         println!("exec download multhithread");
         let rt = tokio::runtime::Runtime::new().unwrap();
         let client = self.source.gen_oss_client_ref()?;
-        let object_list_file = self.local_path.clone() + "/" + OBJECT_LIST_FILE_NAME;
+        let object_list_file = self.local_path.clone() + "/" + OBJECT_LIST_FILE_PREFIX;
 
         let pool = ThreadPoolBuilder::new()
             .num_threads(self.task_threads)
@@ -645,7 +706,7 @@ impl TaskDownload {
         let stop_offset_save_mark = Arc::new(AtomicBool::new(false));
         let offset_map = Arc::new(DashMap::<String, usize>::new());
 
-        let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_NAME, "");
+        let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_PREFIX, "");
         let check_point_file = gen_file_path(self.meta_dir.as_str(), CHECK_POINT_FILE_NAME, "");
         let mut exclude_regex_set: Option<RegexSet> = None;
         let mut include_regex_set: Option<RegexSet> = None;
@@ -979,7 +1040,7 @@ impl TaskUpLoad {
         let stop_offset_save_mark = Arc::new(AtomicBool::new(false));
         let offset_map = Arc::new(DashMap::<String, usize>::new());
 
-        let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_NAME, "");
+        let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_PREFIX, "");
         let check_point_file = gen_file_path(self.meta_dir.as_str(), CHECK_POINT_FILE_NAME, "");
 
         let mut exclude_regex_set: Option<RegexSet> = None;
@@ -1262,7 +1323,7 @@ impl TaskLocalToLocal {
         let error_times = Arc::new(AtomicUsize::new(0));
         let stop_offset_save_mark = Arc::new(AtomicBool::new(false));
         let offset_map = Arc::new(DashMap::<String, usize>::new());
-        let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_NAME, "");
+        let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_PREFIX, "");
         let check_point_file = gen_file_path(self.meta_dir.as_str(), CHECK_POINT_FILE_NAME, "");
 
         let mut exclude_regex_set: Option<RegexSet> = None;
@@ -1520,7 +1581,7 @@ impl Default for TaskTruncateBucket {
 }
 impl TaskTruncateBucket {
     pub fn exec_multi_threads(&self) -> Result<()> {
-        let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_NAME, "");
+        let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_PREFIX, "");
         let rt = runtime::Builder::new_multi_thread()
             .worker_threads(num_cpus::get())
             .enable_all()
@@ -1712,7 +1773,7 @@ impl TaskOssCompare {
         let stop_offset_save_mark = Arc::new(AtomicBool::new(false));
         let offset_map = Arc::new(DashMap::<String, usize>::new());
 
-        let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_NAME, "");
+        let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_PREFIX, "");
         let check_point_file = gen_file_path(self.meta_dir.as_str(), CHECK_POINT_FILE_NAME, "");
 
         let rt = runtime::Builder::new_multi_thread()

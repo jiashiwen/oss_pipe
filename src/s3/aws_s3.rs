@@ -67,7 +67,68 @@ impl OssClient {
             }
             token = resp.next_token;
         }
+        Ok(())
+    }
 
+    // 将last_modify 大于某时间戳的object列表写入文件
+    // ToDo 为提高效率需进行多线程改造
+    // 并发写文件问题如何解决
+    pub async fn append_last_modify_greater_object_to_file(
+        &self,
+        bucket: String,
+        prefix: Option<String>,
+        batch: i32,
+        file_path: String,
+        greater: i64,
+    ) -> Result<()> {
+        let resp = self
+            .list_objects(bucket.clone(), prefix.clone(), batch, None)
+            .await?;
+        let mut token = resp.next_token;
+
+        let path = std::path::Path::new(file_path.as_str());
+        if let Some(p) = path.parent() {
+            std::fs::create_dir_all(p)?;
+        };
+
+        //写入文件
+        let file_ref = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .append(true)
+            .open(file_path.clone())?;
+        let mut file = LineWriter::new(file_ref);
+        if let Some(objects) = resp.object_list {
+            for item in objects.iter() {
+                let obj = self.get_object(&bucket, item).await?;
+                if let Some(d) = obj.last_modified() {
+                    if d.secs() > greater {
+                        let _ = file.write_all(item.as_bytes());
+                        let _ = file.write_all("\n".as_bytes());
+                    }
+                };
+            }
+            file.flush()?;
+        }
+
+        while !token.is_none() {
+            let resp = self
+                .list_objects(bucket.clone(), prefix.clone(), batch, token.clone())
+                .await?;
+            if let Some(objects) = resp.object_list {
+                for item in objects.iter() {
+                    let obj = self.get_object(&bucket, item).await?;
+                    if let Some(d) = obj.last_modified() {
+                        if d.secs() > greater {
+                            let _ = file.write_all(item.as_bytes());
+                            let _ = file.write_all("\n".as_bytes());
+                        }
+                    };
+                }
+                file.flush()?;
+            }
+            token = resp.next_token;
+        }
         Ok(())
     }
 
@@ -96,7 +157,6 @@ impl OssClient {
 
         //写入文件
         let store_path = Path::new(file_path.as_str());
-        // let path = std::path::Path::new(store_path);
 
         if let Some(p) = store_path.parent() {
             std::fs::create_dir_all(p)?;
@@ -333,9 +393,6 @@ impl OssClient {
     ) -> Result<()> {
         // 计算上传分片
         let mut content_len = body_len;
-        // let batch = body_len / chunk_size;
-        // let remainder = body_len % chunk_size;
-
         let mut byte_stream_async_reader = body.into_async_read();
         let mut upload_parts: Vec<CompletedPart> = Vec::new();
 
@@ -609,4 +666,37 @@ pub async fn byte_stream_multi_partes_to_file(
     file.flush()?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+
+    use crate::s3::OSSDescription;
+    //cargo test s3::aws_s3::test::test_append_last_modify_greater_object_to_file -- --nocapture
+    #[test]
+    fn test_append_last_modify_greater_object_to_file() {
+        // 获取oss连接参数
+        let vec_oss = crate::commons::read_yaml_file::<Vec<OSSDescription>>("osscfg.yml").unwrap();
+
+        let oss_desc = vec_oss[0].clone();
+        let jd_client = oss_desc.gen_oss_client().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+
+        rt.block_on(async {
+            let r = jd_client
+                .append_last_modify_greater_object_to_file(
+                    "jsw-bucket-1".to_string(),
+                    None,
+                    100,
+                    "/tmp/objlist".to_string(),
+                    1689642000,
+                )
+                .await;
+
+            if let Err(e) = r {
+                println!("{}", e.to_string());
+                return;
+            }
+        });
+    }
 }
