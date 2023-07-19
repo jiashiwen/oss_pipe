@@ -73,6 +73,10 @@ name = "huawei"
 path = "examples/huawei.rs"
 
 [[example]]
+name = "jd_s3"
+path = "examples/jd_s3.rs"
+
+[[example]]
 name = "inotify"
 path = "examples/inotify_sample.rs"
 
