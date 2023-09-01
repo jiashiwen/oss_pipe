@@ -34,14 +34,22 @@
 - [x] 支持oss文件过期时间
 - [ ] 静态校验功能
   - [x] target 是否存在
-  - [ ] 过期时间差值是否在一个范围之内
-  - [ ] content_length 源于目标是否一致
+  - [x] 过期时间差值是否在一个范围之内
+  - [x] content_length 源于目标是否一致
+  - [ ] （待验证）可否通过流方式读取源与目标文件，校验buffer是否一致
 - [ ] 支持oss存储类型，通过 set_storage_class 实现
 - [ ] 增加模板输出功能，增加文件名参数。
 - [ ] 新增precheck，并给出校验清单
   - [ ] 归档文件不能访问需提前校验
 - [ ] transfer 添加no_source_path 参数，用来在target只存文件命名
 - [ ] 支持last_modify_grater ,最后更改时间源端大于上次同步时获取object list 列表的初始时间戳,配置增量参数incremental，当该参数为真，在每次同步结束时获取本次同步起始时间戳，遍历源，生成时间戳大于该时间戳的的对象列表，执行同步任务，重复以上过程，直到object list内容为空
+- [ ] 编写makefile 实现交叉编译
+- [ ] 进度展示
+  - [ ] 命令行进度选型
+  - [ ] 迁移总文件数统计
+  - [ ] 迁移完成文件数统计
+  - [ ] 计算总体进度百分比
+  - [ ] checkpoint新增total_lines 和 finished_lines
 
 ## 校验项
 

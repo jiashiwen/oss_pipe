@@ -22,13 +22,16 @@ pub struct OssClient {
 }
 
 impl OssClient {
+    /// 将bucket中需要迁移的文件写入文件列表
+    /// 返回写入文件的条数
     pub async fn append_all_object_list_to_file(
         &self,
         bucket: String,
         prefix: Option<String>,
         batch: i32,
         file_path: String,
-    ) -> Result<()> {
+    ) -> Result<usize> {
+        let mut total = 0;
         let resp = self
             .list_objects(bucket.clone(), prefix.clone(), batch, None)
             .await?;
@@ -50,6 +53,7 @@ impl OssClient {
             for item in objects.iter() {
                 let _ = file.write_all(item.as_bytes());
                 let _ = file.write_all("\n".as_bytes());
+                total += 1;
             }
             file.flush()?;
         }
@@ -62,17 +66,20 @@ impl OssClient {
                 for item in objects.iter() {
                     let _ = file.write_all(item.as_bytes());
                     let _ = file.write_all("\n".as_bytes());
+                    total += 1;
                 }
                 file.flush()?;
             }
             token = resp.next_token;
         }
-        Ok(())
+
+        Ok(total)
     }
 
     // 将last_modify 大于某时间戳的object列表写入文件
     // ToDo 为提高效率需进行多线程改造
     // 并发写文件问题如何解决
+    // 返回值为写入条目
     pub async fn append_last_modify_greater_object_to_file(
         &self,
         bucket: String,
@@ -80,7 +87,8 @@ impl OssClient {
         batch: i32,
         file_path: String,
         greater: i64,
-    ) -> Result<()> {
+    ) -> Result<usize> {
+        let mut total = 0;
         let resp = self
             .list_objects(bucket.clone(), prefix.clone(), batch, None)
             .await?;
@@ -105,6 +113,7 @@ impl OssClient {
                     if d.secs() > greater {
                         let _ = file.write_all(item.as_bytes());
                         let _ = file.write_all("\n".as_bytes());
+                        total += 1;
                     }
                 };
             }
@@ -122,6 +131,7 @@ impl OssClient {
                         if d.secs() > greater {
                             let _ = file.write_all(item.as_bytes());
                             let _ = file.write_all("\n".as_bytes());
+                            total += 1;
                         }
                     };
                 }
@@ -129,7 +139,7 @@ impl OssClient {
             }
             token = resp.next_token;
         }
-        Ok(())
+        Ok(total)
     }
 
     pub async fn append_object_list_to_file(
