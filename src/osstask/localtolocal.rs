@@ -1,4 +1,5 @@
 use crate::{checkpoint::Record, commons::multi_parts_copy_file, exception::save_error_record};
+use anyhow::anyhow;
 use anyhow::Result;
 use dashmap::DashMap;
 use std::{
@@ -8,7 +9,8 @@ use std::{
     sync::{atomic::AtomicUsize, Arc},
 };
 
-use super::{gen_file_path, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
+use super::CURRENT_LINE_PREFIX;
+use super::{err_process, gen_file_path, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
 
 #[derive(Debug, Clone)]
 pub struct LocalToLocal {
@@ -20,13 +22,18 @@ pub struct LocalToLocal {
     pub target_exist_skip: bool,
     pub large_file_size: usize,
     pub multi_part_chunk: usize,
+    // pub begin_line_number: usize,
 }
 
 impl LocalToLocal {
     pub async fn exec(&self, records: Vec<Record>) -> Result<()> {
+        // let mut line_num = self.begin_line_number;
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
+        let mut current_line_key = CURRENT_LINE_PREFIX.to_string();
         offset_key.push_str(&subffix);
+        // current_line_key.push_str(&self.begin_line_number.to_string());
+
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
 
         // 先写首行日志，避免错误漏记
@@ -53,9 +60,18 @@ impl LocalToLocal {
             let t_path = Path::new(t_file_name.as_str());
             if let Some(p) = t_path.parent() {
                 if let Err(e) = std::fs::create_dir_all(p) {
-                    log::error!("{}", e);
-                    save_error_record(&self.error_conter, record.clone(), &mut error_file);
-                    self.offset_map.insert(offset_key.clone(), record.offset);
+                    // log::error!("{}", e);
+                    // save_error_record(&self.error_conter, record.clone(), &mut error_file);
+                    // self.offset_map.insert(offset_key.clone(), record.offset);
+                    err_process(
+                        &self.error_conter,
+                        anyhow!(e.to_string()),
+                        record,
+                        &mut error_file,
+                        offset_key.as_str(),
+                        current_line_key.as_str(),
+                        &self.offset_map,
+                    );
                     continue;
                 };
             };

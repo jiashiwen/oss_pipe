@@ -1,51 +1,39 @@
+use std::sync::{atomic::AtomicUsize, Arc};
+
 use anyhow::{Ok, Result};
 use async_trait::async_trait;
+use dashmap::DashMap;
+use tokio::{runtime::Runtime, task::JoinSet};
+
+use crate::checkpoint::Record;
+
+use super::TaskType;
 
 #[async_trait]
 pub trait TaskActions {
-    type Item;
+    // type Item;
+    // 返回任务类型
+    fn task_type(&self) -> TaskType;
+    // 执行任务
+    // fn exec_task(&self, init: bool) -> Result<()>;
+    // 错误记录重试
     fn error_record_retry(&self) -> Result<()>;
-    fn gen_executor(&self) -> Self::Item;
-}
+    // 记录执行器
+    fn records_excutor(
+        &self,
+        joinset: &mut JoinSet<()>,
+        records: Vec<Record>,
+        error_conter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, usize>>,
+        current_line_number: usize,
+    );
 
-#[async_trait]
-pub trait Excutor {
-    fn print_name(&self);
-}
-
-pub struct TaskTxt {
-    id: String,
-}
-
-pub struct Taskexecutor {
-    name: String,
-}
-
-impl Excutor for Taskexecutor {
-    fn print_name(&self) {
-        println!("{}", self.name);
-    }
-}
-
-impl TaskActions for TaskTxt {
-    type Item = Taskexecutor;
-    fn error_record_retry(&self) -> Result<()> {
-        Ok(())
-    }
-    fn gen_executor(&self) -> Taskexecutor {
-        let taskexecutor = Taskexecutor {
-            name: "exec".to_string(),
-        };
-        taskexecutor
-    }
-}
-
-#[cfg(test)]
-mod test {
-
-    //cargo test osstask::task_actions::test::test_task_trait -- --nocapture
-    #[test]
-    fn test_task_trait() {
-        println!("save offset");
-    }
+    // 生成对象列表
+    fn generate_object_list(
+        &self,
+        rt: &Runtime,
+        last_modify_timestamp: i64,
+        object_list_file: &str,
+    ) -> Result<usize>;
+    // fn gen_executor(&self) -> Self::Item;
 }

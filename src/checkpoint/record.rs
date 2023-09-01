@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub struct Record {
     pub key: String,
     pub offset: usize,
+    pub line_num: usize,
 }
 
 impl FromStr for Record {
@@ -57,6 +58,7 @@ mod test {
             let record = Record {
                 key,
                 offset: offset_usize,
+                line_num: 1,
             };
             let _ = record.save_json_to_file(&mut file);
         }
@@ -64,6 +66,7 @@ mod test {
         let record1 = Record {
             key: "test/test1/ttt".to_string(),
             offset: 65,
+            line_num: 1,
         };
 
         let r = record1.save_json_to_file(&mut file);
@@ -72,6 +75,7 @@ mod test {
         let record2 = Record {
             key: "test/test2/tt222".to_string(),
             offset: 77,
+            line_num: 1,
         };
         record2.save_json_to_file(&mut file);
 

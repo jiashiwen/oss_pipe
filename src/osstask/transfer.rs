@@ -8,7 +8,7 @@ use std::{
     sync::{atomic::AtomicUsize, Arc},
 };
 
-use super::{gen_file_path, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
+use super::{gen_file_path, CURRENT_LINE_PREFIX, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
 
 #[derive(Debug, Clone)]
 pub struct Transfer {
@@ -20,18 +20,26 @@ pub struct Transfer {
     pub target_exist_skip: bool,
     pub large_file_size: usize,
     pub multi_part_chunk: usize,
+    pub begin_line_number: usize,
 }
 
 impl Transfer {
     pub async fn exec(&self, records: Vec<Record>) -> Result<()> {
+        let mut line_num = self.begin_line_number;
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
         offset_key.push_str(&subffix);
+        let mut current_line_key = CURRENT_LINE_PREFIX.to_string();
+        current_line_key.push_str(&self.begin_line_number.to_string());
+
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
 
         // 先写首行日志，避免错误漏记
         self.offset_map
             .insert(offset_key.clone(), records[0].offset);
+        // 与记录当前行数
+        let num = TryInto::<usize>::try_into(line_num).unwrap();
+        self.offset_map.insert(current_line_key.clone(), num);
 
         let mut error_file = OpenOptions::new()
             .create(true)
@@ -141,6 +149,8 @@ impl Transfer {
             };
 
             self.offset_map.insert(offset_key.clone(), record.offset);
+
+            line_num += 1;
         }
         self.offset_map.remove(&offset_key);
         let _ = error_file.flush();

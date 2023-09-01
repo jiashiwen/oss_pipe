@@ -21,7 +21,6 @@ use clap::{ArgAction, Command as Clap_Command};
 use lazy_static::lazy_static;
 
 use crate::interact::INTERACT_STATUS;
-use std::borrow::Borrow;
 
 pub const APP_NAME: &'static str = "oss_pipe";
 // pub const INTERACT_STATUS: &'static bool = &false;
@@ -116,7 +115,7 @@ pub fn get_command_completer() -> CommandCompleter {
 
 fn subcommands() -> Vec<SubCmd> {
     let mut subcmds = vec![];
-    all_subcommand(CLIAPP.clone().borrow(), 0, &mut subcmds);
+    all_subcommand(&CLIAPP, 0, &mut subcmds);
     subcmds
 }
 

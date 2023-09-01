@@ -15,6 +15,7 @@ use crate::{
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckPoint {
+    // 对象列表命名规则：OBJECT_LIST_FILE_PREFIX+秒级unix 时间戳 'objeclt_list_unixtimestampe'
     pub execute_file_path: String,
     pub execute_position: u64,
 }
