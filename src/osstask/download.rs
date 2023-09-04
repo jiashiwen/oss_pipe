@@ -1,6 +1,6 @@
 use crate::{
-    checkpoint::{get_task_checkpoint, CheckPoint, Record},
-    commons::{exec_processbar, json_to_struct, read_lines},
+    checkpoint::Record,
+    commons::{json_to_struct, read_lines},
     exception::save_error_record,
     s3::{
         aws_s3::{byte_stream_multi_partes_to_file, byte_stream_to_file},
@@ -8,31 +8,26 @@ use crate::{
     },
 };
 use anyhow::{anyhow, Result};
+use async_trait::async_trait;
 use aws_sdk_s3::error::GetObjectErrorKind;
 use dashmap::DashMap;
-use indicatif::{ProgressBar, ProgressStyle};
-use regex::RegexSet;
+
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{self, File, OpenOptions},
-    io::{self, BufRead, Seek, SeekFrom, Write},
+    fs::{self, OpenOptions},
+    io::Write,
     path::Path,
-    sync::{
-        atomic::{AtomicBool, AtomicUsize},
-        Arc,
-    },
-    time::Duration,
+    sync::{atomic::AtomicUsize, Arc},
 };
 use tokio::{
-    runtime::{self, Runtime},
-    task::JoinSet,
+    runtime::Runtime,
+    task::{self, JoinSet},
 };
 use walkdir::WalkDir;
 
 use super::{
-    err_process, gen_file_path, snapshot_offset_to_file, task_actions::TaskActions,
-    TaskDefaultParameters, TaskType, CHECK_POINT_FILE_NAME, CURRENT_LINE_PREFIX,
-    ERROR_RECORD_PREFIX, OBJECT_LIST_FILE_PREFIX, OFFSET_EXEC_PREFIX,
+    err_process, gen_file_path, task_actions::TaskActions, TaskAttributes, TaskType,
+    CURRENT_LINE_PREFIX, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -40,26 +35,7 @@ use super::{
 pub struct DownloadTask {
     pub source: OSSDescription,
     pub local_path: String,
-    #[serde(default = "TaskDefaultParameters::batch_size_default")]
-    pub bach_size: i32,
-    #[serde(default = "TaskDefaultParameters::task_threads_default")]
-    pub task_threads: usize,
-    #[serde(default = "TaskDefaultParameters::max_errors_default")]
-    pub max_errors: usize,
-    #[serde(default = "TaskDefaultParameters::meta_dir_default")]
-    pub meta_dir: String,
-    #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
-    pub target_exists_skip: bool,
-    #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
-    pub start_from_checkpoint: bool,
-    #[serde(default = "TaskDefaultParameters::large_file_size_default")]
-    pub large_file_size: usize,
-    #[serde(default = "TaskDefaultParameters::multi_part_chunk_default")]
-    pub multi_part_chunk: usize,
-    #[serde(default = "TaskDefaultParameters::filter_default")]
-    pub exclude: Option<Vec<String>>,
-    #[serde(default = "TaskDefaultParameters::filter_default")]
-    pub include: Option<Vec<String>>,
+    pub task_attributes: TaskAttributes,
 }
 
 impl Default for DownloadTask {
@@ -67,20 +43,12 @@ impl Default for DownloadTask {
         Self {
             source: OSSDescription::default(),
             local_path: "/tmp".to_string(),
-            bach_size: TaskDefaultParameters::batch_size_default(),
-            task_threads: TaskDefaultParameters::task_threads_default(),
-            max_errors: TaskDefaultParameters::max_errors_default(),
-            meta_dir: TaskDefaultParameters::meta_dir_default(),
-            target_exists_skip: TaskDefaultParameters::target_exists_skip_default(),
-            start_from_checkpoint: TaskDefaultParameters::start_from_checkpoint_default(),
-            large_file_size: TaskDefaultParameters::large_file_size_default(),
-            multi_part_chunk: TaskDefaultParameters::multi_part_chunk_default(),
-            include: TaskDefaultParameters::filter_default(),
-            exclude: TaskDefaultParameters::filter_default(),
+            task_attributes: TaskAttributes::default(),
         }
     }
 }
 
+#[async_trait]
 impl TaskActions for DownloadTask {
     fn task_type(&self) -> TaskType {
         TaskType::Download
@@ -297,7 +265,7 @@ impl TaskActions for DownloadTask {
 
     fn error_record_retry(&self) -> Result<()> {
         // 遍历错误记录
-        for entry in WalkDir::new(self.meta_dir.as_str())
+        for entry in WalkDir::new(self.task_attributes.meta_dir.as_str())
             .into_iter()
             .filter_map(Result::ok)
             .filter(|e| !e.file_type().is_dir() && e.file_name().to_str().is_some())
@@ -336,10 +304,10 @@ impl TaskActions for DownloadTask {
                             source: self.source.clone(),
                             error_conter: Arc::new(AtomicUsize::new(0)),
                             offset_map: Arc::new(DashMap::<String, usize>::new()),
-                            meta_dir: self.meta_dir.clone(),
-                            target_exist_skip: self.target_exists_skip,
-                            large_file_size: self.large_file_size,
-                            multi_part_chunk: self.multi_part_chunk,
+                            meta_dir: self.task_attributes.meta_dir.clone(),
+                            target_exist_skip: self.task_attributes.target_exists_skip,
+                            large_file_size: self.task_attributes.large_file_size,
+                            multi_part_chunk: self.task_attributes.multi_part_chunk,
                             begin_line_number: 0,
                         };
                         let _ = download.exec(record_vec);
@@ -360,7 +328,7 @@ impl TaskActions for DownloadTask {
         object_list_file: &str,
     ) -> Result<usize> {
         // 预清理meta目录
-        let _ = fs::remove_dir_all(self.meta_dir.as_str());
+        let _ = fs::remove_dir_all(self.task_attributes.meta_dir.as_str());
         let mut interrupted = false;
         let mut total_lines = 0;
 
@@ -381,7 +349,7 @@ impl TaskActions for DownloadTask {
                         .append_last_modify_greater_object_to_file(
                             self.source.bucket.clone(),
                             self.source.prefix.clone(),
-                            self.bach_size,
+                            self.task_attributes.bach_size,
                             object_list_file.to_string(),
                             last_modify_timestamp,
                         )
@@ -392,7 +360,7 @@ impl TaskActions for DownloadTask {
                         .append_all_object_list_to_file(
                             self.source.bucket.clone(),
                             self.source.prefix.clone(),
-                            self.bach_size,
+                            self.task_attributes.bach_size,
                             object_list_file.to_string(),
                         )
                         .await
@@ -414,7 +382,7 @@ impl TaskActions for DownloadTask {
         Ok(total_lines)
     }
 
-    fn records_excutor(
+    async fn records_excutor(
         &self,
         joinset: &mut JoinSet<()>,
         records: Vec<Record>,
@@ -427,13 +395,20 @@ impl TaskActions for DownloadTask {
             source: self.source.clone(),
             error_conter,
             offset_map,
-            meta_dir: self.meta_dir.clone(),
+            meta_dir: self.task_attributes.meta_dir.clone(),
             target_exist_skip: false,
-            large_file_size: self.large_file_size,
-            multi_part_chunk: self.multi_part_chunk,
+            large_file_size: self.task_attributes.large_file_size,
+            multi_part_chunk: self.task_attributes.multi_part_chunk,
             begin_line_number: current_line_number,
         };
-
+        // task::spawn(async move {
+        //     if let Err(e) = download.exec(records).await {
+        //         download
+        //             .error_conter
+        //             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        //         log::error!("{}", e);
+        //     };
+        // });
         joinset.spawn(async move {
             if let Err(e) = download.exec(records).await {
                 download

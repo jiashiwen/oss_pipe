@@ -11,8 +11,8 @@ use crate::configure::{generate_default_config, set_config_file_path};
 use crate::configure::{get_config_file_path, get_current_config_yml, set_config};
 use crate::interact;
 use crate::osstask::{
-    task_id_generator, Task, TaskDescription, TaskDownload, TaskLocalToLocal, TaskOssCompare,
-    TaskTransfer, TaskTruncateBucket, TaskType, TaskUpLoad,
+    task_id_generator, DownloadTask, Task, TaskDescription, TaskDownload, TaskLocalToLocal,
+    TaskOssCompare, TaskTransfer, TaskTruncateBucket, TaskType, TaskUpLoad,
 };
 use crate::s3::oss::OSSDescription;
 use crate::s3::oss::OssProvider;
@@ -189,16 +189,20 @@ fn cmd_match(matches: &ArgMatches) {
         let task_id = task_id_generator();
         if let Some(download) = template.subcommand_matches("download") {
             let file = download.get_one::<String>("file");
-            let mut task_download = TaskDownload::default();
+            // let mut task_download = TaskDownload::default();
+            let mut download_task = DownloadTask::default();
             let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
             let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
-            task_download.exclude = Some(exclude_vec);
-            task_download.include = Some(include_vec);
+            // task_download.exclude = Some(exclude_vec);
+            // task_download.include = Some(include_vec);
+            download_task.task_attributes.exclude = Some(exclude_vec);
+            download_task.task_attributes.include = Some(include_vec);
 
             let task = Task {
                 task_id: task_id.to_string(),
                 name: "download task".to_string(),
-                task_desc: TaskDescription::Download(task_download),
+                // task_desc: TaskDescription::Download(task_download),
+                task_desc: TaskDescription::Download(download_task),
             };
             match file {
                 Some(f) => {

@@ -19,7 +19,7 @@ pub trait TaskActions {
     // 错误记录重试
     fn error_record_retry(&self) -> Result<()>;
     // 记录执行器
-    fn records_excutor(
+    async fn records_excutor(
         &self,
         joinset: &mut JoinSet<()>,
         records: Vec<Record>,
