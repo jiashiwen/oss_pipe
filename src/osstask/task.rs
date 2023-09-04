@@ -36,7 +36,10 @@ use tokio::{
 };
 use walkdir::WalkDir;
 
-use super::{osscompare::OssCompare, task_actions::TaskActions, DownLoadRecordsExecutor, UpLoad};
+use super::{
+    osscompare::OssCompare, task_actions::TaskActions, DownLoadRecordsExecutor, DownloadTask,
+    UpLoad,
+};
 
 pub const OBJECT_LIST_FILE_PREFIX: &'static str = "objlist_";
 pub const CHECK_POINT_FILE_NAME: &'static str = "checkpoint.yml";
@@ -57,7 +60,8 @@ pub enum TaskType {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum TaskDescription {
-    Download(TaskDownload),
+    // Download(TaskDownload),
+    Download(DownloadTask),
     Upload(TaskUpLoad),
     Transfer(TaskTransfer),
     LocalToLocal(TaskLocalToLocal),
@@ -70,7 +74,10 @@ pub enum TaskDescription {
 impl TaskDescription {
     pub fn exec_multi_threads(&self) -> Result<()> {
         match self {
-            TaskDescription::Download(download) => download.exec_multi_threads(),
+            TaskDescription::Download(download) => {
+                // download.exec_multi_threads()
+                execute_task_multi_threads(true, download, &download.task_attributes)
+            }
             TaskDescription::Upload(upload) => upload.exec_multi_threads(),
             TaskDescription::Transfer(transfer) => transfer.exec_multi_threads(true),
             TaskDescription::LocalToLocal(local_to_local) => local_to_local.exec_multi_threads(),
@@ -172,6 +179,24 @@ pub struct TaskAttributes {
     pub include: Option<Vec<String>>,
     #[serde(default = "TaskDefaultParameters::continuous_default")]
     pub continuous: bool,
+}
+
+impl Default for TaskAttributes {
+    fn default() -> Self {
+        Self {
+            bach_size: TaskDefaultParameters::batch_size_default(),
+            task_threads: TaskDefaultParameters::task_threads_default(),
+            max_errors: TaskDefaultParameters::max_errors_default(),
+            meta_dir: TaskDefaultParameters::meta_dir_default(),
+            target_exists_skip: TaskDefaultParameters::target_exists_skip_default(),
+            start_from_checkpoint: TaskDefaultParameters::target_exists_skip_default(),
+            large_file_size: TaskDefaultParameters::large_file_size_default(),
+            multi_part_chunk: TaskDefaultParameters::multi_part_chunk_default(),
+            exclude: TaskDefaultParameters::filter_default(),
+            include: TaskDefaultParameters::filter_default(),
+            continuous: TaskDefaultParameters::continuous_default(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -463,26 +488,6 @@ impl TaskTransfer {
                     Arc::clone(&offset_map),
                     total_lines - line_num,
                 );
-
-                // let transfer = Transfer {
-                //     source: self.source.clone(),
-                //     target: self.target.clone(),
-                //     error_conter: Arc::clone(&error_conter),
-                //     offset_map: Arc::clone(&offset_map),
-                //     target_exist_skip: false,
-                //     large_file_size: self.large_file_size,
-                //     multi_part_chunk: self.multi_part_chunk,
-                //     meta_dir: self.meta_dir.clone(),
-                // };
-
-                // execut_set.spawn(async move {
-                //     if let Err(e) = transfer.exec(vk).await {
-                //         transfer
-                //             .error_conter
-                //             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                //         log::error!("{}", e);
-                //     };
-                // });
             }
 
             while execut_set.len() > 0 {
@@ -2233,7 +2238,8 @@ where
                     Arc::clone(&error_conter),
                     Arc::clone(&offset_map),
                     line_num - batch,
-                );
+                )
+                .await;
 
                 // 清理临时key vec
                 vec_keys.clear();
@@ -2255,7 +2261,8 @@ where
                 Arc::clone(&error_conter),
                 Arc::clone(&offset_map),
                 total_lines - line_num,
-            );
+            )
+            .await;
         }
 
         while execut_set.len() > 0 {
