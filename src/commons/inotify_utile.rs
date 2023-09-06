@@ -99,15 +99,23 @@ impl InotifyWatcher {
         let mut buffer = [0u8; 4096];
 
         loop {
-            let events = self
-                .inotify
-                .read_events_blocking(&mut buffer)
-                .expect("Failed to read inotify events");
+            let events = match self.inotify.read_events_blocking(&mut buffer) {
+                Ok(events) => events,
+                Err(e) => {
+                    println!("{}", e);
+                    continue;
+                }
+            };
 
             for event in events {
                 let mut modify = Modified::new();
                 let idx = event.wd.get_watch_descriptor_id();
-                let mut path = self.map_wdid_dir.get(&idx).unwrap().value().to_string();
+                let mut path = match self.map_wdid_dir.get(&idx) {
+                    Some(kv) => kv.value().to_string(),
+                    None => {
+                        continue;
+                    }
+                };
                 match event.name {
                     Some(s) => {
                         path.push('/');
@@ -116,6 +124,7 @@ impl InotifyWatcher {
                     None => {}
                 }
                 modify.path = path.clone();
+
                 if event.mask.contains(EventMask::CREATE) {
                     modify.modify_type = ModifyType::Create;
                     if event.mask.contains(EventMask::ISDIR) {
@@ -127,20 +136,22 @@ impl InotifyWatcher {
                             Ok(wd) => {
                                 self.map_wdid_dir
                                     .insert(wd.get_watch_descriptor_id(), path.clone());
-                                self.map_dir_wd.insert(path, wd.clone());
+                                self.map_dir_wd.insert(path.clone(), wd.clone());
                             }
                             Err(e) => {
+                                println!("{}", e);
                                 continue;
                             }
                         };
                     } else {
                         modify.path_type = PathType::File;
                     }
-                } else if event.mask.contains(EventMask::DELETE) {
+                }
+
+                if event.mask.contains(EventMask::DELETE) {
                     modify.modify_type = ModifyType::Delete;
                     if event.mask.contains(EventMask::ISDIR) {
                         modify.path_type = PathType::Folder;
-                        println!("Directory deleted: {:?}", event.name);
                         let wd = self.map_dir_wd.get(&path).unwrap();
                         let v = wd.value();
 
@@ -158,23 +169,25 @@ impl InotifyWatcher {
                         println!("File deleted: {:?}", event.name);
                         modify.path_type = PathType::File;
                     }
-                } else if event.mask.contains(EventMask::MODIFY) {
+                }
+                if event.mask.contains(EventMask::MODIFY) {
                     modify.path_type = PathType::Folder;
                     modify.modify_type = ModifyType::Modify;
                     if event.mask.contains(EventMask::ISDIR) {
-                        println!("Directory modified: {:?}", event.name);
                     } else {
-                        println!("File modified: {:?}", event.name);
                         modify.path_type = PathType::File;
                     }
                 }
-                match struct_to_json_string(&modify) {
-                    Ok(json) => {
-                        let _ = file.write_all(json.as_bytes());
-                        let _ = file.write_all("\n".as_bytes());
-                    }
-                    Err(_) => {}
-                };
+
+                if !modify.path.is_empty() {
+                    match struct_to_json_string(&modify) {
+                        Ok(json) => {
+                            let _ = file.write_all(json.as_bytes());
+                            let _ = file.write_all("\n".as_bytes());
+                        }
+                        Err(_) => {}
+                    };
+                }
             }
         }
         // Ok(())
