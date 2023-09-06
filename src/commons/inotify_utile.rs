@@ -2,6 +2,7 @@ use std::{
     fs::OpenOptions,
     io::{self, Write},
     path::Path,
+    sync::Arc,
 };
 
 use dashmap::DashMap;
@@ -49,8 +50,8 @@ impl Modified {
 pub struct InotifyWatcher {
     inotify: Inotify,
     pub watched_dir: String,
-    pub map_wdid_dir: DashMap<i32, String>,
-    pub map_dir_wd: DashMap<String, WatchDescriptor>,
+    pub map_wdid_dir: Arc<DashMap<i32, String>>,
+    pub map_dir_wd: Arc<DashMap<String, WatchDescriptor>>,
 }
 
 impl InotifyWatcher {
@@ -82,11 +83,15 @@ impl InotifyWatcher {
             };
         }
 
+        let mwd = Arc::new(map_wdid_dir);
+        let mdw: Arc<DashMap<String, WatchDescriptor>> = Arc::new(map_dir_wd);
+
         Ok(Self {
             inotify,
             watched_dir,
-            map_wdid_dir,
-            map_dir_wd,
+
+            map_wdid_dir: mwd,
+            map_dir_wd: mdw,
         })
     }
 
