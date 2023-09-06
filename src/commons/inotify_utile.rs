@@ -171,9 +171,9 @@ impl InotifyWatcher {
                                 self.map_dir_wd.remove(&path);
                             }
                             Err(e) => {
-                                self.map_wdid_dir
-                                    .remove(&v.clone().get_watch_descriptor_id());
-                                self.map_dir_wd.remove(&path);
+                                // self.map_wdid_dir
+                                //     .remove(&v.clone().get_watch_descriptor_id());
+                                // self.map_dir_wd.remove(&path);
                                 println!("{}", e)
                             }
                         };
