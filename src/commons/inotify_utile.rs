@@ -123,7 +123,6 @@ impl InotifyWatcher {
                     }
                     None => {}
                 }
-                modify.path = path.clone();
 
                 println!("{:?}", event.mask);
 
@@ -148,6 +147,7 @@ impl InotifyWatcher {
                     } else {
                         modify.path_type = PathType::File;
                     }
+                    modify.path = path.clone();
                 }
 
                 if event.mask.contains(EventMask::DELETE) {
@@ -158,19 +158,20 @@ impl InotifyWatcher {
                         let v = wd.value();
 
                         match self.inotify.watches().remove(v.clone()) {
-                            Ok(()) => {
-                                self.map_wdid_dir
-                                    .remove(&v.clone().get_watch_descriptor_id());
-                                self.map_dir_wd.remove(&path);
-                            }
+                            Ok(()) => {}
                             Err(e) => {
                                 println!("{}", e)
                             }
                         };
+                        self.map_wdid_dir
+                            .remove(&v.clone().get_watch_descriptor_id());
+                        self.map_dir_wd.remove(&path);
                     } else {
                         modify.path_type = PathType::File;
                     }
+                    modify.path = path.clone();
                 }
+
                 if event.mask.contains(EventMask::MODIFY) {
                     modify.path_type = PathType::Folder;
                     modify.modify_type = ModifyType::Modify;
@@ -178,6 +179,7 @@ impl InotifyWatcher {
                     } else {
                         modify.path_type = PathType::File;
                     }
+                    modify.path = path.clone();
                 }
 
                 if !modify.path.is_empty() {
