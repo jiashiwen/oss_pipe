@@ -125,6 +125,8 @@ impl InotifyWatcher {
                 }
                 modify.path = path.clone();
 
+                println!("{:?}", event.mask.complement());
+
                 if event.mask.contains(EventMask::CREATE) {
                     modify.modify_type = ModifyType::Create;
                     if event.mask.contains(EventMask::ISDIR) {
