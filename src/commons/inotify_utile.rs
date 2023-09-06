@@ -160,25 +160,25 @@ impl InotifyWatcher {
                         let kv = self.map_dir_wd.get(&path).unwrap();
                         let wd = kv.value().clone();
                         let id = wd.get_watch_descriptor_id();
-                        let _ = self.inotify.watches().remove(wd.clone());
-                        {
-                            self.map_wdid_dir.remove(&id);
-                            self.map_dir_wd.remove(&path.clone());
-                        }
+                        // let _ = self.inotify.watches().remove(wd.clone());
+                        // {
+                        //     self.map_wdid_dir.remove(&id);
+                        //     self.map_dir_wd.remove(&path.clone());
+                        // }
 
-                        // match self.inotify.watches().remove(v.clone()) {
-                        //     Ok(()) => {
-                        //         // self.map_wdid_dir
-                        //         //     .remove(&v.clone().get_watch_descriptor_id());
-                        //         // self.map_dir_wd.remove(&path);
-                        //     }
-                        //     Err(e) => {
-                        //         // self.map_wdid_dir
-                        //         //     .remove(&v.clone().get_watch_descriptor_id());
-                        //         // self.map_dir_wd.remove(&path);
-                        //         println!("{}", e)
-                        //     }
-                        // };
+                        match self.inotify.watches().remove(wd) {
+                            Ok(()) => {
+                                // self.map_wdid_dir
+                                //     .remove(&v.clone().get_watch_descriptor_id());
+                                // self.map_dir_wd.remove(&path);
+                            }
+                            Err(e) => {
+                                let p = path.clone();
+                                self.map_wdid_dir.remove(&id);
+                                self.map_dir_wd.remove(p.as_str());
+                                println!("{}", e)
+                            }
+                        };
                         println!("name {:?}", event.name);
                     } else {
                         modify.path_type = PathType::File;
