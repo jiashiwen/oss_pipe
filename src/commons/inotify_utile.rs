@@ -48,9 +48,9 @@ impl Modified {
 #[derive(Debug)]
 pub struct InotifyWatcher {
     inotify: Inotify,
-    watched_dir: String,
-    map_wdid_dir: DashMap<i32, String>,
-    map_dir_wd: DashMap<String, WatchDescriptor>,
+    pub watched_dir: String,
+    pub map_wdid_dir: DashMap<i32, String>,
+    pub map_dir_wd: DashMap<String, WatchDescriptor>,
 }
 
 impl InotifyWatcher {
@@ -185,6 +185,8 @@ impl InotifyWatcher {
                     }
                 }
 
+                println!("{:?}", self.map_dir_wd);
+
                 match modify.modify_type {
                     ModifyType::Unkown => {}
                     _ => {
@@ -210,7 +212,7 @@ mod test {
     //cargo test commons::inotify_utile::test::test_ -- --nocapture
     #[test]
     fn test_() {
-        let inotify_watcher = InotifyWatcher::new("/tmp").unwrap();
+        let inotify_watcher = InotifyWatcher::new("/root/tmp").unwrap();
         inotify_watcher.watch_to_file("/root/watch.log");
     }
 }
