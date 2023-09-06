@@ -163,14 +163,17 @@ impl InotifyWatcher {
 
                         match self.inotify.watches().remove(v.clone()) {
                             Ok(()) => {
-                                self.map_wdid_dir
-                                    .remove(&v.clone().get_watch_descriptor_id());
-                                self.map_dir_wd.remove(&path);
+                                // self.map_wdid_dir
+                                //     .remove(&v.clone().get_watch_descriptor_id());
+                                // self.map_dir_wd.remove(&path);
                             }
                             Err(e) => {
                                 println!("{}", e)
                             }
                         };
+                        self.map_wdid_dir
+                            .remove(&v.clone().get_watch_descriptor_id());
+                        self.map_dir_wd.remove(&path);
                     } else {
                         modify.path_type = PathType::File;
                     }
