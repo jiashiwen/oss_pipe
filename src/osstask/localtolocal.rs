@@ -22,7 +22,6 @@ pub struct LocalToLocal {
     pub target_exist_skip: bool,
     pub large_file_size: usize,
     pub multi_part_chunk: usize,
-    // pub begin_line_number: usize,
 }
 
 impl LocalToLocal {

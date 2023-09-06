@@ -93,7 +93,6 @@ pub fn get_task_checkpoint(checkpoint_file: &str, meta_dir: &str) -> Result<Chec
 
 #[cfg(test)]
 mod test {
-    use std::io::Read;
     use std::io::Seek;
     use std::io::SeekFrom;
     use std::{
