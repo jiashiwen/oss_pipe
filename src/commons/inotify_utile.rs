@@ -163,7 +163,7 @@ impl InotifyWatcher {
                         // self.map_wdid_dir
                         //     .remove(&v.clone().get_watch_descriptor_id());
                         // self.map_dir_wd.remove(&path);
-                        println!("name {:?}", event.name);
+
                         match self.inotify.watches().remove(v.clone()) {
                             Ok(()) => {
                                 self.map_wdid_dir
@@ -177,6 +177,7 @@ impl InotifyWatcher {
                                 println!("{}", e)
                             }
                         };
+                        println!("name {:?}", event.name);
                     } else {
                         modify.path_type = PathType::File;
                     }
