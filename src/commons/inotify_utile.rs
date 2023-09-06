@@ -163,38 +163,21 @@ impl InotifyWatcher {
 
                         let kv = self.map_dir_wd.get(&path).unwrap();
                         let wd = kv.value().clone();
-                        let id = wd.get_watch_descriptor_id();
-                        // let _ = self.inotify.watches().remove(wd.clone());
-                        // {
-                        //     self.map_wdid_dir.remove(&id);
-                        //     self.map_dir_wd.remove(&path.clone());
-                        // }
-                        {
-                            match self.inotify.watches().remove(wd) {
-                                Ok(()) => {
-                                    // self.map_wdid_dir
-                                    //     .remove(&v.clone().get_watch_descriptor_id());
-                                    // self.map_dir_wd.remove(&path);
-                                }
-                                Err(e) => {
-                                    // let p = path.clone();
-                                    // let idx = id.clone();
-                                    // self.map_wdid_dir.remove(&idx);
-                                    // self.map_dir_wd.remove(p.as_str());
-                                    println!("{}", e)
-                                }
-                            };
-                        }
-                        println!("name {:?}", event.name);
-                        {
-                            let idx = id.clone();
-                            self.map_wdid_dir.remove(&idx);
-                        }
 
-                        {
-                            let p = path.clone();
-                            self.map_dir_wd.remove(p.as_str());
-                        }
+                        match self.inotify.watches().remove(wd) {
+                            Ok(()) => {
+                                // self.map_wdid_dir
+                                //     .remove(&v.clone().get_watch_descriptor_id());
+                                // self.map_dir_wd.remove(&path);
+                            }
+                            Err(e) => {
+                                // let p = path.clone();
+                                // let idx = id.clone();
+                                // self.map_wdid_dir.remove(&idx);
+                                // self.map_dir_wd.remove(p.as_str());
+                                println!("{}", e)
+                            }
+                        };
                     } else {
                         modify.path_type = PathType::File;
                     }
