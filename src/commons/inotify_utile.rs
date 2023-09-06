@@ -21,6 +21,7 @@ pub enum PathType {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum ModifyType {
+    Unkown,
     Create,
     Delete,
     Modify,
@@ -39,7 +40,7 @@ impl Modified {
         Self {
             path: "".to_string(),
             path_type: PathType::File,
-            modify_type: ModifyType::Create,
+            modify_type: ModifyType::Unkown,
         }
     }
 }
@@ -125,6 +126,7 @@ impl InotifyWatcher {
                 }
 
                 println!("{:?}", event.mask);
+                modify.path = path.clone();
 
                 if event.mask.contains(EventMask::CREATE) {
                     modify.modify_type = ModifyType::Create;
@@ -147,7 +149,6 @@ impl InotifyWatcher {
                     } else {
                         modify.path_type = PathType::File;
                     }
-                    modify.path = path.clone();
                 }
 
                 if event.mask.contains(EventMask::DELETE) {
@@ -169,7 +170,6 @@ impl InotifyWatcher {
                     } else {
                         modify.path_type = PathType::File;
                     }
-                    modify.path = path.clone();
                 }
 
                 if event.mask.contains(EventMask::MODIFY) {
@@ -179,17 +179,19 @@ impl InotifyWatcher {
                     } else {
                         modify.path_type = PathType::File;
                     }
-                    modify.path = path.clone();
                 }
 
-                if !modify.path.is_empty() {
-                    match struct_to_json_string(&modify) {
-                        Ok(json) => {
-                            let _ = file.write_all(json.as_bytes());
-                            let _ = file.write_all("\n".as_bytes());
-                        }
-                        Err(_) => {}
-                    };
+                match modify.modify_type {
+                    ModifyType::Unkown => {}
+                    _ => {
+                        match struct_to_json_string(&modify) {
+                            Ok(json) => {
+                                let _ = file.write_all(json.as_bytes());
+                                let _ = file.write_all("\n".as_bytes());
+                            }
+                            Err(_) => {}
+                        };
+                    }
                 }
             }
         }
