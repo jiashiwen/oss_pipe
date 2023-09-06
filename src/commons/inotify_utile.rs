@@ -194,7 +194,9 @@ impl InotifyWatcher {
                 println!("{:?}", self.map_dir_wd);
 
                 match modify.modify_type {
-                    ModifyType::Unkown => {}
+                    ModifyType::Unkown => {
+                        println!("modify type unkown")
+                    }
                     _ => {
                         match struct_to_json_string(&modify) {
                             Ok(json) => {
