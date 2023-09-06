@@ -165,16 +165,8 @@ impl InotifyWatcher {
                         let wd = kv.value().clone();
 
                         match self.inotify.watches().remove(wd) {
-                            Ok(()) => {
-                                // self.map_wdid_dir
-                                //     .remove(&v.clone().get_watch_descriptor_id());
-                                // self.map_dir_wd.remove(&path);
-                            }
+                            Ok(()) => {}
                             Err(e) => {
-                                // let p = path.clone();
-                                // let idx = id.clone();
-                                // self.map_wdid_dir.remove(&idx);
-                                // self.map_dir_wd.remove(p.as_str());
                                 println!("{}", e)
                             }
                         };
@@ -195,9 +187,7 @@ impl InotifyWatcher {
                 println!("{:?}", self.map_dir_wd);
 
                 match modify.modify_type {
-                    ModifyType::Unkown => {
-                        println!("modify type unkown")
-                    }
+                    ModifyType::Unkown => {}
                     _ => {
                         match struct_to_json_string(&modify) {
                             Ok(json) => {

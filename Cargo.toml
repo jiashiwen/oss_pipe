@@ -34,6 +34,7 @@ dashmap = "5.4.0"
 regex = "1.8.1"
 termtree = "0.4.1"
 indicatif = "0.17.6"
+notify = "6.1.1"
 
 # jd and aws oss
 # jdcloud_signer = { git = "https://github.com/shijunLee/jdcloud-sdk-rust-signer" }
@@ -77,6 +78,10 @@ path = "examples/jd_s3.rs"
 [[example]]
 name = "inotify"
 path = "examples/inotify_sample.rs"
+
+[[example]]
+name = "notify"
+path = "examples/notify_sample.rs"
 
 [[example]]
 name = "indicatif"
