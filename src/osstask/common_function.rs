@@ -1,13 +1,12 @@
 use std::{
-    fs::{self, File},
+    fs::File,
     sync::{atomic::AtomicUsize, Arc},
 };
 
-use anyhow::{anyhow, Error, Result};
+use anyhow::Error;
 use dashmap::DashMap;
-use tokio::runtime::Runtime;
 
-use crate::{checkpoint::Record, exception::save_error_record, s3::OSSDescription};
+use crate::{checkpoint::Record, exception::save_error_record};
 
 pub fn err_process(
     error_conter: &Arc<AtomicUsize>,
@@ -19,6 +18,7 @@ pub fn err_process(
     offset_map: &Arc<DashMap<String, usize>>,
 ) {
     log::error!("{}", e);
+
     save_error_record(&error_conter, record.clone(), err_file);
     offset_map.insert(offset_key.to_string(), record.offset);
     offset_map.insert(line_key.to_string(), record.line_num);

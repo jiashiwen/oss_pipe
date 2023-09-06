@@ -11,8 +11,8 @@ use crate::configure::{generate_default_config, set_config_file_path};
 use crate::configure::{get_config_file_path, get_current_config_yml, set_config};
 use crate::interact;
 use crate::osstask::{
-    task_id_generator, DownloadTask, Task, TaskDescription, TaskDownload, TaskLocalToLocal,
-    TaskOssCompare, TaskTransfer, TaskTruncateBucket, TaskType, TaskUpLoad,
+    task_id_generator, DownloadTask, Task, TaskDescription, TaskLocalToLocal, TaskOssCompare,
+    TaskTruncateBucket, TaskType, TaskUpLoad, TransferTask,
 };
 use crate::s3::oss::OSSDescription;
 use crate::s3::oss::OssProvider;
@@ -29,7 +29,7 @@ lazy_static! {
     static ref CLIAPP: Clap_Command = Clap_Command::new(APP_NAME)
         .version("1.0")
         .author("Shiwen Jia. <jiashiwen@gmail.com>")
-        .about("RustBoot")
+        .about("oss_pipe")
         .arg_required_else_help(true)
         .arg(
             Arg::new("config")
@@ -189,19 +189,17 @@ fn cmd_match(matches: &ArgMatches) {
         let task_id = task_id_generator();
         if let Some(download) = template.subcommand_matches("download") {
             let file = download.get_one::<String>("file");
-            // let mut task_download = TaskDownload::default();
+
             let mut download_task = DownloadTask::default();
             let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
             let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
-            // task_download.exclude = Some(exclude_vec);
-            // task_download.include = Some(include_vec);
+
             download_task.task_attributes.exclude = Some(exclude_vec);
             download_task.task_attributes.include = Some(include_vec);
 
             let task = Task {
                 task_id: task_id.to_string(),
                 name: "download task".to_string(),
-                // task_desc: TaskDescription::Download(task_download),
                 task_desc: TaskDescription::Download(download_task),
             };
             match file {
@@ -228,11 +226,12 @@ fn cmd_match(matches: &ArgMatches) {
         if let Some(transfer) = template.subcommand_matches("transfer") {
             let file = transfer.get_one::<String>("file");
             let task_id = task_id_generator();
-            let mut task_transfer = TaskTransfer::default();
+            // let mut task_transfer = TaskTransfer::default();
+            let mut task_transfer = TransferTask::default();
             let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
             let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
-            task_transfer.exclude = Some(exclude_vec);
-            task_transfer.include = Some(include_vec);
+            task_transfer.task_attributes.exclude = Some(exclude_vec);
+            task_transfer.task_attributes.include = Some(include_vec);
             task_transfer.source.provider = OssProvider::ALI;
             task_transfer.source.endpoint = "http://oss-cn-beijing.aliyuncs.com".to_string();
             let task = Task {

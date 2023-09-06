@@ -51,7 +51,8 @@ fn remove_dir_contents<P: AsRef<Path>>(path: P) -> io::Result<()> {
     Ok(())
 }
 
-pub fn scan_folder_files_to_file(folder: &str, file_name: &str) -> Result<()> {
+pub fn scan_folder_files_to_file(folder: &str, file_name: &str) -> Result<usize> {
+    let mut total = 0;
     let path = std::path::Path::new(file_name);
     if let Some(p) = path.parent() {
         std::fs::create_dir_all(p)?;
@@ -64,7 +65,7 @@ pub fn scan_folder_files_to_file(folder: &str, file_name: &str) -> Result<()> {
         .open(file_name)?;
     let mut file = LineWriter::new(file_ref);
 
-    // 遍历目录并上传
+    // 遍历目录并将文件路径写入文件
     for entry in WalkDir::new(folder)
         .into_iter()
         .filter_map(Result::ok)
@@ -82,10 +83,11 @@ pub fn scan_folder_files_to_file(folder: &str, file_name: &str) -> Result<()> {
 
             let _ = file.write_all(key.as_bytes());
             let _ = file.write_all("\n".as_bytes());
+            total += 1;
         };
         file.flush()?;
     }
-    Ok(())
+    Ok(total)
 }
 
 // 生成指定字节数的文件

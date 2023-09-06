@@ -23,9 +23,8 @@ pub trait TaskActions {
         &self,
         joinset: &mut JoinSet<()>,
         records: Vec<Record>,
-        error_conter: Arc<AtomicUsize>,
+        err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, usize>>,
-        current_line_number: usize,
     );
 
     // 生成对象列表
@@ -35,5 +34,4 @@ pub trait TaskActions {
         last_modify_timestamp: i64,
         object_list_file: &str,
     ) -> Result<usize>;
-    // fn gen_executor(&self) -> Self::Item;
 }

@@ -1,6 +1,7 @@
 mod calculate_etag;
 mod convert;
 mod fileutiles;
+mod inotify_utile;
 mod json_utile;
 mod processbar;
 mod rand_util;
@@ -11,6 +12,7 @@ pub mod yamlutile;
 pub use calculate_etag::*;
 pub use convert::*;
 pub use fileutiles::*;
+pub use inotify_utile::*;
 pub use json_utile::*;
 pub use processbar::*;
 pub use subcmdcompleter::CommandCompleter;
