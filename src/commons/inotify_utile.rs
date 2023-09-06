@@ -156,14 +156,14 @@ impl InotifyWatcher {
                     if event.mask.contains(EventMask::ISDIR) {
                         modify.path_type = PathType::Folder;
                         println!("path:{}", path);
-                        println!("name {:?}", event.name);
+
                         let wd = self.map_dir_wd.get(&path).unwrap();
                         let v = wd.value();
                         // let _ = self.inotify.watches().remove(v.clone());
                         // self.map_wdid_dir
                         //     .remove(&v.clone().get_watch_descriptor_id());
                         // self.map_dir_wd.remove(&path);
-
+                        println!("name {:?}", event.name);
                         match self.inotify.watches().remove(v.clone()) {
                             Ok(()) => {
                                 self.map_wdid_dir
