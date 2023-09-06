@@ -158,14 +158,12 @@ impl InotifyWatcher {
                         println!("path:{}", path);
 
                         let kv = self.map_dir_wd.get(&path).unwrap();
-                        // let wd = kv.value().clone();
-                        // let id = wd.get_watch_descriptor_id();
+                        let wd = kv.value().clone();
+                        let id = wd.get_watch_descriptor_id();
                         {
-                            let wd = kv.value().clone();
-                            let id = wd.get_watch_descriptor_id();
                             let _ = self.inotify.watches().remove(wd.clone());
                             self.map_wdid_dir.remove(&id);
-                            self.map_dir_wd.remove(&path);
+                            self.map_dir_wd.remove(&path.clone());
                         }
 
                         // match self.inotify.watches().remove(v.clone()) {
