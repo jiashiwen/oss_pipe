@@ -125,7 +125,7 @@ impl InotifyWatcher {
                 }
                 modify.path = path.clone();
 
-                println!("{:?}", event.mask.complement());
+                println!("{:?}", event.mask);
 
                 if event.mask.contains(EventMask::CREATE) {
                     modify.modify_type = ModifyType::Create;
@@ -168,7 +168,6 @@ impl InotifyWatcher {
                             }
                         };
                     } else {
-                        println!("File deleted: {:?}", event.name);
                         modify.path_type = PathType::File;
                     }
                 }
