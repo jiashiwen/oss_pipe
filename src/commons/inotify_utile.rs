@@ -81,7 +81,7 @@ impl InotifyWatcher {
                 }
             };
         }
-        // let watched_dir = map_wdid_dir.get(&1).unwrap().value().to_string();
+
         Ok(Self {
             inotify,
             watched_dir,
@@ -157,26 +157,26 @@ impl InotifyWatcher {
                         modify.path_type = PathType::Folder;
                         println!("path:{}", path);
 
-                        let wd = self.map_dir_wd.get(&path).unwrap();
-                        let v = wd.value();
-                        // let _ = self.inotify.watches().remove(v.clone());
-                        // self.map_wdid_dir
-                        //     .remove(&v.clone().get_watch_descriptor_id());
-                        // self.map_dir_wd.remove(&path);
+                        let kv = self.map_dir_wd.get(&path).unwrap();
+                        let wd = kv.value().clone();
+                        let id = wd.get_watch_descriptor_id();
+                        let _ = self.inotify.watches().remove(wd.clone());
+                        self.map_wdid_dir.remove(&id);
+                        self.map_dir_wd.remove(&path);
 
-                        match self.inotify.watches().remove(v.clone()) {
-                            Ok(()) => {
-                                self.map_wdid_dir
-                                    .remove(&v.clone().get_watch_descriptor_id());
-                                self.map_dir_wd.remove(&path);
-                            }
-                            Err(e) => {
-                                // self.map_wdid_dir
-                                //     .remove(&v.clone().get_watch_descriptor_id());
-                                // self.map_dir_wd.remove(&path);
-                                println!("{}", e)
-                            }
-                        };
+                        // match self.inotify.watches().remove(v.clone()) {
+                        //     Ok(()) => {
+                        //         // self.map_wdid_dir
+                        //         //     .remove(&v.clone().get_watch_descriptor_id());
+                        //         // self.map_dir_wd.remove(&path);
+                        //     }
+                        //     Err(e) => {
+                        //         // self.map_wdid_dir
+                        //         //     .remove(&v.clone().get_watch_descriptor_id());
+                        //         // self.map_dir_wd.remove(&path);
+                        //         println!("{}", e)
+                        //     }
+                        // };
                         println!("name {:?}", event.name);
                     } else {
                         modify.path_type = PathType::File;
