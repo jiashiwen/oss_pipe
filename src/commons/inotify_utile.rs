@@ -89,7 +89,6 @@ impl InotifyWatcher {
         Ok(Self {
             inotify,
             watched_dir,
-
             map_wdid_dir: mwd,
             map_dir_wd: mdw,
         })
@@ -179,7 +178,8 @@ impl InotifyWatcher {
                             }
                             Err(e) => {
                                 let p = path.clone();
-                                self.map_wdid_dir.remove(&id);
+                                let idx = id.clone();
+                                self.map_wdid_dir.remove(&idx);
                                 self.map_dir_wd.remove(p.as_str());
                                 println!("{}", e)
                             }
