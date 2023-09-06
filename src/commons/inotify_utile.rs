@@ -177,14 +177,23 @@ impl InotifyWatcher {
                                 // self.map_dir_wd.remove(&path);
                             }
                             Err(e) => {
-                                let p = path.clone();
-                                let idx = id.clone();
-                                self.map_wdid_dir.remove(&idx);
-                                self.map_dir_wd.remove(p.as_str());
+                                // let p = path.clone();
+                                // let idx = id.clone();
+                                // self.map_wdid_dir.remove(&idx);
+                                // self.map_dir_wd.remove(p.as_str());
                                 println!("{}", e)
                             }
                         };
                         println!("name {:?}", event.name);
+                        {
+                            let idx = id.clone();
+                            self.map_wdid_dir.remove(&idx);
+                        }
+
+                        {
+                            let p = path.clone();
+                            self.map_dir_wd.remove(p.as_str());
+                        }
                     } else {
                         modify.path_type = PathType::File;
                     }
