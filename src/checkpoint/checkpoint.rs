@@ -10,14 +10,19 @@ use walkdir::WalkDir;
 
 use crate::{
     commons::{read_lines, read_yaml_file, struct_to_yaml_string},
-    osstask::OFFSET_PREFIX,
+    osstask::{TaskKind, OFFSET_PREFIX},
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckPoint {
     // 对象列表命名规则：OBJECT_LIST_FILE_PREFIX+秒级unix 时间戳 'objeclt_list_unixtimestampe'
     pub execute_file_path: String,
+    // 文件执行位置，既执行到的offset，用于断点续传
     pub execute_position: u64,
+    // 执行完成的行号
+    pub line_number: usize,
+    pub file_for_notify: Option<String>,
+    // pub type_kind: TaskKind,
 }
 
 impl FromStr for CheckPoint {
@@ -169,6 +174,8 @@ mod test {
         let checkpoint = CheckPoint {
             execute_file_path: path.to_string(),
             execute_position: positon,
+            line_number: line_num,
+            file_for_notify: None,
         };
 
         let _ = checkpoint.save_to("/tmp/.checkpoint");

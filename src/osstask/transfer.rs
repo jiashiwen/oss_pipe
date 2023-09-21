@@ -18,7 +18,7 @@ use tokio::{runtime::Runtime, task::JoinSet};
 use walkdir::WalkDir;
 
 use super::{
-    err_process, gen_file_path, task_actions::TaskActions, TaskAttributes, TaskType,
+    err_process, gen_file_path, task_actions::TaskActionsFromOss, TaskAttributes, TaskType,
     CURRENT_LINE_PREFIX, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX,
 };
 
@@ -41,7 +41,7 @@ impl Default for TransferTask {
 }
 
 #[async_trait]
-impl TaskActions for TransferTask {
+impl TaskActionsFromOss for TransferTask {
     fn task_type(&self) -> TaskType {
         TaskType::Transfer
     }
@@ -207,7 +207,6 @@ pub struct TransferRecordsExecutor {
     pub target_exist_skip: bool,
     pub large_file_size: usize,
     pub multi_part_chunk: usize,
-    // pub begin_line_number: usize,
 }
 
 impl TransferRecordsExecutor {

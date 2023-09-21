@@ -1,4 +1,4 @@
-use crate::commons::{json_to_struct, read_lines, scan_folder_files_to_file};
+use crate::commons::{json_to_struct, read_lines, scan_folder_files_to_file, NotifyWatcher};
 use crate::{checkpoint::Record, s3::OSSDescription};
 use anyhow::anyhow;
 
@@ -8,6 +8,10 @@ use aws_sdk_s3::types::ByteStream;
 use dashmap::DashMap;
 use serde::Deserialize;
 use serde::Serialize;
+use std::fs::File;
+use std::io::{self, BufRead, Seek, SeekFrom};
+use std::thread;
+use std::time::Duration;
 use std::{
     fs::{self, OpenOptions},
     io::{Read, Write},
@@ -19,13 +23,11 @@ use tokio::task::JoinSet;
 use walkdir::WalkDir;
 
 use super::err_process;
-use super::task_actions::TaskActions;
+use super::task_actions::TaskActionsFromLocal;
 use super::TaskAttributes;
 use super::TaskType;
 use super::CURRENT_LINE_PREFIX;
-use super::{
-    gen_file_path, Task, TaskDescription, TaskUpLoad, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX,
-};
+use super::{gen_file_path, Task, TaskDescription, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
@@ -46,7 +48,7 @@ impl Default for UploadTask {
 }
 
 #[async_trait]
-impl TaskActions for UploadTask {
+impl TaskActionsFromLocal for UploadTask {
     fn task_type(&self) -> TaskType {
         TaskType::Upload
     }
@@ -142,12 +144,7 @@ impl TaskActions for UploadTask {
     }
 
     // 生成对象列表
-    fn generate_object_list(
-        &self,
-        rt: &Runtime,
-        last_modify_timestamp: i64,
-        object_list_file: &str,
-    ) -> Result<usize> {
+    fn generate_object_list(&self, rt: &Runtime, object_list_file: &str) -> Result<usize> {
         let mut interrupted = false;
         let mut total_lines = 0;
 
@@ -168,6 +165,48 @@ impl TaskActions for UploadTask {
             return Err(anyhow!("get object list error"));
         }
         Ok(total_lines)
+    }
+
+    fn gen_watcher(&self) -> notify::Result<NotifyWatcher> {
+        let watcher = NotifyWatcher::new(self.local_path.as_str())?;
+        Ok(watcher)
+    }
+
+    async fn execute_increment(&self, notify_file: &str) -> std::io::Result<()> {
+        let mut offset = 0;
+        let mut line_num = 0;
+
+        // let mut file = notify_file;
+        loop {
+            let mut file = File::open(notify_file)?;
+            // 获取文件长度
+            let file_len = match file.metadata() {
+                Ok(m) => m.len(),
+                Err(e) => {
+                    return Err(e);
+                }
+            };
+            println!("offset:{};file len:{}", offset, file_len);
+            if file_len > offset {
+                file.seek(SeekFrom::Start(offset))?;
+
+                let lines = io::BufReader::new(file).lines();
+                for line in lines {
+                    if file_len.eq(&offset) {
+                        break;
+                    }
+                    if let Result::Ok(key) = line {
+                        let len = key.bytes().len() + "\n".bytes().len();
+                        let len_u64 = u64::try_from(len).unwrap();
+                        offset += Into::<u64>::into(len_u64);
+                        line_num += 1;
+                        println!("{}", key);
+                    }
+                }
+            }
+            thread::sleep(Duration::from_secs(1));
+            // yield_now().await;
+        }
     }
 }
 
@@ -354,22 +393,22 @@ pub struct UpLoad {
 }
 
 impl UpLoad {
-    pub fn from_taskupload(
-        task_upload: &TaskUpLoad,
-        err_counter: Arc<AtomicUsize>,
-        offset_map: Arc<DashMap<String, usize>>,
-    ) -> Self {
-        Self {
-            local_path: task_upload.local_path.clone(),
-            target: task_upload.target.clone(),
-            err_counter,
-            offset_map,
-            meta_dir: task_upload.meta_dir.clone(),
-            target_exist_skip: task_upload.target_exists_skip,
-            large_file_size: task_upload.large_file_size,
-            multi_part_chunk: task_upload.multi_part_chunk,
-        }
-    }
+    // pub fn from_taskupload(
+    //     task_upload: &TaskUpLoad,
+    //     err_counter: Arc<AtomicUsize>,
+    //     offset_map: Arc<DashMap<String, usize>>,
+    // ) -> Self {
+    //     Self {
+    //         local_path: task_upload.local_path.clone(),
+    //         target: task_upload.target.clone(),
+    //         err_counter,
+    //         offset_map,
+    //         meta_dir: task_upload.meta_dir.clone(),
+    //         target_exist_skip: task_upload.target_exists_skip,
+    //         large_file_size: task_upload.large_file_size,
+    //         multi_part_chunk: task_upload.multi_part_chunk,
+    //     }
+    // }
 
     pub fn from_task(
         task: &Task,
@@ -382,10 +421,10 @@ impl UpLoad {
                 target: upload.target.clone(),
                 err_counter,
                 offset_map,
-                meta_dir: upload.meta_dir.clone(),
-                target_exist_skip: upload.target_exists_skip,
-                large_file_size: upload.large_file_size,
-                multi_part_chunk: upload.multi_part_chunk,
+                meta_dir: upload.task_attributes.meta_dir.clone(),
+                target_exist_skip: upload.task_attributes.target_exists_skip,
+                large_file_size: upload.task_attributes.large_file_size,
+                multi_part_chunk: upload.task_attributes.multi_part_chunk,
             };
             return Ok(up);
         }
