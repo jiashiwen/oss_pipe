@@ -12,7 +12,7 @@ use crate::configure::{get_config_file_path, get_current_config_yml, set_config}
 use crate::interact;
 use crate::osstask::{
     task_id_generator, DownloadTask, Task, TaskDescription, TaskLocalToLocal, TaskOssCompare,
-    TaskTruncateBucket, TaskType, TaskUpLoad, TransferTask,
+    TaskTruncateBucket, TaskType, TransferTask, UploadTask,
 };
 use crate::s3::oss::OSSDescription;
 use crate::s3::oss::OssProvider;
@@ -262,11 +262,11 @@ fn cmd_match(matches: &ArgMatches) {
 
         if let Some(upload) = template.subcommand_matches("upload") {
             let file = upload.get_one::<String>("file");
-            let mut task_upload = TaskUpLoad::default();
+            let mut task_upload = UploadTask::default();
             let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
             let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
-            task_upload.include = Some(include_vec);
-            task_upload.exclude = Some(exclude_vec);
+            task_upload.task_attributes.include = Some(include_vec);
+            task_upload.task_attributes.exclude = Some(exclude_vec);
             let task = Task {
                 task_id: task_id.to_string(),
                 name: "upload task".to_string(),

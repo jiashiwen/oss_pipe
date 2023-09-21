@@ -26,7 +26,7 @@ use tokio::{
 use walkdir::WalkDir;
 
 use super::{
-    err_process, gen_file_path, task_actions::TaskActions, TaskAttributes, TaskType,
+    err_process, gen_file_path, task_actions::TaskActionsFromOss, TaskAttributes, TaskType,
     CURRENT_LINE_PREFIX, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX,
 };
 
@@ -49,7 +49,7 @@ impl Default for DownloadTask {
 }
 
 #[async_trait]
-impl TaskActions for DownloadTask {
+impl TaskActionsFromOss for DownloadTask {
     fn task_type(&self) -> TaskType {
         TaskType::Download
     }
