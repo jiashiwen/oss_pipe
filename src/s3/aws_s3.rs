@@ -1,6 +1,6 @@
 use std::{
     fs::{File, OpenOptions},
-    io::{LineWriter, Read, Write},
+    io::{BufReader, LineWriter, Read, Write},
     path::Path,
 };
 
@@ -49,6 +49,7 @@ impl OssClient {
             .append(true)
             .open(file_path.clone())?;
         let mut file = LineWriter::new(file_ref);
+
         if let Some(objects) = resp.object_list {
             for item in objects.iter() {
                 let _ = file.write_all(item.as_bytes());
@@ -58,7 +59,7 @@ impl OssClient {
             file.flush()?;
         }
 
-        while !token.is_none() {
+        while token.is_some() {
             let resp = self
                 .list_objects(bucket.clone(), prefix.clone(), batch, token.clone())
                 .await?;
@@ -120,7 +121,7 @@ impl OssClient {
             file.flush()?;
         }
 
-        while !token.is_none() {
+        while token.is_some() {
             let resp = self
                 .list_objects(bucket.clone(), prefix.clone(), batch, token.clone())
                 .await?;
@@ -491,6 +492,101 @@ impl OssClient {
         Ok(())
     }
 
+    //Todo 新增upload 函数，判断当 file size 大于 chunck size 时主动拆分
+    pub async fn upload_from_local(
+        &self,
+        bucket: &str,
+        key: &str,
+        path: &str,
+        file_max_size: usize,
+        chuck_size: usize,
+    ) -> Result<()> {
+        let mut file = File::open(path)?;
+        let file_meta = file.metadata()?;
+        let file_max_size_u64 = TryInto::<u64>::try_into(file_max_size)?;
+        if file_meta.len().le(&file_max_size_u64) {
+            let body = ByteStream::from_path(Path::new(&path)).await?;
+            self.client
+                .put_object()
+                .bucket(bucket)
+                .key(key)
+                .body(body)
+                .send()
+                .await?;
+            return Ok(());
+        }
+
+        let mut part_number = 0;
+        let mut upload_parts: Vec<CompletedPart> = Vec::new();
+
+        //获取上传id
+        let multipart_upload_res: CreateMultipartUploadOutput = self
+            .client
+            .create_multipart_upload()
+            .bucket(bucket)
+            .key(key)
+            .send()
+            .await?;
+        let upload_id = match multipart_upload_res.upload_id() {
+            Some(id) => id,
+            None => {
+                return Err(anyhow!("upload id is None"));
+            }
+        };
+
+        //分段上传文件并记录completer_part
+        loop {
+            let mut buf = vec![0; chuck_size];
+            let read_count = file.read(&mut buf)?;
+            part_number += 1;
+
+            if read_count == 0 {
+                break;
+            }
+
+            let body = &buf[..read_count];
+            let stream = ByteStream::from(body.to_vec());
+
+            let upload_part_res = self
+                .client
+                .upload_part()
+                .key(key)
+                .bucket(bucket)
+                .upload_id(upload_id)
+                .body(stream)
+                .part_number(part_number)
+                .send()
+                .await?;
+
+            let completed_part = CompletedPart::builder()
+                .e_tag(upload_part_res.e_tag.unwrap_or_default())
+                .part_number(part_number)
+                .build();
+
+            upload_parts.push(completed_part);
+
+            if read_count != chuck_size {
+                break;
+            }
+        }
+        // 完成上传文件合并
+        let completed_multipart_upload: CompletedMultipartUpload =
+            CompletedMultipartUpload::builder()
+                .set_parts(Some(upload_parts))
+                .build();
+
+        let _complete_multipart_upload_res = self
+            .client
+            .complete_multipart_upload()
+            .bucket(bucket)
+            .key(key)
+            .multipart_upload(completed_multipart_upload)
+            .upload_id(upload_id)
+            .send()
+            .await?;
+        Ok(())
+    }
+
     // multipart upload
     pub async fn multipart_upload_local_file(
         &self,
@@ -680,14 +776,18 @@ pub async fn byte_stream_multi_partes_to_file(
 
 #[cfg(test)]
 mod test {
+    use std::{fs::OpenOptions, io::Write};
 
-    use crate::s3::OSSDescription;
+    use aws_sdk_s3::types::ByteStream;
+    use tokio::io::{AsyncBufReadExt, BufReader};
+
+    use crate::{commons::rand_string, s3::OSSDescription};
+
     //cargo test s3::aws_s3::test::test_append_last_modify_greater_object_to_file -- --nocapture
     #[test]
     fn test_append_last_modify_greater_object_to_file() {
         // 获取oss连接参数
         let vec_oss = crate::commons::read_yaml_file::<Vec<OSSDescription>>("osscfg.yml").unwrap();
-
         let oss_desc = vec_oss[0].clone();
         let jd_client = oss_desc.gen_oss_client().unwrap();
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -707,6 +807,79 @@ mod test {
                 println!("{}", e.to_string());
                 return;
             }
+        });
+    }
+
+    //cargo test s3::aws_s3::test::test_read_byte_stream_by_line -- --nocapture
+    #[test]
+    fn test_read_byte_stream_by_line() {
+        // 获取oss连接参数
+        let vec_oss = crate::commons::read_yaml_file::<Vec<OSSDescription>>("osscfg.yml").unwrap();
+        let oss_desc = vec_oss[0].clone();
+        let jd_client = oss_desc.gen_oss_client().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let file_path = "/tmp/line_file";
+        let mut file = OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .create(true)
+            .open(file_path)
+            .unwrap();
+        for _ in 0..99 {
+            let mut s = rand_string(8);
+            s.push('\n');
+
+            let _ = file.write(s.as_bytes());
+        }
+
+        file.flush().unwrap();
+
+        rt.block_on(async {
+            let _ = jd_client
+                .upload_object_from_local("jsw-bucket-1", "line_file", "/tmp/line_file")
+                .await;
+
+            let stream: aws_sdk_s3::types::ByteStream = jd_client
+                .get_object_bytes("jsw-bucket-1", "line_file")
+                .await
+                .unwrap();
+            let mut lines = BufReader::new(stream.into_async_read()).lines();
+
+            // 按行读取ByteStream
+            while let Ok(line) = lines.next_line().await {
+                match line {
+                    Some(l) => println!("{}", l),
+                    None => break,
+                }
+            }
+        });
+    }
+
+    //cargo test s3::aws_s3::test::test_vec_to_byte_stream -- --nocapture
+    #[test]
+    fn test_vec_to_byte_stream() {
+        // 获取oss连接参数
+        let vec_oss = crate::commons::read_yaml_file::<Vec<OSSDescription>>("osscfg.yml").unwrap();
+        let oss_desc = vec_oss[0].clone();
+        let jd_client = oss_desc.gen_oss_client().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let mut vec_line = vec![];
+
+        for _ in 0..99 {
+            let mut s = rand_string(8);
+            s.push('\n');
+            vec_line.push(s.into_bytes());
+        }
+
+        let vec_u8 = vec_line.into_iter().flatten().collect::<Vec<u8>>();
+
+        // file.flush().unwrap();
+        let stream = ByteStream::from(vec_u8);
+
+        rt.block_on(async {
+            jd_client
+                .upload_object_bytes("jsw-bucket-1", "line_file", None, stream)
+                .await;
         });
     }
 }

@@ -1,3 +1,5 @@
+use std::fs::File;
+use std::io::Write;
 use std::str::FromStr;
 
 // use super::aws_s3::OssClient;
@@ -83,11 +85,27 @@ pub enum OssProvider {
     HUAWEI,
     COS,
 }
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct OssObjectsList {
     pub object_list: Option<Vec<String>>,
     pub next_token: Option<String>,
 }
+
+// impl OssObjectsList {
+//     pub fn write_to_file(&self, mut file: &File) -> Result<usize> {
+//         let mut total = 0;
+//         if let Some(objects) = &self.object_list {
+//             for item in objects.iter() {
+//                 let _ = file.write_all(item.as_bytes());
+//                 let _ = file.write_all("\n".as_bytes());
+//                 total += 1;
+//             }
+//             file.flush()?;
+//         }
+//         Ok(total)
+//     }
+// }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct OSSDescription {
@@ -308,6 +326,7 @@ mod test {
     use crate::commons::read_yaml_file;
 
     use super::{OSSDescription, OssProvider};
+
     fn print_type_of<T>(_: T) {
         println!("{}", std::any::type_name::<T>())
     }
@@ -387,6 +406,7 @@ mod test {
     pub async fn sleep() {
         thread::sleep(Duration::from_secs(1));
     }
+
     //cargo test s3::oss::test::test_tokio_multi_thread -- --nocapture
     #[test]
     fn test_tokio_multi_thread() {

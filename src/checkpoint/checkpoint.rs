@@ -10,7 +10,7 @@ use walkdir::WalkDir;
 
 use crate::{
     commons::{read_lines, read_yaml_file, struct_to_yaml_string},
-    osstask::{TaskKind, OFFSET_PREFIX},
+    osstask::{TaskRunningStatus, OFFSET_PREFIX},
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -22,7 +22,7 @@ pub struct CheckPoint {
     // 执行完成的行号
     pub line_number: usize,
     pub file_for_notify: Option<String>,
-    // pub type_kind: TaskKind,
+    pub task_running_satus: TaskRunningStatus,
 }
 
 impl FromStr for CheckPoint {
@@ -148,7 +148,7 @@ mod test {
         println!("positon:{}", positon);
 
         f.seek(SeekFrom::Start(positon)).unwrap();
-        let mut line = String::new();
+        // let mut _line = String::new();
 
         let lines = io::BufReader::new(&f).lines();
         line_num = 0;
@@ -176,6 +176,7 @@ mod test {
             execute_position: positon,
             line_number: line_num,
             file_for_notify: None,
+            task_running_satus: crate::osstask::TaskRunningStatus::Stock,
         };
 
         let _ = checkpoint.save_to("/tmp/.checkpoint");

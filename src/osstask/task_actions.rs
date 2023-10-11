@@ -1,6 +1,5 @@
 use std::{
     fs::File,
-    path::Path,
     sync::{atomic::AtomicUsize, Arc},
 };
 
@@ -10,7 +9,11 @@ use dashmap::DashMap;
 use notify;
 use tokio::{runtime::Runtime, task::JoinSet};
 
-use crate::{checkpoint::Record, commons::NotifyWatcher};
+use crate::{
+    checkpoint::Record,
+    commons::{Modified, NotifyWatcher},
+    s3::aws_s3::OssClient,
+};
 
 use super::TaskType;
 
@@ -71,5 +74,6 @@ pub trait TaskActionsFromLocal {
         watcher.watch_to_file(file).await;
     }
 
-    async fn execute_increment(&self, notify_file: &str) -> std::io::Result<()>;
+    async fn execute_increment(&self, notify_file: &str);
+    async fn modified_handler(&self, modified: Modified, client: &OssClient);
 }

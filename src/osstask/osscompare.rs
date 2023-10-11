@@ -252,9 +252,16 @@ impl OssCompare {
 
 #[cfg(test)]
 mod test {
+
+    use std::{fs::File, io::Read};
+
+    use bytes::BytesMut;
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+
     use crate::{
         commons::struct_to_json_string,
         osstask::osscompare::{DateTime, DiffExpires, ObjectDiff},
+        s3::OSSDescription,
     };
 
     //cargo test osstask::osscompare::test::test_object_diff -- --nocapture
@@ -279,5 +286,64 @@ mod test {
         let diff_str = struct_to_json_string(&diff);
 
         println!("{}", diff_str.unwrap());
+    }
+
+    //cargo test osstask::osscompare::test::test_compare_oss_local_by_stream -- --nocapture
+    #[test]
+    fn test_compare_oss_local_by_stream() {
+        // 获取oss连接参数
+        let vec_oss = crate::commons::read_yaml_file::<Vec<OSSDescription>>("osscfg.yml").unwrap();
+        let oss_desc = vec_oss[0].clone();
+        let jd_client = oss_desc.gen_oss_client().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+
+        // let key = "hW*P1696820575919885000";
+        // let path = "/tmp/files/hW*P1696820575919885000";
+
+        let key = "Bn##1696829067656579000";
+        let path = "/tmp/files/Bn##1696829067656579000";
+        let local_file = "/tmp/files/Bn##1696829067656579000.local";
+
+        rt.block_on(async {
+            // 上传本地文件
+            let _ = jd_client
+                .upload_from_local("jsw-bucket-1", key, path, 209715200, 10485760)
+                .await;
+
+            // let byte_stream = jd_client
+            //     .get_object_bytes("jsw-bucket-1", key)
+            //     .await
+            //     .unwrap();
+
+            let resp = jd_client.get_object("jsw-bucket-1", key).await.unwrap();
+            // let mut read = byte_stream.into_async_read();
+            let mut obj_len = TryInto::<usize>::try_into(resp.content_length()).unwrap();
+            let mut read = resp.body.into_async_read();
+            let buffer_size = 1048577;
+            let mut file = File::open(local_file).unwrap();
+
+            loop {
+                if obj_len > buffer_size {
+                    let mut oss_buffer = vec![0; buffer_size];
+                    let mut file_buffer = vec![0; buffer_size];
+                    let size = read.read_exact(&mut oss_buffer).await.unwrap();
+                    let _read_count = file.read(&mut file_buffer).unwrap();
+                    obj_len -= buffer_size;
+                    println!("{}", oss_buffer.eq(&file_buffer));
+                    println!("size: {:?}", size);
+                    continue;
+                } else {
+                    let mut oss_buffer = vec![0; obj_len];
+                    let mut file_buffer = vec![0; obj_len];
+                    let size = read.read_exact(&mut oss_buffer).await.unwrap();
+                    let _read_count = file.read(&mut file_buffer).unwrap();
+                    println!("{}", oss_buffer.eq(&file_buffer));
+                    println!("size: {:?}", size);
+                    break;
+                }
+            }
+
+            // let buf = BufReader::new(byte_stream.into_async_read()).read_line(buf);
+        });
     }
 }
