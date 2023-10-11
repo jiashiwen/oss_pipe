@@ -17,7 +17,7 @@ use tokio::task::yield_now;
 
 use super::struct_to_json_string;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum PathType {
     Folder,

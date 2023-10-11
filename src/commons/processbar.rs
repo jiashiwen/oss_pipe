@@ -28,6 +28,7 @@ pub fn exec_processbar(
     pb.set_style(progress_style);
 
     while !stop_mark.load(std::sync::atomic::Ordering::Relaxed) {
+        thread::sleep(Duration::from_millis(200));
         let offset: Option<usize> = status_map
             .iter()
             .filter(|f| f.key().starts_with(key_prefix))
@@ -41,7 +42,6 @@ pub fn exec_processbar(
             }
             None => {}
         }
-        thread::sleep(Duration::from_millis(200));
     }
-    pb.finish_with_message("downloaded");
+    pb.finish_with_message("Finish");
 }

@@ -77,7 +77,7 @@ mod test {
             offset: 77,
             line_num: 1,
         };
-        record2.save_json_to_file(&mut file);
+        let _ = record2.save_json_to_file(&mut file);
 
         file.flush().unwrap();
     }

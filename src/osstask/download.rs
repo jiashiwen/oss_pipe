@@ -19,10 +19,7 @@ use std::{
     path::Path,
     sync::{atomic::AtomicUsize, Arc},
 };
-use tokio::{
-    runtime::Runtime,
-    task::{self, JoinSet},
-};
+use tokio::{runtime::Runtime, task::JoinSet};
 use walkdir::WalkDir;
 
 use super::{

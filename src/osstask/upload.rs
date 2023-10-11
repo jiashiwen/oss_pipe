@@ -1,4 +1,8 @@
-use crate::commons::{json_to_struct, read_lines, scan_folder_files_to_file, NotifyWatcher};
+use crate::commons::{
+    json_to_struct, read_lines, scan_folder_files_to_file, Modified, ModifyType, NotifyWatcher,
+    PathType,
+};
+use crate::s3::aws_s3::OssClient;
 use crate::{checkpoint::Record, s3::OSSDescription};
 use anyhow::anyhow;
 
@@ -8,6 +12,7 @@ use aws_sdk_s3::types::ByteStream;
 use dashmap::DashMap;
 use serde::Deserialize;
 use serde::Serialize;
+use serde_json::from_str;
 use std::fs::File;
 use std::io::{self, BufRead, Seek, SeekFrom};
 use std::thread;
@@ -19,7 +24,7 @@ use std::{
     sync::{atomic::AtomicUsize, Arc},
 };
 use tokio::runtime::Runtime;
-use tokio::task::JoinSet;
+use tokio::task::{yield_now, JoinSet};
 use walkdir::WalkDir;
 
 use super::err_process;
@@ -172,41 +177,100 @@ impl TaskActionsFromLocal for UploadTask {
         Ok(watcher)
     }
 
-    async fn execute_increment(&self, notify_file: &str) -> std::io::Result<()> {
+    async fn execute_increment(&self, notify_file: &str) {
+        let client = match self.target.gen_oss_client() {
+            Ok(c) => c,
+            Err(e) => {
+                log::error!("{}", e);
+                return;
+            }
+        };
         let mut offset = 0;
         let mut line_num = 0;
 
         // let mut file = notify_file;
         loop {
-            let mut file = File::open(notify_file)?;
+            let mut file = File::open(notify_file).unwrap();
             // 获取文件长度
             let file_len = match file.metadata() {
                 Ok(m) => m.len(),
                 Err(e) => {
-                    return Err(e);
+                    log::error!("{}", e);
+                    break;
                 }
             };
-            println!("offset:{};file len:{}", offset, file_len);
-            if file_len > offset {
-                file.seek(SeekFrom::Start(offset))?;
+            if file_len.le(&offset) {
+                continue;
+            }
 
-                let lines = io::BufReader::new(file).lines();
-                for line in lines {
-                    if file_len.eq(&offset) {
-                        break;
-                    }
-                    if let Result::Ok(key) = line {
-                        let len = key.bytes().len() + "\n".bytes().len();
-                        let len_u64 = u64::try_from(len).unwrap();
-                        offset += Into::<u64>::into(len_u64);
-                        line_num += 1;
-                        println!("{}", key);
-                    }
+            file.seek(SeekFrom::Start(offset)).unwrap();
+
+            let lines = io::BufReader::new(file).lines();
+            for line in lines {
+                if let Result::Ok(key) = line {
+                    let len = key.bytes().len() + "\n".bytes().len();
+                    let len_u64 = u64::try_from(len).unwrap();
+                    offset += Into::<u64>::into(len_u64);
+                    line_num += 1;
+                    // Modifed 解析
+                    match from_str::<Modified>(key.as_str()) {
+                        Ok(m) => {
+                            println!("{:?}", m);
+                            self.modified_handler(m, &client).await;
+                        }
+                        Err(e) => {
+                            continue;
+                        }
+                    };
                 }
             }
             thread::sleep(Duration::from_secs(1));
-            // yield_now().await;
+            yield_now().await;
         }
+    }
+
+    // ToDo
+    // 新建 modify handler，用于处理modify文件
+    async fn modified_handler(&self, modified: Modified, client: &OssClient) {
+        let mut target_path = modified.path.clone();
+
+        match self.local_path.ends_with("/") {
+            true => target_path.drain(..self.local_path.len()),
+            false => target_path.drain(..self.local_path.len() + 1),
+        };
+
+        if let Some(prefix) = self.target.prefix.clone() {
+            target_path.insert_str(0, &prefix);
+        }
+
+        if PathType::File.eq(&modified.path_type) {
+            match modified.modify_type {
+                ModifyType::Create | ModifyType::Modify => {
+                    if let Err(e) = client
+                        .upload_from_local(
+                            &self.target.bucket,
+                            target_path.as_str(),
+                            &modified.path,
+                            self.task_attributes.large_file_size,
+                            self.task_attributes.multi_part_chunk,
+                        )
+                        .await
+                    {
+                        log::error!("{}", e)
+                    };
+                }
+                ModifyType::Delete => {
+                    if let Err(e) = client
+                        .remove_object(&self.target.bucket, target_path.as_str())
+                        .await
+                    {
+                        log::error!("{}", e)
+                    };
+                }
+
+                ModifyType::Unkown => {}
+            }
+        };
     }
 }
 
@@ -393,23 +457,6 @@ pub struct UpLoad {
 }
 
 impl UpLoad {
-    // pub fn from_taskupload(
-    //     task_upload: &TaskUpLoad,
-    //     err_counter: Arc<AtomicUsize>,
-    //     offset_map: Arc<DashMap<String, usize>>,
-    // ) -> Self {
-    //     Self {
-    //         local_path: task_upload.local_path.clone(),
-    //         target: task_upload.target.clone(),
-    //         err_counter,
-    //         offset_map,
-    //         meta_dir: task_upload.meta_dir.clone(),
-    //         target_exist_skip: task_upload.target_exists_skip,
-    //         large_file_size: task_upload.large_file_size,
-    //         multi_part_chunk: task_upload.multi_part_chunk,
-    //     }
-    // }
-
     pub fn from_task(
         task: &Task,
         err_counter: Arc<AtomicUsize>,
