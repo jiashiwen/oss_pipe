@@ -15,6 +15,7 @@ use serde::Serialize;
 use serde_json::from_str;
 use std::fs::File;
 use std::io::{self, BufRead, Seek, SeekFrom};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
 use std::{
@@ -177,7 +178,7 @@ impl TaskActionsFromLocal for UploadTask {
         Ok(watcher)
     }
 
-    async fn execute_increment(&self, notify_file: &str) {
+    async fn execute_increment(&self, notify_file: &str, notify_file_size: Arc<AtomicU64>) {
         let client = match self.target.gen_oss_client() {
             Ok(c) => c,
             Err(e) => {
@@ -188,29 +189,28 @@ impl TaskActionsFromLocal for UploadTask {
         let mut offset = 0;
         let mut line_num = 0;
 
-        // let mut file = notify_file;
         loop {
-            let mut file = File::open(notify_file).unwrap();
-            // 获取文件长度
-            let file_len = match file.metadata() {
-                Ok(m) => m.len(),
-                Err(e) => {
-                    log::error!("{}", e);
-                    break;
-                }
-            };
-            if file_len.le(&offset) {
+            if notify_file_size.load(Ordering::SeqCst).le(&offset) {
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                 continue;
             }
 
-            file.seek(SeekFrom::Start(offset)).unwrap();
+            let mut file = match File::open(notify_file) {
+                Ok(f) => f,
+                Err(e) => {
+                    log::error!("{}", e);
+                    continue;
+                }
+            };
+
+            if let Err(e) = file.seek(SeekFrom::Start(offset)) {
+                log::error!("{}", e);
+                continue;
+            };
 
             let lines = io::BufReader::new(file).lines();
             for line in lines {
                 if let Result::Ok(key) = line {
-                    let len = key.bytes().len() + "\n".bytes().len();
-                    let len_u64 = u64::try_from(len).unwrap();
-                    offset += Into::<u64>::into(len_u64);
                     line_num += 1;
                     // Modifed 解析
                     match from_str::<Modified>(key.as_str()) {
@@ -219,13 +219,13 @@ impl TaskActionsFromLocal for UploadTask {
                             self.modified_handler(m, &client).await;
                         }
                         Err(e) => {
+                            log::error!("{}", e);
                             continue;
                         }
                     };
                 }
             }
-            thread::sleep(Duration::from_secs(1));
-            yield_now().await;
+            offset = notify_file_size.load(Ordering::SeqCst);
         }
     }
 

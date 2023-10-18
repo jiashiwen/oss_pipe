@@ -2,7 +2,11 @@ use std::{
     fs::File,
     io::{self, BufRead, LineWriter, Seek, SeekFrom, Write},
     path::Path,
-    sync::mpsc::Receiver,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc::Receiver,
+        Arc,
+    },
     thread,
     time::Duration,
 };
@@ -53,7 +57,7 @@ impl Modified {
 
 #[derive(Debug)]
 pub struct NotifyWatcher {
-    watcher: FsEventWatcher,
+    pub watcher: FsEventWatcher,
     reciver: Receiver<Result<Event, Error>>,
     pub watched_dir: String,
 }
@@ -71,9 +75,8 @@ impl NotifyWatcher {
         })
     }
 
-    pub async fn watch_to_file(self, file: File) {
-        let mut linewiter = LineWriter::new(file);
-
+    pub async fn watch_to_file(self, file: File, file_size: Arc<AtomicU64>) {
+        let mut linewiter = LineWriter::new(&file);
         for res in self.reciver {
             let mut modified = Modified::new();
             match res {
@@ -128,6 +131,13 @@ impl NotifyWatcher {
                     };
                 }
             }
+            match file.metadata() {
+                Ok(meta) => {
+                    file_size.store(meta.len(), Ordering::SeqCst);
+                }
+                Err(_) => {}
+            };
+
             yield_now().await;
         }
     }
@@ -173,7 +183,10 @@ pub async fn read_modifed_file(file_name: &str) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod test {
-    use std::fs::OpenOptions;
+    use std::{
+        fs::OpenOptions,
+        sync::{atomic::AtomicU64, Arc},
+    };
 
     use tokio::{
         runtime,
@@ -199,6 +212,7 @@ mod test {
         // let mut handles = Vec::new();
 
         let mut set: JoinSet<()> = JoinSet::new();
+        let file_size = Arc::new(AtomicU64::new(0));
         let rt_rs = rt.block_on(async move {
             let rs_watch = set.spawn(async move {
                 println!("begin watch");
@@ -209,7 +223,9 @@ mod test {
                     .open(watch_file_name)
                     .unwrap();
                 let notify_watcher = NotifyWatcher::new("/tmp/files").unwrap();
-                notify_watcher.watch_to_file(file).await;
+                notify_watcher
+                    .watch_to_file(file, Arc::clone(&file_size))
+                    .await;
             });
             let rs_read = set.spawn(async move {
                 println!("begin read watch file");

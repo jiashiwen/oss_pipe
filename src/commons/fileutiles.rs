@@ -4,6 +4,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, BufRead, LineWriter, Read, Write},
     path::Path,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use walkdir::WalkDir;
 
@@ -73,6 +74,56 @@ pub fn scan_folder_files_to_file(folder: &str, file_name: &str) -> Result<usize>
     {
         if let Some(p) = entry.path().to_str() {
             if p.eq(folder) {
+                continue;
+            }
+
+            let key = match folder.ends_with("/") {
+                true => &p[folder.len()..],
+                false => &p[folder.len() + 1..],
+            };
+
+            let _ = file.write_all(key.as_bytes());
+            let _ = file.write_all("\n".as_bytes());
+            total += 1;
+        };
+        file.flush()?;
+    }
+    Ok(total)
+}
+
+pub fn scan_folder_files_last_modify_greater_then_to_file(
+    folder: &str,
+    file_name: &str,
+    timestamp: u64,
+) -> Result<usize> {
+    let mut total = 0;
+    let path = std::path::Path::new(file_name);
+    if let Some(p) = path.parent() {
+        std::fs::create_dir_all(p)?;
+    };
+    //写入文件
+    let file_ref = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(true)
+        .open(file_name)?;
+    let mut file = LineWriter::new(file_ref);
+
+    // 遍历目录并将文件路径写入文件
+    for entry in WalkDir::new(folder)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|e| !e.file_type().is_dir())
+    {
+        let time = entry.metadata()?.modified()?;
+        let d = UNIX_EPOCH + Duration::from_secs(timestamp);
+
+        if let Some(p) = entry.path().to_str() {
+            if p.eq(folder) {
+                continue;
+            }
+
+            if time.lt(&d) {
                 continue;
             }
 
@@ -212,7 +263,7 @@ pub fn generate_files(
 mod test {
     use crate::commons::{
         fileutiles::{generate_file, scan_folder_files_to_file},
-        multi_parts_copy_file,
+        multi_parts_copy_file, scan_folder_files_last_modify_greater_then_to_file,
     };
 
     use super::generate_line_file;
@@ -243,5 +294,16 @@ mod test {
     fn test_multi_parts_copy_file() {
         let r = multi_parts_copy_file("/tmp/oss_pipe", "/tmp/genfilecp", 1024);
         println!("test scan result {:?}", r);
+    }
+
+    //cargo test commons::fileutiles::test::test_scan_folder_files_last_modify_greater_then_to_file -- --nocapture
+    #[test]
+    fn test_scan_folder_files_last_modify_greater_then_to_file() {
+        let r = scan_folder_files_last_modify_greater_then_to_file(
+            "/tmp/",
+            "/tmp/lastmodify",
+            1697423669,
+        );
+        println!("test older_files_last_modify_greater_then_to_file {:?}", r);
     }
 }
