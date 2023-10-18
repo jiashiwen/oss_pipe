@@ -4,7 +4,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, BufRead, Seek, SeekFrom},
     sync::{
-        atomic::{AtomicBool, AtomicUsize},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize},
         Arc,
     },
     thread,
@@ -1236,7 +1236,8 @@ where
     let stop_offset_save_mark = Arc::new(AtomicBool::new(false));
     let offset_map = Arc::new(DashMap::<String, usize>::new());
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
-    // let mut last_modify_timestamp = 0;
+    // 增量任务计数器，用于记录notify file 的文件大小
+    let notify_file_size = Arc::new(AtomicU64::new(0));
 
     let object_list_file = gen_file_path(
         task_attributes.meta_dir.as_str(),
@@ -1357,7 +1358,6 @@ where
         let stop_mark: Arc<AtomicBool> = Arc::clone(&stop_offset_save_mark);
         let obj_list = object_list_file.clone();
         let save_to = check_point_file.clone();
-        // let continuous = task_attributes.continuous;
         let notify_store = notify_file.clone();
         sys_set.spawn(async move {
             let checkpoint = CheckPoint {
@@ -1389,6 +1389,7 @@ where
                     return;
                 }
             };
+            let watched_file_size = Arc::clone(&notify_file_size);
             sys_set.spawn(async move {
                 println!("start notify");
                 let file_for_notify = match OpenOptions::new()
@@ -1403,7 +1404,9 @@ where
                         return;
                     }
                 };
-                notify.watch_to_file(file_for_notify).await
+                notify
+                    .watch_to_file(file_for_notify, watched_file_size)
+                    .await
             });
         };
 
@@ -1495,7 +1498,6 @@ where
             .await;
         }
 
-        //此逻辑有误，set中还存在其他线程，需要使用单独线程承载checkpoint和notify等辅助线程
         while execut_set.len() > 0 {
             execut_set.join_next().await;
         }
@@ -1528,8 +1530,11 @@ where
 
         match checkpoint.file_for_notify {
             Some(f) => {
+                let increment_file_size = Arc::clone(&notify_file_size);
                 rt.block_on(async {
-                    let _ = task.execute_increment(f.as_str()).await;
+                    let _ = task
+                        .execute_increment(f.as_str(), increment_file_size)
+                        .await;
                 });
             }
             None => {

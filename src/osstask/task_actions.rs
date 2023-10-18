@@ -1,6 +1,9 @@
 use std::{
     fs::File,
-    sync::{atomic::AtomicUsize, Arc},
+    sync::{
+        atomic::{AtomicU64, AtomicUsize},
+        Arc,
+    },
 };
 
 use anyhow::Result;
@@ -70,10 +73,15 @@ pub trait TaskActionsFromLocal {
 
     fn gen_watcher(&self) -> notify::Result<NotifyWatcher>;
 
-    async fn watch_modify_to_file(&self, watcher: NotifyWatcher, file: File) {
-        watcher.watch_to_file(file).await;
+    async fn watch_modify_to_file(
+        &self,
+        watcher: NotifyWatcher,
+        file: File,
+        file_size: Arc<AtomicU64>,
+    ) {
+        watcher.watch_to_file(file, file_size).await;
     }
 
-    async fn execute_increment(&self, notify_file: &str);
+    async fn execute_increment(&self, notify_file: &str, notify_file_size: Arc<AtomicU64>);
     async fn modified_handler(&self, modified: Modified, client: &OssClient);
 }
