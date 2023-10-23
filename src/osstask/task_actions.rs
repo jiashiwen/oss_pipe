@@ -82,6 +82,12 @@ pub trait TaskActionsFromLocal {
         watcher.watch_to_file(file, file_size).await;
     }
 
-    async fn execute_increment(&self, notify_file: &str, notify_file_size: Arc<AtomicU64>);
+    async fn execute_increment(
+        &self,
+        notify_file: &str,
+        notify_file_size: Arc<AtomicU64>,
+        err_counter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, usize>>,
+    );
     async fn modified_handler(&self, modified: Modified, client: &OssClient) -> Result<()>;
 }

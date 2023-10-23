@@ -2,13 +2,14 @@ use crate::commons::{
     json_to_struct, read_lines, scan_folder_files_to_file, Modified, ModifyType, NotifyWatcher,
     PathType,
 };
+use crate::exception::{process_error, ErrRecord};
 use crate::s3::aws_s3::OssClient;
 use crate::{checkpoint::Record, s3::OSSDescription};
 use anyhow::anyhow;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use aws_sdk_s3::types::ByteStream;
+
 use dashmap::DashMap;
 use serde::Deserialize;
 use serde::Serialize;
@@ -16,7 +17,6 @@ use serde_json::from_str;
 use std::fs::File;
 use std::io::{self, BufRead, Seek, SeekFrom};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::thread;
 
 use std::{
     fs::{self, OpenOptions},
@@ -101,7 +101,7 @@ impl TaskActionsFromLocal for UploadTask {
                     }
 
                     if record_vec.len() > 0 {
-                        let upload = UpLoadRecordsExecutor {
+                        let upload = UpLoadExecutor {
                             local_path: self.local_path.clone(),
                             target: self.target.clone(),
                             err_counter: Arc::new(AtomicUsize::new(0)),
@@ -111,7 +111,7 @@ impl TaskActionsFromLocal for UploadTask {
                             large_file_size: self.task_attributes.large_file_size,
                             multi_part_chunk: self.task_attributes.multi_part_chunk,
                         };
-                        let _ = upload.exec(record_vec);
+                        let _ = upload.exec_records(record_vec);
                     }
                 }
                 let _ = fs::remove_file(p);
@@ -128,7 +128,7 @@ impl TaskActionsFromLocal for UploadTask {
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, usize>>,
     ) {
-        let upload = UpLoadRecordsExecutor {
+        let upload = UpLoadExecutor {
             local_path: self.local_path.clone(),
             target: self.target.clone(),
             err_counter,
@@ -140,7 +140,7 @@ impl TaskActionsFromLocal for UploadTask {
         };
 
         joinset.spawn(async move {
-            if let Err(e) = upload.exec(records).await {
+            if let Err(e) = upload.exec_records(records).await {
                 upload
                     .err_counter
                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -178,7 +178,13 @@ impl TaskActionsFromLocal for UploadTask {
         Ok(watcher)
     }
 
-    async fn execute_increment(&self, notify_file: &str, notify_file_size: Arc<AtomicU64>) {
+    async fn execute_increment(
+        &self,
+        notify_file: &str,
+        notify_file_size: Arc<AtomicU64>,
+        err_counter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, usize>>,
+    ) {
         let client = match self.target.gen_oss_client() {
             Ok(c) => c,
             Err(e) => {
@@ -208,6 +214,35 @@ impl TaskActionsFromLocal for UploadTask {
                 continue;
             };
 
+            let subffix = offset.to_string();
+            let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
+            let mut current_line_key = CURRENT_LINE_PREFIX.to_string();
+            offset_key.push_str(&subffix);
+            current_line_key.push_str(&line_num.to_string());
+            // 先写首行日志，避免错误漏记
+            let offset_usize = TryInto::<usize>::try_into(offset).unwrap();
+            offset_map.insert(offset_key.clone(), offset_usize);
+            // 与记录当前行数
+            offset_map.insert(current_line_key.clone(), line_num);
+
+            let subffix = offset.to_string();
+            let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
+            offset_key.push_str(&subffix);
+            let error_file_name = gen_file_path(
+                &self.task_attributes.meta_dir,
+                ERROR_RECORD_PREFIX,
+                &subffix,
+            );
+
+            offset_map.insert(offset_key.clone(), offset_usize);
+
+            let mut error_file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(error_file_name.as_str())
+                .unwrap();
+
             let lines = io::BufReader::new(file).lines();
             for line in lines {
                 if let Result::Ok(key) = line {
@@ -216,7 +251,31 @@ impl TaskActionsFromLocal for UploadTask {
                     match from_str::<Modified>(key.as_str()) {
                         Ok(m) => {
                             println!("{:?}", m);
-                            self.modified_handler(m, &client).await;
+                            let mut target_path = m.path.clone();
+                            match self.local_path.ends_with("/") {
+                                true => target_path.drain(..self.local_path.len()),
+                                false => target_path.drain(..self.local_path.len() + 1),
+                            };
+                            if let Some(prefix) = self.target.prefix.clone() {
+                                target_path.insert_str(0, &prefix);
+                            }
+                            let record = ErrRecord {
+                                source: m.path.clone(),
+                                target: target_path,
+                                list_file_offset: offset_usize,
+                                list_file_line_num: line_num,
+                            };
+                            if let Err(e) = self.modified_handler(m, &client).await {
+                                process_error(
+                                    &err_counter,
+                                    e,
+                                    record,
+                                    &mut error_file,
+                                    &offset_key,
+                                    &current_line_key,
+                                    &offset_map,
+                                )
+                            };
                         }
                         Err(e) => {
                             log::error!("{}", e);
@@ -275,7 +334,7 @@ impl TaskActionsFromLocal for UploadTask {
 }
 
 #[derive(Debug, Clone)]
-pub struct UpLoadRecordsExecutor {
+pub struct UpLoadExecutor {
     pub local_path: String,
     pub target: OSSDescription,
     pub err_counter: Arc<AtomicUsize>,
@@ -286,8 +345,8 @@ pub struct UpLoadRecordsExecutor {
     pub multi_part_chunk: usize,
 }
 
-impl UpLoadRecordsExecutor {
-    pub async fn exec(&self, records: Vec<Record>) -> Result<()> {
+impl UpLoadExecutor {
+    pub async fn exec_records(&self, records: Vec<Record>) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
         let mut current_line_key = CURRENT_LINE_PREFIX.to_string();
@@ -361,58 +420,16 @@ impl UpLoadRecordsExecutor {
                 }
             }
 
-            let content_len: usize = match match s_file.metadata() {
-                Ok(m) => m.len(),
-                Err(e) => {
-                    err_process(
-                        &self.err_counter,
-                        anyhow!(e.to_string()),
-                        record,
-                        &mut error_file,
-                        offset_key.as_str(),
-                        current_line_key.as_str(),
-                        &self.offset_map,
-                    );
-                    continue;
-                }
-            }
-            .try_into()
+            if let Err(e) = c_t
+                .upload_from_local(
+                    self.target.bucket.as_str(),
+                    target_key.as_str(),
+                    &s_file_name,
+                    self.large_file_size,
+                    self.multi_part_chunk,
+                )
+                .await
             {
-                Ok(l) => l,
-                Err(e) => {
-                    err_process(
-                        &self.err_counter,
-                        anyhow!(e.to_string()),
-                        record,
-                        &mut error_file,
-                        offset_key.as_str(),
-                        current_line_key.as_str(),
-                        &self.offset_map,
-                    );
-                    continue;
-                }
-            };
-
-            // 大文件走 multi part upload 分支
-            if let Err(e) = match content_len > self.large_file_size {
-                true => {
-                    c_t.multipart_upload_local_file(
-                        self.target.bucket.as_str(),
-                        target_key.as_str(),
-                        &mut s_file,
-                        self.multi_part_chunk,
-                    )
-                    .await
-                }
-                false => {
-                    c_t.upload_object_from_local(
-                        self.target.bucket.as_str(),
-                        target_key.as_str(),
-                        s_file_name.as_str(),
-                    )
-                    .await
-                }
-            } {
                 err_process(
                     &self.err_counter,
                     anyhow!(e.to_string()),
@@ -423,7 +440,7 @@ impl UpLoadRecordsExecutor {
                     &self.offset_map,
                 );
                 continue;
-            };
+            }
 
             self.offset_map.insert(offset_key.clone(), record.offset);
             self.offset_map
@@ -442,173 +459,79 @@ impl UpLoadRecordsExecutor {
 
         Ok(())
     }
+
+    pub async fn exec_modifiedes(
+        &self,
+        modifiedes: Vec<Modified>,
+        notify_file_size: Arc<AtomicU64>,
+    ) -> Result<()> {
+        //     let subffix = modifiedes[0].to_string();
+        //     let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
+        //     let mut current_line_key = CURRENT_LINE_PREFIX.to_string();
+        //     offset_key.push_str(&subffix);
+        //     current_line_key.push_str(&records[0].line_num.to_string());
+        //     // 先写首行日志，避免错误漏记
+        //     self.offset_map
+        //         .insert(offset_key.clone(), records[0].offset);
+        //     // 与记录当前行数
+        //     self.offset_map
+        //         .insert(current_line_key.clone(), records[0].line_num);
+
+        //     let subffix = records[0].offset.to_string();
+        //     let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
+        //     offset_key.push_str(&subffix);
+        //     let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
+
+        //     // 先写首行日志，避免错误漏记
+        //     self.offset_map
+        //         .insert(offset_key.clone(), records[0].offset);
+
+        //     let mut error_file = OpenOptions::new()
+        //         .create(true)
+        //         .write(true)
+        //         .truncate(true)
+        //         .open(error_file_name.as_str())?;
+
+        //     let c_t = self.target.gen_oss_client()?;
+
+        Ok(())
+    }
+
+    async fn modified_handler(&self, modified: Modified, client: &OssClient) {
+        let mut target_path = modified.path.clone();
+        match self.local_path.ends_with("/") {
+            true => target_path.drain(..self.local_path.len()),
+            false => target_path.drain(..self.local_path.len() + 1),
+        };
+        if let Some(prefix) = self.target.prefix.clone() {
+            target_path.insert_str(0, &prefix);
+        }
+
+        if PathType::File.eq(&modified.path_type) {
+            let r = match modified.modify_type {
+                ModifyType::Create | ModifyType::Modify => {
+                    client
+                        .upload_from_local(
+                            &self.target.bucket,
+                            target_path.as_str(),
+                            &modified.path,
+                            self.large_file_size,
+                            self.multi_part_chunk,
+                        )
+                        .await
+                }
+                ModifyType::Delete => {
+                    match client
+                        .remove_object(&self.target.bucket, target_path.as_str())
+                        .await
+                    {
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(anyhow!("{}", e.to_string())),
+                    }
+                }
+
+                ModifyType::Unkown => Ok(()),
+            };
+        };
+    }
 }
-
-// #[derive(Debug, Clone)]
-// pub struct UpLoad {
-//     pub local_path: String,
-//     pub target: OSSDescription,
-//     pub err_counter: Arc<AtomicUsize>,
-//     pub offset_map: Arc<DashMap<String, usize>>,
-//     pub meta_dir: String,
-//     pub target_exist_skip: bool,
-//     pub large_file_size: usize,
-//     pub multi_part_chunk: usize,
-// }
-
-// impl UpLoad {
-//     pub fn from_task(
-//         task: &Task,
-//         err_counter: Arc<AtomicUsize>,
-//         offset_map: Arc<DashMap<String, usize>>,
-//     ) -> Result<Self> {
-//         if let TaskDescription::Upload(upload) = task.task_desc.clone() {
-//             let up = Self {
-//                 local_path: upload.local_path.clone(),
-//                 target: upload.target.clone(),
-//                 err_counter,
-//                 offset_map,
-//                 meta_dir: upload.task_attributes.meta_dir.clone(),
-//                 target_exist_skip: upload.task_attributes.target_exists_skip,
-//                 large_file_size: upload.task_attributes.large_file_size,
-//                 multi_part_chunk: upload.task_attributes.multi_part_chunk,
-//             };
-//             return Ok(up);
-//         }
-//         Err(anyhow!("task type not upload"))
-//     }
-
-//     pub async fn exec(&self, records: Vec<Record>) -> Result<()> {
-//         let subffix = records[0].offset.to_string();
-//         let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
-//         offset_key.push_str(&subffix);
-//         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
-
-//         // 先写首行日志，避免错误漏记
-//         self.offset_map
-//             .insert(offset_key.clone(), records[0].offset);
-
-//         let mut error_file = OpenOptions::new()
-//             .create(true)
-//             .write(true)
-//             .truncate(true)
-//             .open(error_file_name.as_str())?;
-
-//         let c_t = self.target.gen_oss_client()?;
-//         for record in records {
-//             let s_file_name = gen_file_path(self.local_path.as_str(), &record.key.as_str(), "");
-
-//             // 判断源文件是否存在
-//             let s_path = Path::new(s_file_name.as_str());
-//             if !s_path.exists() {
-//                 self.offset_map.insert(offset_key.clone(), record.offset);
-//                 continue;
-//             }
-
-//             let mut s_file = OpenOptions::new().read(true).open(s_file_name.as_str())?;
-
-//             let mut target_key = "".to_string();
-//             if let Some(s) = self.target.prefix.clone() {
-//                 target_key.push_str(&s);
-//             };
-//             target_key.push_str(&record.key);
-
-//             // 目标object存在则不推送
-//             if self.target_exist_skip {
-//                 let target_obj_exists = c_t
-//                     .object_exists(self.target.bucket.as_str(), target_key.as_str())
-//                     .await;
-//                 match target_obj_exists {
-//                     Ok(b) => {
-//                         if b {
-//                             self.offset_map.insert(offset_key.clone(), record.offset);
-//                             continue;
-//                         }
-//                     }
-//                     Err(e) => {
-//                         log::error!("{}", e);
-//                         self.err_counter
-//                             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-//                         let _ = record.save_json_to_file(&mut error_file);
-//                         self.offset_map.insert(offset_key.clone(), record.offset);
-//                     }
-//                 }
-//             }
-
-//             let content_len: usize = match match s_file.metadata() {
-//                 Ok(m) => m.len(),
-//                 Err(e) => {
-//                     log::error!("{}", e);
-//                     self.err_counter
-//                         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-//                     let _ = record.save_json_to_file(&mut error_file);
-//                     self.offset_map.insert(offset_key.clone(), record.offset);
-//                     continue;
-//                 }
-//             }
-//             .try_into()
-//             {
-//                 Ok(l) => l,
-//                 Err(e) => {
-//                     log::error!("{}", e);
-//                     self.err_counter
-//                         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-//                     let _ = record.save_json_to_file(&mut error_file);
-//                     self.offset_map.insert(offset_key.clone(), record.offset);
-//                     continue;
-//                 }
-//             };
-
-//             // 大文件走 multi part upload 分支
-//             if let Err(e) = match content_len > self.large_file_size {
-//                 true => {
-//                     c_t.multipart_upload_local_file(
-//                         self.target.bucket.as_str(),
-//                         target_key.as_str(),
-//                         &mut s_file,
-//                         self.multi_part_chunk,
-//                     )
-//                     .await
-//                 }
-//                 false => {
-//                     let mut body = vec![];
-//                     if let Err(e) = s_file.read_to_end(&mut body) {
-//                         log::error!("{}", e);
-//                         self.err_counter
-//                             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-//                         let _ = record.save_json_to_file(&mut error_file);
-//                         self.offset_map.insert(offset_key.clone(), record.offset);
-//                         continue;
-//                     };
-//                     c_t.upload_object_bytes(
-//                         self.target.bucket.as_str(),
-//                         target_key.as_str(),
-//                         None,
-//                         ByteStream::from(body),
-//                     )
-//                     .await
-//                 }
-//             } {
-//                 log::error!("{}", e);
-//                 self.err_counter
-//                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-//                 let _ = record.save_json_to_file(&mut error_file);
-//                 self.offset_map.insert(offset_key.clone(), record.offset);
-//             };
-
-//             self.offset_map.insert(offset_key.clone(), record.offset);
-//         }
-//         self.offset_map.remove(&offset_key);
-//         let _ = error_file.flush();
-//         match error_file.metadata() {
-//             Ok(meta) => {
-//                 if meta.len() == 0 {
-//                     let _ = fs::remove_file(error_file_name.as_str());
-//                 }
-//             }
-//             Err(_) => {}
-//         };
-
-//         Ok(())
-//     }
-// }
