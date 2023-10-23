@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use std::{
     fs::{self, OpenOptions},
-    io::{Read, Write},
+    io::Write,
     path::Path,
     sync::{atomic::AtomicUsize, Arc},
 };
@@ -33,7 +33,7 @@ use super::task_actions::TaskActionsFromLocal;
 use super::TaskAttributes;
 use super::TaskType;
 use super::CURRENT_LINE_PREFIX;
-use super::{gen_file_path, Task, TaskDescription, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
+use super::{gen_file_path, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
@@ -250,7 +250,7 @@ impl TaskActionsFromLocal for UploadTask {
                     // Modifed 解析
                     match from_str::<Modified>(key.as_str()) {
                         Ok(m) => {
-                            println!("{:?}", m);
+                            // println!("{:?}", m);
                             let mut target_path = m.path.clone();
                             match self.local_path.ends_with("/") {
                                 true => target_path.drain(..self.local_path.len()),
@@ -259,22 +259,63 @@ impl TaskActionsFromLocal for UploadTask {
                             if let Some(prefix) = self.target.prefix.clone() {
                                 target_path.insert_str(0, &prefix);
                             }
-                            let record = ErrRecord {
-                                source: m.path.clone(),
-                                target: target_path,
-                                list_file_offset: offset_usize,
-                                list_file_line_num: line_num,
+
+                            let mut target_path = m.path.clone();
+
+                            match self.local_path.ends_with("/") {
+                                true => target_path.drain(..self.local_path.len()),
+                                false => target_path.drain(..self.local_path.len() + 1),
                             };
-                            if let Err(e) = self.modified_handler(m, &client).await {
-                                process_error(
-                                    &err_counter,
-                                    e,
-                                    record,
-                                    &mut error_file,
-                                    &offset_key,
-                                    &current_line_key,
-                                    &offset_map,
-                                )
+
+                            if let Some(prefix) = self.target.prefix.clone() {
+                                target_path.insert_str(0, &prefix);
+                            }
+
+                            if PathType::File.eq(&m.path_type) {
+                                let r = match m.modify_type {
+                                    ModifyType::Create | ModifyType::Modify => {
+                                        client
+                                            .upload_from_local(
+                                                &self.target.bucket,
+                                                target_path.as_str(),
+                                                &m.path,
+                                                self.task_attributes.large_file_size,
+                                                self.task_attributes.multi_part_chunk,
+                                            )
+                                            .await
+                                    }
+                                    ModifyType::Delete => {
+                                        match client
+                                            .remove_object(
+                                                &self.target.bucket,
+                                                target_path.as_str(),
+                                            )
+                                            .await
+                                        {
+                                            Ok(_) => Ok(()),
+                                            Err(e) => Err(anyhow!("{}", e.to_string())),
+                                        }
+                                    }
+
+                                    ModifyType::Unkown => Ok(()),
+                                };
+                                if let Err(e) = r {
+                                    let record = ErrRecord {
+                                        source: m.path.clone(),
+                                        target: target_path,
+                                        list_file_offset: offset_usize,
+                                        list_file_line_num: line_num,
+                                    };
+                                    process_error(
+                                        &err_counter,
+                                        e,
+                                        record,
+                                        &mut error_file,
+                                        &offset_key,
+                                        &current_line_key,
+                                        &offset_map,
+                                    )
+                                }
                             };
                         }
                         Err(e) => {
@@ -284,6 +325,16 @@ impl TaskActionsFromLocal for UploadTask {
                     };
                 }
             }
+            offset_map.remove(&offset_key);
+            let _ = error_file.flush();
+            match error_file.metadata() {
+                Ok(meta) => {
+                    if meta.len() == 0 {
+                        let _ = fs::remove_file(error_file_name.as_str());
+                    }
+                }
+                Err(_) => {}
+            };
             offset = notify_file_size.load(Ordering::SeqCst);
         }
     }

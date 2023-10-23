@@ -661,8 +661,6 @@ pub fn gen_file_path(dir: &str, file_prefix: &str, file_subffix: &str) -> String
     file_name
 }
 
-// pub fn splite_path_head(){}
-
 pub async fn snapshot_offset_to_file(
     save_to: &str,
     execute_file_path: String,

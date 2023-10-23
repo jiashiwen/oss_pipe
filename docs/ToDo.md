@@ -61,6 +61,9 @@
   - [ ] 兼容minio
     - [ ] minio 环境部署
     - [ ] 适配minio 
+  - [ ] 设计多任务snapshot，统一管理任务状态
+    - [ ] 任务相关状态字段定义，任务checkpoint，任务错误数，任务offset map，停止标识
+  
 
 ## 校验项
 
