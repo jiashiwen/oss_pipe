@@ -1531,9 +1531,15 @@ where
         match checkpoint.file_for_notify {
             Some(f) => {
                 let increment_file_size = Arc::clone(&notify_file_size);
+                // 执行过程中错误数统计
+                let err_conter = Arc::clone(&error_conter);
+                // 任务停止标准，用于通知所有协程任务结束
+                let stop_offset_save_mark = Arc::new(AtomicBool::new(false));
+                offset_map.clear();
+                // let offset_map = Arc::new(DashMap::<String, usize>::new());
                 rt.block_on(async {
                     let _ = task
-                        .execute_increment(f.as_str(), increment_file_size)
+                        .execute_increment(f.as_str(), increment_file_size, err_conter, offset_map)
                         .await;
                 });
             }

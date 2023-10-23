@@ -18,7 +18,6 @@ pub fn err_process(
     offset_map: &Arc<DashMap<String, usize>>,
 ) {
     log::error!("{}", e);
-
     save_error_record(&error_conter, record.clone(), err_file);
     offset_map.insert(offset_key.to_string(), record.offset);
     offset_map.insert(line_key.to_string(), record.line_num);
