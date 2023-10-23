@@ -17,7 +17,7 @@ use std::fs::File;
 use std::io::{self, BufRead, Seek, SeekFrom};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
-use std::time::Duration;
+
 use std::{
     fs::{self, OpenOptions},
     io::{Read, Write},
@@ -25,7 +25,7 @@ use std::{
     sync::{atomic::AtomicUsize, Arc},
 };
 use tokio::runtime::Runtime;
-use tokio::task::{yield_now, JoinSet};
+use tokio::task::JoinSet;
 use walkdir::WalkDir;
 
 use super::err_process;
@@ -231,7 +231,7 @@ impl TaskActionsFromLocal for UploadTask {
 
     // ToDo
     // 新建 modify handler，用于处理modify文件
-    async fn modified_handler(&self, modified: Modified, client: &OssClient) {
+    async fn modified_handler(&self, modified: Modified, client: &OssClient) -> Result<()> {
         let mut target_path = modified.path.clone();
 
         match self.local_path.ends_with("/") {
@@ -244,9 +244,9 @@ impl TaskActionsFromLocal for UploadTask {
         }
 
         if PathType::File.eq(&modified.path_type) {
-            match modified.modify_type {
+            let r = match modified.modify_type {
                 ModifyType::Create | ModifyType::Modify => {
-                    if let Err(e) = client
+                    client
                         .upload_from_local(
                             &self.target.bucket,
                             target_path.as_str(),
@@ -255,22 +255,22 @@ impl TaskActionsFromLocal for UploadTask {
                             self.task_attributes.multi_part_chunk,
                         )
                         .await
-                    {
-                        log::error!("{}", e)
-                    };
                 }
                 ModifyType::Delete => {
-                    if let Err(e) = client
+                    match client
                         .remove_object(&self.target.bucket, target_path.as_str())
                         .await
                     {
-                        log::error!("{}", e)
-                    };
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(anyhow!("{}", e.to_string())),
+                    }
                 }
 
-                ModifyType::Unkown => {}
-            }
+                ModifyType::Unkown => Ok(()),
+            };
+            return r;
         };
+        Ok(())
     }
 }
 
@@ -444,171 +444,171 @@ impl UpLoadRecordsExecutor {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct UpLoad {
-    pub local_path: String,
-    pub target: OSSDescription,
-    pub err_counter: Arc<AtomicUsize>,
-    pub offset_map: Arc<DashMap<String, usize>>,
-    pub meta_dir: String,
-    pub target_exist_skip: bool,
-    pub large_file_size: usize,
-    pub multi_part_chunk: usize,
-}
+// #[derive(Debug, Clone)]
+// pub struct UpLoad {
+//     pub local_path: String,
+//     pub target: OSSDescription,
+//     pub err_counter: Arc<AtomicUsize>,
+//     pub offset_map: Arc<DashMap<String, usize>>,
+//     pub meta_dir: String,
+//     pub target_exist_skip: bool,
+//     pub large_file_size: usize,
+//     pub multi_part_chunk: usize,
+// }
 
-impl UpLoad {
-    pub fn from_task(
-        task: &Task,
-        err_counter: Arc<AtomicUsize>,
-        offset_map: Arc<DashMap<String, usize>>,
-    ) -> Result<Self> {
-        if let TaskDescription::Upload(upload) = task.task_desc.clone() {
-            let up = Self {
-                local_path: upload.local_path.clone(),
-                target: upload.target.clone(),
-                err_counter,
-                offset_map,
-                meta_dir: upload.task_attributes.meta_dir.clone(),
-                target_exist_skip: upload.task_attributes.target_exists_skip,
-                large_file_size: upload.task_attributes.large_file_size,
-                multi_part_chunk: upload.task_attributes.multi_part_chunk,
-            };
-            return Ok(up);
-        }
-        Err(anyhow!("task type not upload"))
-    }
+// impl UpLoad {
+//     pub fn from_task(
+//         task: &Task,
+//         err_counter: Arc<AtomicUsize>,
+//         offset_map: Arc<DashMap<String, usize>>,
+//     ) -> Result<Self> {
+//         if let TaskDescription::Upload(upload) = task.task_desc.clone() {
+//             let up = Self {
+//                 local_path: upload.local_path.clone(),
+//                 target: upload.target.clone(),
+//                 err_counter,
+//                 offset_map,
+//                 meta_dir: upload.task_attributes.meta_dir.clone(),
+//                 target_exist_skip: upload.task_attributes.target_exists_skip,
+//                 large_file_size: upload.task_attributes.large_file_size,
+//                 multi_part_chunk: upload.task_attributes.multi_part_chunk,
+//             };
+//             return Ok(up);
+//         }
+//         Err(anyhow!("task type not upload"))
+//     }
 
-    pub async fn exec(&self, records: Vec<Record>) -> Result<()> {
-        let subffix = records[0].offset.to_string();
-        let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
-        offset_key.push_str(&subffix);
-        let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
+//     pub async fn exec(&self, records: Vec<Record>) -> Result<()> {
+//         let subffix = records[0].offset.to_string();
+//         let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
+//         offset_key.push_str(&subffix);
+//         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
 
-        // 先写首行日志，避免错误漏记
-        self.offset_map
-            .insert(offset_key.clone(), records[0].offset);
+//         // 先写首行日志，避免错误漏记
+//         self.offset_map
+//             .insert(offset_key.clone(), records[0].offset);
 
-        let mut error_file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(error_file_name.as_str())?;
+//         let mut error_file = OpenOptions::new()
+//             .create(true)
+//             .write(true)
+//             .truncate(true)
+//             .open(error_file_name.as_str())?;
 
-        let c_t = self.target.gen_oss_client()?;
-        for record in records {
-            let s_file_name = gen_file_path(self.local_path.as_str(), &record.key.as_str(), "");
+//         let c_t = self.target.gen_oss_client()?;
+//         for record in records {
+//             let s_file_name = gen_file_path(self.local_path.as_str(), &record.key.as_str(), "");
 
-            // 判断源文件是否存在
-            let s_path = Path::new(s_file_name.as_str());
-            if !s_path.exists() {
-                self.offset_map.insert(offset_key.clone(), record.offset);
-                continue;
-            }
+//             // 判断源文件是否存在
+//             let s_path = Path::new(s_file_name.as_str());
+//             if !s_path.exists() {
+//                 self.offset_map.insert(offset_key.clone(), record.offset);
+//                 continue;
+//             }
 
-            let mut s_file = OpenOptions::new().read(true).open(s_file_name.as_str())?;
+//             let mut s_file = OpenOptions::new().read(true).open(s_file_name.as_str())?;
 
-            let mut target_key = "".to_string();
-            if let Some(s) = self.target.prefix.clone() {
-                target_key.push_str(&s);
-            };
-            target_key.push_str(&record.key);
+//             let mut target_key = "".to_string();
+//             if let Some(s) = self.target.prefix.clone() {
+//                 target_key.push_str(&s);
+//             };
+//             target_key.push_str(&record.key);
 
-            // 目标object存在则不推送
-            if self.target_exist_skip {
-                let target_obj_exists = c_t
-                    .object_exists(self.target.bucket.as_str(), target_key.as_str())
-                    .await;
-                match target_obj_exists {
-                    Ok(b) => {
-                        if b {
-                            self.offset_map.insert(offset_key.clone(), record.offset);
-                            continue;
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("{}", e);
-                        self.err_counter
-                            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                        let _ = record.save_json_to_file(&mut error_file);
-                        self.offset_map.insert(offset_key.clone(), record.offset);
-                    }
-                }
-            }
+//             // 目标object存在则不推送
+//             if self.target_exist_skip {
+//                 let target_obj_exists = c_t
+//                     .object_exists(self.target.bucket.as_str(), target_key.as_str())
+//                     .await;
+//                 match target_obj_exists {
+//                     Ok(b) => {
+//                         if b {
+//                             self.offset_map.insert(offset_key.clone(), record.offset);
+//                             continue;
+//                         }
+//                     }
+//                     Err(e) => {
+//                         log::error!("{}", e);
+//                         self.err_counter
+//                             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+//                         let _ = record.save_json_to_file(&mut error_file);
+//                         self.offset_map.insert(offset_key.clone(), record.offset);
+//                     }
+//                 }
+//             }
 
-            let content_len: usize = match match s_file.metadata() {
-                Ok(m) => m.len(),
-                Err(e) => {
-                    log::error!("{}", e);
-                    self.err_counter
-                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    let _ = record.save_json_to_file(&mut error_file);
-                    self.offset_map.insert(offset_key.clone(), record.offset);
-                    continue;
-                }
-            }
-            .try_into()
-            {
-                Ok(l) => l,
-                Err(e) => {
-                    log::error!("{}", e);
-                    self.err_counter
-                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    let _ = record.save_json_to_file(&mut error_file);
-                    self.offset_map.insert(offset_key.clone(), record.offset);
-                    continue;
-                }
-            };
+//             let content_len: usize = match match s_file.metadata() {
+//                 Ok(m) => m.len(),
+//                 Err(e) => {
+//                     log::error!("{}", e);
+//                     self.err_counter
+//                         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+//                     let _ = record.save_json_to_file(&mut error_file);
+//                     self.offset_map.insert(offset_key.clone(), record.offset);
+//                     continue;
+//                 }
+//             }
+//             .try_into()
+//             {
+//                 Ok(l) => l,
+//                 Err(e) => {
+//                     log::error!("{}", e);
+//                     self.err_counter
+//                         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+//                     let _ = record.save_json_to_file(&mut error_file);
+//                     self.offset_map.insert(offset_key.clone(), record.offset);
+//                     continue;
+//                 }
+//             };
 
-            // 大文件走 multi part upload 分支
-            if let Err(e) = match content_len > self.large_file_size {
-                true => {
-                    c_t.multipart_upload_local_file(
-                        self.target.bucket.as_str(),
-                        target_key.as_str(),
-                        &mut s_file,
-                        self.multi_part_chunk,
-                    )
-                    .await
-                }
-                false => {
-                    let mut body = vec![];
-                    if let Err(e) = s_file.read_to_end(&mut body) {
-                        log::error!("{}", e);
-                        self.err_counter
-                            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                        let _ = record.save_json_to_file(&mut error_file);
-                        self.offset_map.insert(offset_key.clone(), record.offset);
-                        continue;
-                    };
-                    c_t.upload_object_bytes(
-                        self.target.bucket.as_str(),
-                        target_key.as_str(),
-                        None,
-                        ByteStream::from(body),
-                    )
-                    .await
-                }
-            } {
-                log::error!("{}", e);
-                self.err_counter
-                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                let _ = record.save_json_to_file(&mut error_file);
-                self.offset_map.insert(offset_key.clone(), record.offset);
-            };
+//             // 大文件走 multi part upload 分支
+//             if let Err(e) = match content_len > self.large_file_size {
+//                 true => {
+//                     c_t.multipart_upload_local_file(
+//                         self.target.bucket.as_str(),
+//                         target_key.as_str(),
+//                         &mut s_file,
+//                         self.multi_part_chunk,
+//                     )
+//                     .await
+//                 }
+//                 false => {
+//                     let mut body = vec![];
+//                     if let Err(e) = s_file.read_to_end(&mut body) {
+//                         log::error!("{}", e);
+//                         self.err_counter
+//                             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+//                         let _ = record.save_json_to_file(&mut error_file);
+//                         self.offset_map.insert(offset_key.clone(), record.offset);
+//                         continue;
+//                     };
+//                     c_t.upload_object_bytes(
+//                         self.target.bucket.as_str(),
+//                         target_key.as_str(),
+//                         None,
+//                         ByteStream::from(body),
+//                     )
+//                     .await
+//                 }
+//             } {
+//                 log::error!("{}", e);
+//                 self.err_counter
+//                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+//                 let _ = record.save_json_to_file(&mut error_file);
+//                 self.offset_map.insert(offset_key.clone(), record.offset);
+//             };
 
-            self.offset_map.insert(offset_key.clone(), record.offset);
-        }
-        self.offset_map.remove(&offset_key);
-        let _ = error_file.flush();
-        match error_file.metadata() {
-            Ok(meta) => {
-                if meta.len() == 0 {
-                    let _ = fs::remove_file(error_file_name.as_str());
-                }
-            }
-            Err(_) => {}
-        };
+//             self.offset_map.insert(offset_key.clone(), record.offset);
+//         }
+//         self.offset_map.remove(&offset_key);
+//         let _ = error_file.flush();
+//         match error_file.metadata() {
+//             Ok(meta) => {
+//                 if meta.len() == 0 {
+//                     let _ = fs::remove_file(error_file_name.as_str());
+//                 }
+//             }
+//             Err(_) => {}
+//         };
 
-        Ok(())
-    }
-}
+//         Ok(())
+//     }
+// }

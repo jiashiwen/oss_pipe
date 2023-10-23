@@ -83,5 +83,5 @@ pub trait TaskActionsFromLocal {
     }
 
     async fn execute_increment(&self, notify_file: &str, notify_file_size: Arc<AtomicU64>);
-    async fn modified_handler(&self, modified: Modified, client: &OssClient);
+    async fn modified_handler(&self, modified: Modified, client: &OssClient) -> Result<()>;
 }
