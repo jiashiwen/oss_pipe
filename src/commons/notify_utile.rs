@@ -12,8 +12,7 @@ use std::{
 };
 
 use notify::{
-    event::CreateKind, Config, Error, Event, EventKind, FsEventWatcher, RecommendedWatcher,
-    RecursiveMode, Watcher,
+    event::CreateKind, Config, Error, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
 };
 
 use serde::{Deserialize, Serialize};
@@ -57,7 +56,7 @@ impl Modified {
 
 #[derive(Debug)]
 pub struct NotifyWatcher {
-    pub watcher: FsEventWatcher,
+    pub watcher: RecommendedWatcher,
     reciver: Receiver<Result<Event, Error>>,
     pub watched_dir: String,
 }
