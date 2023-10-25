@@ -24,6 +24,7 @@ pub struct ErrRecord {
     pub target: String,
     pub list_file_offset: usize,
     pub list_file_line_num: usize,
+    pub list_file_path: String,
 }
 
 impl FromStr for ErrRecord {

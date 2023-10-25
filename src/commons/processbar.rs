@@ -4,12 +4,11 @@ use std::{
     cmp::min,
     fmt::Write,
     sync::{atomic::AtomicBool, Arc},
-    thread,
-    time::Duration,
 };
+use tokio::task::yield_now;
 
 /// 进度条，使用时在主线程之外的线程使用
-pub fn exec_processbar(
+pub async fn exec_processbar(
     total: u64,
     stop_mark: Arc<AtomicBool>,
     status_map: Arc<DashMap<String, usize>>,
@@ -24,11 +23,10 @@ pub fn exec_processbar(
         write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap()
     })
     .progress_chars("#>-");
-
     pb.set_style(progress_style);
 
     while !stop_mark.load(std::sync::atomic::Ordering::Relaxed) {
-        thread::sleep(Duration::from_millis(200));
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         let offset: Option<usize> = status_map
             .iter()
             .filter(|f| f.key().starts_with(key_prefix))
@@ -42,6 +40,8 @@ pub fn exec_processbar(
             }
             None => {}
         }
+        yield_now().await;
     }
+
     pb.finish_with_message("Finish");
 }

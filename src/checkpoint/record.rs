@@ -28,6 +28,40 @@ impl Record {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum Opt {
+    PUT,
+    REMOVE,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RecordNew {
+    pub source_key: String,
+    pub target_key: String,
+    pub list_file_path: String,
+    pub list_file_offset: u64,
+    pub list_file_line_num: usize,
+    pub option: Opt,
+}
+
+impl FromStr for RecordNew {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self> {
+        let r = serde_json::from_str::<Self>(s)?;
+        Ok(r)
+    }
+}
+
+impl RecordNew {
+    pub fn save_json_to_file(&self, file: &mut File) -> Result<()> {
+        let mut json = serde_json::to_string(self)?;
+        json.push_str("\n");
+        file.write_all(json.as_bytes())?;
+        file.flush()?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::{fs::OpenOptions, io::Write, path::Path};

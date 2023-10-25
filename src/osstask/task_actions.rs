@@ -1,7 +1,7 @@
 use std::{
     fs::File,
     sync::{
-        atomic::{AtomicU64, AtomicUsize},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize},
         Arc,
     },
 };
@@ -88,6 +88,7 @@ pub trait TaskActionsFromLocal {
         notify_file_size: Arc<AtomicU64>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, usize>>,
+        snapshot_stop_mark: Arc<AtomicBool>,
     );
     async fn modified_handler(&self, modified: Modified, client: &OssClient) -> Result<()>;
 }
