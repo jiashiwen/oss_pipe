@@ -1,6 +1,6 @@
 use std::{
     fs::{File, OpenOptions},
-    io::{BufReader, LineWriter, Read, Write},
+    io::{LineWriter, Read, Write},
     path::Path,
 };
 
@@ -282,7 +282,6 @@ impl OssClient {
             .key(key.clone())
             .send()
             .await?;
-
         std::result::Result::Ok(resp)
     }
 

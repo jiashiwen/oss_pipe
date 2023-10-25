@@ -39,7 +39,7 @@ use walkdir::WalkDir;
 use super::{
     osscompare::OssCompare,
     task_actions::{TaskActionsFromLocal, TaskActionsFromOss},
-    DownloadTask, TransferTask, UploadTask,
+    DownloadTask, TaskStatusSaver, TransferTask, UploadTask,
 };
 
 pub const OBJECT_LIST_FILE_PREFIX: &'static str = "objlist_";
@@ -664,13 +664,13 @@ pub fn gen_file_path(dir: &str, file_prefix: &str, file_subffix: &str) -> String
 pub async fn snapshot_offset_to_file(
     save_to: &str,
     execute_file_path: String,
-    stop_save_mark: Arc<AtomicBool>,
+    stop_mark: Arc<AtomicBool>,
     offset_map: Arc<DashMap<String, usize>>,
     file_for_notify: Option<String>,
     task_running_status: TaskRunningStatus,
     interval: u64,
 ) {
-    while !stop_save_mark.load(std::sync::atomic::Ordering::Relaxed) {
+    while !stop_mark.load(std::sync::atomic::Ordering::Relaxed) {
         let notify = file_for_notify.clone();
         let offset = match offset_map
             .iter()
@@ -1108,7 +1108,7 @@ where
         let stop_mark = Arc::clone(&stop_offset_save_mark);
         let total = TryInto::<u64>::try_into(total_lines).unwrap();
         sys_set.spawn(async move {
-            exec_processbar(total, stop_mark, map, CURRENT_LINE_PREFIX);
+            exec_processbar(total, stop_mark, map, CURRENT_LINE_PREFIX).await;
         });
 
         // 按列表传输object from source to target
@@ -1231,7 +1231,7 @@ where
     // 执行过程中错误数统计
     let error_conter = Arc::new(AtomicUsize::new(0));
     // 任务停止标准，用于通知所有协程任务结束
-    let stop_offset_save_mark = Arc::new(AtomicBool::new(false));
+    let snapshot_stop_mark = Arc::new(AtomicBool::new(false));
     let offset_map = Arc::new(DashMap::<String, usize>::new());
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
     // 增量任务计数器，用于记录notify file 的文件大小
@@ -1353,10 +1353,11 @@ where
 
         // 启动checkpoint记录线程
         let map = Arc::clone(&offset_map);
-        let stop_mark: Arc<AtomicBool> = Arc::clone(&stop_offset_save_mark);
+        let stop_mark: Arc<AtomicBool> = Arc::clone(&snapshot_stop_mark);
         let obj_list = object_list_file.clone();
         let save_to = check_point_file.clone();
         let notify_store = notify_file.clone();
+
         sys_set.spawn(async move {
             let checkpoint = CheckPoint {
                 execute_file_path: obj_list.clone(),
@@ -1388,8 +1389,8 @@ where
                 }
             };
             let watched_file_size = Arc::clone(&notify_file_size);
-            sys_set.spawn(async move {
-                println!("start notify");
+            // sys_set.spawn(async move {
+            task::spawn(async move {
                 let file_for_notify = match OpenOptions::new()
                     .create(true)
                     .write(true)
@@ -1410,14 +1411,14 @@ where
 
         // 启动进度条线程
         let map = Arc::clone(&offset_map);
-        let stop_mark = Arc::clone(&stop_offset_save_mark);
+        let stop_mark = Arc::clone(&snapshot_stop_mark);
         let total = TryInto::<u64>::try_into(total_lines).unwrap();
         sys_set.spawn(async move {
-            exec_processbar(total, stop_mark, map, CURRENT_LINE_PREFIX);
+            exec_processbar(total, stop_mark, map, CURRENT_LINE_PREFIX).await;
         });
 
         // 按列表传输object from source to target
-        let lines = io::BufReader::new(file).lines();
+        let lines: io::Lines<io::BufReader<File>> = io::BufReader::new(file).lines();
         let mut line_num = 0;
         for line in lines {
             // 若错误达到上限，则停止任务
@@ -1500,7 +1501,7 @@ where
             execut_set.join_next().await;
         }
         // 配置停止 offset save 标识为 true
-        stop_offset_save_mark.store(true, std::sync::atomic::Ordering::Relaxed);
+        snapshot_stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
         // 记录checkpoint
         let position: u64 = file_position.try_into().unwrap();
         let checkpoint = CheckPoint {
@@ -1513,41 +1514,144 @@ where
         if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
             log::error!("{}", e);
         };
-    });
 
-    if task_attributes.continuous {
-        let checkpoint =
-            match get_task_checkpoint(check_point_file.as_str(), task_attributes.meta_dir.as_str())
-            {
+        while sys_set.len() > 0 {
+            sys_set.join_next().await;
+        }
+
+        if task_attributes.continuous {
+            let checkpoint = match get_task_checkpoint(
+                check_point_file.as_str(),
+                task_attributes.meta_dir.as_str(),
+            ) {
                 Ok(c) => c,
                 Err(e) => {
                     log::error!("{}", e);
-                    return Err(e);
+                    return;
                 }
             };
 
-        match checkpoint.file_for_notify {
-            Some(f) => {
-                let increment_file_size = Arc::clone(&notify_file_size);
-                // 执行过程中错误数统计
-                let err_conter = Arc::clone(&error_conter);
-                // 任务停止标准，用于通知所有协程任务结束
-                let stop_offset_save_mark = Arc::new(AtomicBool::new(false));
-                offset_map.clear();
-                // let offset_map = Arc::new(DashMap::<String, usize>::new());
-                rt.block_on(async {
+            match checkpoint.file_for_notify {
+                Some(f) => {
+                    let stop_mark = Arc::new(AtomicBool::new(false));
+                    let offset_map = Arc::new(DashMap::<String, usize>::new());
+                    // 执行过程中错误数统计
+                    // let err_conter = Arc::clone(&error_conter);
+                    let increment_file_size = Arc::clone(&notify_file_size);
+
+                    let task_status_saver = TaskStatusSaver {
+                        save_to: check_point_file.clone(),
+                        execute_file_path: notify_file.clone().unwrap(),
+                        stop_mark: Arc::clone(&stop_mark),
+                        offset_map: Arc::clone(&offset_map),
+                        file_for_notify: notify_file.clone(),
+                        task_running_status: TaskRunningStatus::Increment,
+                        interval: 3,
+                    };
+
+                    sys_set.spawn(async move {
+                        task_status_saver.snapshot_to_file().await;
+                    });
                     let _ = task
-                        .execute_increment(f.as_str(), increment_file_size, err_conter, offset_map)
+                        .execute_increment(
+                            f.as_str(),
+                            increment_file_size,
+                            Arc::clone(&error_conter),
+                            Arc::clone(&offset_map),
+                            Arc::clone(&stop_mark),
+                        )
                         .await;
-                });
-            }
-            None => {
-                let err = anyhow!("notify_file is none");
-                log::error!("{}", err);
-                return Err(err);
+                    // 配置停止 offset save 标识为 true
+                    snapshot_stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+                None => {
+                    let err = anyhow!("notify_file is none");
+                    log::error!("{}", err);
+                    return;
+                }
             }
         }
-    }
+    });
+
+    // if task_attributes.continuous {
+    //     let checkpoint =
+    //         match get_task_checkpoint(check_point_file.as_str(), task_attributes.meta_dir.as_str())
+    //         {
+    //             Ok(c) => c,
+    //             Err(e) => {
+    //                 log::error!("{}", e);
+    //                 return Err(e);
+    //             }
+    //         };
+
+    //     match checkpoint.file_for_notify {
+    //         Some(f) => {
+    //             // 重新初始化停止标识
+    //             snapshot_stop_mark.store(false, std::sync::atomic::Ordering::Relaxed);
+    //             offset_map.clear();
+
+    //             // 执行过程中错误数统计
+    //             let err_conter = Arc::clone(&error_conter);
+    //             let increment_file_size = Arc::clone(&notify_file_size);
+
+    //             let task_status_saver = TaskStatusSaver {
+    //                 save_to: check_point_file.clone(),
+    //                 execute_file_path: notify_file.clone().unwrap(),
+    //                 stop_mark: Arc::clone(&snapshot_stop_mark),
+    //                 offset_map: Arc::clone(&offset_map),
+    //                 file_for_notify: notify_file.clone(),
+    //                 task_running_status: TaskRunningStatus::Increment,
+    //                 interval: 3,
+    //             };
+
+    //             rt.block_on(async {
+    //                 // 启动checkpoint记录线程
+    //                 // let map = Arc::clone(&offset_map);
+    //                 // let stop_mark: Arc<AtomicBool> = Arc::clone(&snapshot_stop_mark);
+    //                 // let obj_list = object_list_file.clone();
+    //                 // let save_to = check_point_file.clone();
+    //                 // let notify_store = notify_file.clone();
+    //                 task::spawn(async move {
+    //                     // let checkpoint = CheckPoint {
+    //                     //     execute_file_path: notify_store.clone().unwrap(),
+    //                     //     execute_position: 0,
+    //                     //     line_number: 0,
+    //                     //     task_running_satus: TaskRunningStatus::Increment,
+    //                     //     file_for_notify: notify_store.clone(),
+    //                     // };
+    //                     // let _ = checkpoint.save_to(save_to.as_str());
+    //                     task_status_saver.snapshot_to_file().await;
+    //                     // snapshot_offset_to_file(
+    //                     //     save_to.as_str(),
+    //                     //     obj_list,
+    //                     //     stop_mark,
+    //                     //     map,
+    //                     //     notify_store,
+    //                     //     TaskRunningStatus::Increment,
+    //                     //     3,
+    //                     // )
+    //                     // .await;
+    //                 });
+    //                 let _ = task
+    //                     .execute_increment(
+    //                         f.as_str(),
+    //                         increment_file_size,
+    //                         err_conter,
+    //                         offset_map,
+    //                         Arc::clone(&snapshot_stop_mark),
+    //                     )
+    //                     .await;
+    //                 // 配置停止 offset save 标识为 true
+    //                 snapshot_stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
+    //             });
+    //         }
+    //         None => {
+    //             let err = anyhow!("notify_file is none");
+    //             log::error!("{}", err);
+    //             return Err(err);
+    //         }
+    //     }
+    // }
 
     Ok(())
 }
