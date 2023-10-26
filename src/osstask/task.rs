@@ -1,8 +1,12 @@
+use super::{
+    osscompare::OssCompare,
+    task_actions::{TaskActionsFromLocal, TaskActionsFromOss},
+    DownloadTask, TaskStatusSaver, TransferTask, UploadTask,
+};
 use crate::{
     checkpoint::{get_task_checkpoint, CheckPoint, FilePosition, ListedRecord},
     commons::{
-        exec_processbar_with_file_position, json_to_struct, read_lines, read_yaml_file,
-        scan_folder_files_to_file,
+        exec_processbar, json_to_struct, read_lines, read_yaml_file, scan_folder_files_to_file,
     },
     osstask::LocalToLocal,
     s3::OSSDescription,
@@ -22,15 +26,7 @@ use std::{
         atomic::{AtomicBool, AtomicU64, AtomicUsize},
         Arc,
     },
-    thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
-    vec,
-};
-
-use super::{
-    osscompare::OssCompare,
-    task_actions::{TaskActionsFromLocal, TaskActionsFromOss},
-    DownloadTask, TaskStatusSaver, TransferTask, UploadTask,
 };
 use tokio::{
     runtime::{self},
@@ -1073,7 +1069,7 @@ where
         let stop_mark = Arc::clone(&snapshot_stop_mark);
         let total = TryInto::<u64>::try_into(total_lines).unwrap();
         sys_set.spawn(async move {
-            exec_processbar_with_file_position(total, stop_mark, map, CURRENT_LINE_PREFIX).await;
+            exec_processbar(total, stop_mark, map, CURRENT_LINE_PREFIX).await;
         });
 
         // 按列表传输object from source to target
@@ -1380,7 +1376,7 @@ where
         sys_set.spawn(async move {
             // Todo 调整进度条
             // exec_processbar(total, stop_mark, map, CURRENT_LINE_PREFIX).await;
-            exec_processbar_with_file_position(total, stop_mark, map, OFFSET_PREFIX).await;
+            exec_processbar(total, stop_mark, map, OFFSET_PREFIX).await;
         });
 
         // 按列表传输object from source to target

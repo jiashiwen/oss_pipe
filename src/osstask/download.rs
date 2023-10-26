@@ -23,8 +23,8 @@ use tokio::{runtime::Runtime, task::JoinSet};
 use walkdir::WalkDir;
 
 use super::{
-    err_process, gen_file_path, task_actions::TaskActionsFromOss, TaskAttributes, TaskType,
-    CURRENT_LINE_PREFIX, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX,
+    gen_file_path, task_actions::TaskActionsFromOss, TaskAttributes, TaskType, CURRENT_LINE_PREFIX,
+    ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -224,9 +224,7 @@ impl DownLoadRecordsExecutor {
     pub async fn exec(&self, records: Vec<ListedRecord>) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
-        let mut current_line_key = CURRENT_LINE_PREFIX.to_string();
         offset_key.push_str(&subffix);
-        current_line_key.push_str(&records[0].offset.to_string());
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
         // 先写首行日志，避免错误漏记
         self.offset_map.insert(
@@ -426,7 +424,6 @@ impl DownLoadRecordsExecutor {
             );
         }
         self.offset_map.remove(&offset_key);
-        self.offset_map.remove(&current_line_key);
         let _ = error_file.flush();
         match error_file.metadata() {
             Ok(meta) => {
