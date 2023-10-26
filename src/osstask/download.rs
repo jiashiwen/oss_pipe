@@ -1,7 +1,6 @@
 use crate::{
     checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
     commons::{json_to_struct, read_lines},
-    exception::save_error_record,
     s3::{
         aws_s3::{byte_stream_multi_partes_to_file, byte_stream_to_file},
         OSSDescription,
@@ -243,33 +242,6 @@ impl DownLoadRecordsExecutor {
 
         let c_s = self.source.gen_oss_client()?;
         for record in records {
-            let resp = match c_s
-                .get_object(&self.source.bucket.as_str(), record.key.as_str())
-                .await
-            {
-                core::result::Result::Ok(b) => b,
-                Err(e) => {
-                    log::error!("{}", e);
-                    // 源端文件不存在按传输成功处理
-                    match e.into_service_error().kind {
-                        GetObjectErrorKind::InvalidObjectState(_)
-                        | GetObjectErrorKind::Unhandled(_) => {
-                            save_error_record(&self.err_counter, record.clone(), &mut error_file);
-                        }
-                        GetObjectErrorKind::NoSuchKey(_) => {}
-                        _ => {}
-                    }
-
-                    self.offset_map.insert(
-                        offset_key.clone(),
-                        FilePosition {
-                            offset: record.offset,
-                            line_num: record.line_num,
-                        },
-                    );
-                    continue;
-                }
-            };
             let t_file_name = gen_file_path(self.local_path.as_str(), &record.key.as_str(), "");
             let t_path = Path::new(t_file_name.as_str());
 
@@ -287,10 +259,42 @@ impl DownLoadRecordsExecutor {
                 }
             }
 
-            if let Some(p) = t_path.parent() {
-                if let Err(e) = std::fs::create_dir_all(p) {
+            let resp = match c_s
+                .get_object(&self.source.bucket.as_str(), record.key.as_str())
+                .await
+            {
+                core::result::Result::Ok(b) => b,
+                Err(e) => {
                     log::error!("{}", e);
-                    save_error_record(&self.err_counter, record.clone(), &mut error_file);
+                    // 源端文件不存在按传输成功处理
+                    let service_err = e.into_service_error();
+                    match service_err.kind {
+                        // GetObjectErrorKind::InvalidObjectState(_)
+                        // | GetObjectErrorKind::Unhandled(_) => {
+                        //     save_error_record(&self.err_counter, record.clone(), &mut error_file);
+                        // }
+                        GetObjectErrorKind::NoSuchKey(_) => {}
+                        _ => {
+                            // save_error_record(&self.err_counter, record.clone(), &mut error_file);
+                            let record_desc = RecordDescription {
+                                source_key: record.key.clone(),
+                                target_key: t_file_name.clone(),
+                                list_file_path: self.list_file_path.clone(),
+                                list_file_position: FilePosition {
+                                    offset: record.offset,
+                                    line_num: record.line_num,
+                                },
+                                option: Opt::PUT,
+                            };
+                            record_desc.error_handler(
+                                anyhow!("{}", service_err),
+                                &self.err_counter,
+                                &self.offset_map,
+                                &mut error_file,
+                                offset_key.as_str(),
+                            );
+                        }
+                    }
                     self.offset_map.insert(
                         offset_key.clone(),
                         FilePosition {
@@ -299,120 +303,52 @@ impl DownLoadRecordsExecutor {
                         },
                     );
                     continue;
+                }
+            };
+
+            let r = {
+                if let Some(p) = t_path.parent() {
+                    std::fs::create_dir_all(p)?;
                 };
-            };
 
-            let mut t_file = match OpenOptions::new()
-                .truncate(true)
-                .create(true)
-                .write(true)
-                .open(t_file_name.as_str())
-            {
-                Ok(p) => p,
-                Err(e) => {
-                    let record_desc = RecordDescription {
-                        source_key: record.key.clone(),
-                        target_key: t_file_name.clone(),
-                        list_file_path: self.list_file_path.clone(),
-                        list_file_position: FilePosition {
-                            offset: record.offset,
-                            line_num: record.line_num,
-                        },
-                        option: Opt::PUT,
-                    };
-                    record_desc.error_handler(
-                        anyhow!("{}", e),
-                        &self.err_counter,
-                        &self.offset_map,
-                        &mut error_file,
-                        offset_key.as_str(),
-                    );
-                    continue;
-                }
-            };
+                let mut t_file = OpenOptions::new()
+                    .truncate(true)
+                    .create(true)
+                    .write(true)
+                    .open(t_file_name.as_str())?;
 
-            let s_len: usize = match resp.content_length().try_into() {
-                Ok(len) => len,
-                Err(e) => {
-                    let record_desc = RecordDescription {
-                        source_key: record.key.clone(),
-                        target_key: t_file_name.clone(),
-                        list_file_path: self.list_file_path.clone(),
-                        list_file_position: FilePosition {
-                            offset: record.offset,
-                            line_num: record.line_num,
-                        },
-                        option: Opt::PUT,
-                    };
-                    record_desc.error_handler(
-                        anyhow!("{}", e),
-                        &self.err_counter,
-                        &self.offset_map,
-                        &mut error_file,
-                        offset_key.as_str(),
-                    );
-                    continue;
-                }
-            };
+                let s_len: usize = resp.content_length().try_into()?;
 
-            // 大文件走 multi part download 分支
-            match s_len > self.large_file_size {
-                true => {
-                    if let Err(e) =
+                // 大文件走 multi part download 分支
+                let r = match s_len > self.large_file_size {
+                    true => {
                         byte_stream_multi_partes_to_file(resp, &mut t_file, self.multi_part_chunk)
                             .await
-                    {
-                        // err_process(
-                        //     &self.err_counter,
-                        //     anyhow!(e.to_string()),
-                        //     record,
-                        //     &mut error_file,
-                        //     offset_key.as_str(),
-                        //     current_line_key.as_str(),
-                        //     &self.offset_map,
-                        // );
-                        let record_desc = RecordDescription {
-                            source_key: record.key.clone(),
-                            target_key: t_file_name.clone(),
-                            list_file_path: self.list_file_path.clone(),
-                            list_file_position: FilePosition {
-                                offset: record.offset,
-                                line_num: record.line_num,
-                            },
-                            option: Opt::PUT,
-                        };
-                        record_desc.error_handler(
-                            anyhow!("{}", e),
-                            &self.err_counter,
-                            &self.offset_map,
-                            &mut error_file,
-                            offset_key.as_str(),
-                        );
-                        continue;
-                    };
-                }
-                false => {
-                    if let Err(e) = byte_stream_to_file(resp.body, &mut t_file).await {
-                        let record_desc = RecordDescription {
-                            source_key: record.key.clone(),
-                            target_key: t_file_name.clone(),
-                            list_file_path: self.list_file_path.clone(),
-                            list_file_position: FilePosition {
-                                offset: record.offset,
-                                line_num: record.line_num,
-                            },
-                            option: Opt::PUT,
-                        };
-                        record_desc.error_handler(
-                            anyhow!("{}", e),
-                            &self.err_counter,
-                            &self.offset_map,
-                            &mut error_file,
-                            offset_key.as_str(),
-                        );
-                        continue;
-                    };
-                }
+                    }
+                    false => byte_stream_to_file(resp.body, &mut t_file).await,
+                };
+                r
+            };
+
+            if let Err(e) = r {
+                let record_desc = RecordDescription {
+                    source_key: record.key.clone(),
+                    target_key: t_file_name.clone(),
+                    list_file_path: self.list_file_path.clone(),
+                    list_file_position: FilePosition {
+                        offset: record.offset,
+                        line_num: record.line_num,
+                    },
+                    option: Opt::PUT,
+                };
+                record_desc.error_handler(
+                    anyhow!("{}", e),
+                    &self.err_counter,
+                    &self.offset_map,
+                    &mut error_file,
+                    offset_key.as_str(),
+                );
+                continue;
             }
 
             self.offset_map.insert(

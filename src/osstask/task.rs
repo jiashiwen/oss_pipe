@@ -30,7 +30,7 @@ use std::{
 };
 use tokio::{
     runtime::{self},
-    task::{self, yield_now, JoinSet},
+    task::{self, JoinSet},
 };
 use walkdir::WalkDir;
 
@@ -766,23 +766,6 @@ impl TaskOssCompare {
             }
 
             // 启动checkpoint记录线程
-            // let map = Arc::clone(&offset_map);
-            // let stop_mark = Arc::clone(&snapshot_stop_mark);
-            // let obj_list = object_list_file.clone();
-            // let save_to = check_point_file.clone();
-            // task::spawn(async move {
-            //     snapshot_offset_to_file(
-            //         save_to.as_str(),
-            //         obj_list,
-            //         stop_mark,
-            //         map,
-            //         None,
-            //         TaskRunningStatus::Stock,
-            //         3,
-            //     )
-            //     .await
-            // });
-
             let status_saver = TaskStatusSaver {
                 save_to: check_point_file.clone(),
                 execute_file_path: object_list_file.clone(),
@@ -831,6 +814,7 @@ impl TaskOssCompare {
                         offset_map: Arc::clone(&offset_map),
                         meta_dir: self.meta_dir.clone(),
                         exprirs_diff_scope: self.exprirs_diff_scope,
+                        list_file_path: object_list_file.clone(),
                     };
                     set.spawn(async move {
                         if let Err(e) = compare.compare(vk).await {
@@ -863,6 +847,7 @@ impl TaskOssCompare {
                     offset_map: Arc::clone(&offset_map),
                     meta_dir: self.meta_dir.clone(),
                     exprirs_diff_scope: self.exprirs_diff_scope,
+                    list_file_path: object_list_file.clone(),
                 };
 
                 set.spawn(async move {
