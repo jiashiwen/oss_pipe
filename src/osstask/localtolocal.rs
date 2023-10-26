@@ -1,7 +1,5 @@
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
-use crate::{
-    checkpoint::ListedRecord, commons::multi_parts_copy_file, exception::save_error_record,
-};
+use crate::{checkpoint::ListedRecord, commons::multi_parts_copy_file};
 use anyhow::anyhow;
 use anyhow::Result;
 use dashmap::DashMap;
@@ -98,14 +96,31 @@ impl LocalToLocal {
             let s_file = match OpenOptions::new().read(true).open(s_file_name.as_str()) {
                 Ok(p) => p,
                 Err(e) => {
-                    log::error!("{}", e);
-                    save_error_record(&self.error_conter, record.clone(), &mut error_file);
-                    self.offset_map.insert(
-                        offset_key.clone(),
-                        FilePosition {
+                    // log::error!("{}", e);
+                    // save_error_record(&self.error_conter, record.clone(), &mut error_file);
+                    // self.offset_map.insert(
+                    //     offset_key.clone(),
+                    //     FilePosition {
+                    //         offset: record.offset,
+                    //         line_num: record.line_num,
+                    //     },
+                    // );
+                    let recorddesc = RecordDescription {
+                        source_key: s_file_name.clone(),
+                        target_key: t_file_name.clone(),
+                        list_file_path: self.list_file_path.clone(),
+                        list_file_position: FilePosition {
                             offset: record.offset,
                             line_num: record.line_num,
                         },
+                        option: Opt::PUT,
+                    };
+                    recorddesc.error_handler(
+                        anyhow!("{}", e),
+                        &self.error_conter,
+                        &self.offset_map,
+                        &mut error_file,
+                        offset_key.as_str(),
                     );
                     continue;
                 }
@@ -119,14 +134,22 @@ impl LocalToLocal {
             {
                 Ok(p) => p,
                 Err(e) => {
-                    log::error!("{}", e);
-                    save_error_record(&self.error_conter, record.clone(), &mut error_file);
-                    self.offset_map.insert(
-                        offset_key.clone(),
-                        FilePosition {
+                    let recorddesc = RecordDescription {
+                        source_key: s_file_name.clone(),
+                        target_key: t_file_name.clone(),
+                        list_file_path: self.list_file_path.clone(),
+                        list_file_position: FilePosition {
                             offset: record.offset,
                             line_num: record.line_num,
                         },
+                        option: Opt::PUT,
+                    };
+                    recorddesc.error_handler(
+                        anyhow!("{}", e),
+                        &self.error_conter,
+                        &self.offset_map,
+                        &mut error_file,
+                        offset_key.as_str(),
                     );
                     continue;
                 }

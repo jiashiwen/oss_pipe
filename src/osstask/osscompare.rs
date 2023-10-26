@@ -1,8 +1,8 @@
 use crate::{
-    checkpoint::{FilePosition, ListedRecord},
-    exception::save_error_record,
+    checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
     s3::OSSDescription,
 };
+use anyhow::anyhow;
 use anyhow::Result;
 use aws_sdk_s3::{error::GetObjectErrorKind, output::GetObjectOutput};
 use dashmap::DashMap;
@@ -67,6 +67,7 @@ pub struct OssCompare {
     pub offset_map: Arc<DashMap<String, FilePosition>>,
     pub meta_dir: String,
     pub exprirs_diff_scope: i64,
+    pub list_file_path: String,
     // pub filter: Option<String>,
 }
 
@@ -99,6 +100,13 @@ impl OssCompare {
             let mut t_exists = false;
             let mut resp_s = GetObjectOutput::builder().build();
             let mut resp_t = GetObjectOutput::builder().build();
+
+            let mut target_key = "".to_string();
+            if let Some(s) = self.target.prefix.clone() {
+                target_key.push_str(&s);
+            };
+            target_key.push_str(&record.key);
+
             match c_s
                 .get_object(&self.source.bucket.as_str(), record.key.as_str())
                 .await
@@ -106,16 +114,35 @@ impl OssCompare {
                 Err(e) => {
                     log::error!("{}", e);
                     // 源端文件不存在按传输成功处理
-                    match e.into_service_error().kind {
+                    let service_err = e.into_service_error();
+                    match service_err.kind {
                         GetObjectErrorKind::InvalidObjectState(_)
                         | GetObjectErrorKind::Unhandled(_) => {
-                            save_error_record(&self.error_conter, record.clone(), &mut error_file);
-                            self.offset_map.insert(
-                                offset_key.clone(),
-                                FilePosition {
+                            // save_error_record(&self.error_conter, record.clone(), &mut error_file);
+                            // self.offset_map.insert(
+                            //     offset_key.clone(),
+                            //     FilePosition {
+                            //         offset: record.offset,
+                            //         line_num: record.line_num,
+                            //     },
+                            // );
+
+                            let recorddesc = RecordDescription {
+                                source_key: record.key.clone(),
+                                target_key: target_key.clone(),
+                                list_file_path: self.list_file_path.clone(),
+                                list_file_position: FilePosition {
                                     offset: record.offset,
                                     line_num: record.line_num,
                                 },
+                                option: Opt::PUT,
+                            };
+                            recorddesc.error_handler(
+                                anyhow!("{}", service_err),
+                                &self.error_conter,
+                                &self.offset_map,
+                                &mut error_file,
+                                offset_key.as_str(),
                             );
                             continue;
                         }
@@ -128,30 +155,35 @@ impl OssCompare {
                 Ok(r) => resp_s = r,
             };
 
-            let mut target_key = "".to_string();
-            if let Some(s) = self.target.prefix.clone() {
-                target_key.push_str(&s);
-            };
-            target_key.push_str(&record.key);
-
             match c_t
                 .get_object(&self.target.bucket.as_str(), target_key.as_str())
                 .await
             {
                 core::result::Result::Ok(t) => resp_t = t,
+
                 Err(e) => {
                     log::error!("{}", e);
                     // 源端文件不存在按传输成功处理
-                    match e.into_service_error().kind {
+                    let service_err = e.into_service_error();
+                    match service_err.kind {
                         GetObjectErrorKind::InvalidObjectState(_)
                         | GetObjectErrorKind::Unhandled(_) => {
-                            save_error_record(&self.error_conter, record.clone(), &mut error_file);
-                            self.offset_map.insert(
-                                offset_key.clone(),
-                                FilePosition {
+                            let recorddesc = RecordDescription {
+                                source_key: record.key.clone(),
+                                target_key: target_key.clone(),
+                                list_file_path: self.list_file_path.clone(),
+                                list_file_position: FilePosition {
                                     offset: record.offset,
                                     line_num: record.line_num,
                                 },
+                                option: Opt::PUT,
+                            };
+                            recorddesc.error_handler(
+                                anyhow!("{}", service_err),
+                                &self.error_conter,
+                                &self.offset_map,
+                                &mut error_file,
+                                offset_key.as_str(),
                             );
                             continue;
                         }

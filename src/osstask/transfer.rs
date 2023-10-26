@@ -1,7 +1,6 @@
 use crate::{
     checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
     commons::{json_to_struct, read_lines},
-    exception::save_error_record,
     s3::OSSDescription,
 };
 use anyhow::{anyhow, Result};
@@ -237,6 +236,12 @@ impl TransferRecordsExecutor {
         let c_s = self.source.gen_oss_client()?;
         let c_t = self.target.gen_oss_client()?;
         for record in records {
+            let mut target_key = match self.target.prefix.clone() {
+                Some(s) => s,
+                None => "".to_string(),
+            };
+            target_key.push_str(&record.key);
+
             let resp = match c_s
                 .get_object(&self.source.bucket.as_str(), record.key.as_str())
                 .await
@@ -245,14 +250,32 @@ impl TransferRecordsExecutor {
                 Err(e) => {
                     log::error!("{}", e);
                     // 源端文件不存在按传输成功处理
-                    match e.into_service_error().kind {
+                    let service_err = e.into_service_error();
+                    match service_err.kind {
                         // GetObjectErrorKind::InvalidObjectState(_)
                         // | GetObjectErrorKind::Unhandled(_) => {
                         //     save_error_record(&self.err_counter, record.clone(), &mut error_file);
                         // }
                         GetObjectErrorKind::NoSuchKey(_) => {}
                         _ => {
-                            save_error_record(&self.err_counter, record.clone(), &mut error_file);
+                            let recorddesc = RecordDescription {
+                                source_key: record.key.clone(),
+                                target_key: target_key.clone(),
+                                list_file_path: self.list_file_path.clone(),
+                                list_file_position: FilePosition {
+                                    offset: record.offset,
+                                    line_num: record.line_num,
+                                },
+                                option: Opt::PUT,
+                            };
+                            recorddesc.error_handler(
+                                anyhow!("{}", service_err),
+                                &self.err_counter,
+                                &self.offset_map,
+                                &mut error_file,
+                                offset_key.as_str(),
+                            );
+                            continue;
                         }
                     }
 
@@ -266,13 +289,6 @@ impl TransferRecordsExecutor {
                     continue;
                 }
             };
-
-            let mut target_key = match self.target.prefix.clone() {
-                Some(s) => s,
-                None => "".to_string(),
-            };
-
-            target_key.push_str(&record.key);
 
             // 目标object存在则不推送
             if self.target_exist_skip {
