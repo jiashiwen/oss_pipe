@@ -6,21 +6,24 @@ use std::{
 
 use anyhow::{Error, Result};
 use serde::{Deserialize, Serialize};
-use walkdir::WalkDir;
 
 use crate::{
-    commons::{read_lines, read_yaml_file, struct_to_yaml_string},
-    osstask::{TaskRunningStatus, OFFSET_PREFIX},
+    commons::{read_yaml_file, struct_to_yaml_string},
+    osstask::TaskRunningStatus,
 };
+
+use super::FilePosition;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckPoint {
     // 对象列表命名规则：OBJECT_LIST_FILE_PREFIX+秒级unix 时间戳 'objeclt_list_unixtimestampe'
     pub execute_file_path: String,
     // 文件执行位置，既执行到的offset，用于断点续传
-    pub execute_position: u64,
+    // pub execute_position: u64,
     // 执行完成的行号
-    pub line_number: usize,
+    // pub line_number: usize,
+    // 执行文件执行到的位置
+    pub execute_file_position: FilePosition,
     pub file_for_notify: Option<String>,
     pub task_running_satus: TaskRunningStatus,
 }
@@ -55,44 +58,45 @@ impl CheckPoint {
     }
 }
 
-pub fn get_task_checkpoint(checkpoint_file: &str, meta_dir: &str) -> Result<CheckPoint> {
+// pub fn get_task_checkpoint(checkpoint_file: &str, meta_dir: &str) -> Result<CheckPoint> {
+pub fn get_task_checkpoint(checkpoint_file: &str) -> Result<CheckPoint> {
     let mut checkpoint = read_yaml_file::<CheckPoint>(checkpoint_file)?;
 
     // 遍历offset 日志文件，选取每个文件中最大的offset，当offset 小于checkpoint中的offset，则取较小值
-    for entry in WalkDir::new(meta_dir)
-        .into_iter()
-        .filter_map(Result::ok)
-        .filter(|e| !e.file_type().is_dir() && e.file_name().to_str().is_some())
-    {
-        let file_name = entry.file_name().to_str().unwrap();
+    // for entry in WalkDir::new(meta_dir)
+    //     .into_iter()
+    //     .filter_map(Result::ok)
+    //     .filter(|e| !e.file_type().is_dir() && e.file_name().to_str().is_some())
+    // {
+    //     let file_name = entry.file_name().to_str().unwrap();
 
-        if !file_name.starts_with(OFFSET_PREFIX) {
-            continue;
-        };
+    //     if !file_name.starts_with(OFFSET_PREFIX) {
+    //         continue;
+    //     };
 
-        if let Some(p) = entry.path().to_str() {
-            if let Ok(lines) = read_lines(p) {
-                let mut max_offset_in_the_file = 0;
-                for line in lines {
-                    if let Ok(content) = line {
-                        match content.parse::<u64>() {
-                            Ok(offset) => {
-                                if offset > max_offset_in_the_file {
-                                    max_offset_in_the_file = offset
-                                }
-                            }
-                            Err(_) => {
-                                continue;
-                            }
-                        };
-                    }
-                }
-                if max_offset_in_the_file < checkpoint.execute_position {
-                    checkpoint.execute_position = max_offset_in_the_file
-                }
-            };
-        };
-    }
+    //     if let Some(p) = entry.path().to_str() {
+    //         if let Ok(lines) = read_lines(p) {
+    //             let mut max_offset_in_the_file = 0;
+    //             for line in lines {
+    //                 if let Ok(content) = line {
+    //                     match content.parse::<usize>() {
+    //                         Ok(offset) => {
+    //                             if offset > max_offset_in_the_file {
+    //                                 max_offset_in_the_file = offset
+    //                             }
+    //                         }
+    //                         Err(_) => {
+    //                             continue;
+    //                         }
+    //                     };
+    //                 }
+    //             }
+    //             if max_offset_in_the_file < checkpoint.execute_file_position.offset {
+    //                 checkpoint.execute_file_position.offset = max_offset_in_the_file
+    //             }
+    //         };
+    //     };
+    // }
     Ok(checkpoint)
 }
 
@@ -108,11 +112,12 @@ mod test {
 
     use crate::checkpoint::checkpoint::get_task_checkpoint;
     use crate::checkpoint::checkpoint::CheckPoint;
+    use crate::checkpoint::FilePosition;
     //cargo test checkpoint::checkpoint::test::test_get_task_checkpoint -- --nocapture
     #[test]
     fn test_get_task_checkpoint() {
         println!("get_task_checkpoint");
-        let c = get_task_checkpoint("/tmp/meta_dir/checkpoint.yml", "/tmp/meta_dir");
+        let c = get_task_checkpoint("/tmp/meta_dir/checkpoint.yml");
         println!("{:?}", c);
     }
 
@@ -122,7 +127,7 @@ mod test {
         let path = "/tmp/jddownload/.objlist";
         let mut f = File::open(path).unwrap();
 
-        let mut positon = 0u64;
+        let mut positon = 0;
         let mut line_num = 0;
 
         let lines = io::BufReader::new(&f).lines();
@@ -134,8 +139,8 @@ mod test {
             match line {
                 Ok(l) => {
                     let len = l.bytes().len() + "\n".bytes().len();
-                    let len_u64: u64 = len.try_into().unwrap();
-                    positon = positon + len_u64;
+                    // let len_u64: u64 = len.try_into().unwrap();
+                    positon = positon + len;
                     println!("line: {}", l);
                     line_num += 1;
                 }
@@ -147,8 +152,8 @@ mod test {
 
         println!("positon:{}", positon);
 
-        f.seek(SeekFrom::Start(positon)).unwrap();
-        // let mut _line = String::new();
+        let positon_u64: u64 = positon.try_into().unwrap();
+        f.seek(SeekFrom::Start(positon_u64)).unwrap();
 
         let lines = io::BufReader::new(&f).lines();
         line_num = 0;
@@ -160,8 +165,8 @@ mod test {
             match line {
                 Ok(l) => {
                     let len = l.bytes().len() + "\n".bytes().len();
-                    let len_u64: u64 = len.try_into().unwrap();
-                    positon = positon + len_u64;
+
+                    positon = positon + len;
                     println!("line: {}", l);
                     line_num += 1;
                 }
@@ -171,10 +176,14 @@ mod test {
             }
         }
 
+        let file_position = FilePosition {
+            offset: positon,
+            line_num,
+        };
+
         let checkpoint = CheckPoint {
             execute_file_path: path.to_string(),
-            execute_position: positon,
-            line_number: line_num,
+            execute_file_position: file_position,
             file_for_notify: None,
             task_running_satus: crate::osstask::TaskRunningStatus::Stock,
         };

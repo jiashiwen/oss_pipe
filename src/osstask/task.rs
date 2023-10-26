@@ -294,20 +294,11 @@ impl TaskLocalToLocal {
         if self.start_from_checkpoint {
             // 执行错误补偿，重新执行错误日志中的记录
             self.error_retry()?;
-
-            let checkpoint =
-                match get_task_checkpoint(CHECK_POINT_FILE_NAME, self.meta_dir.as_str()) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        log::error!("{}", e);
-                        return Err(e);
-                    }
-                };
-            if let Err(e) = file.seek(SeekFrom::Start(checkpoint.execute_position)) {
-                log::error!("{}", e);
-                return Err(anyhow::Error::new(e));
-            };
-            file_position = checkpoint.execute_position.try_into()?;
+            // let checkpoint = get_task_checkpoint(CHECK_POINT_FILE_NAME, self.meta_dir.as_str())?;
+            let checkpoint = get_task_checkpoint(CHECK_POINT_FILE_NAME)?;
+            let seek_offset = TryInto::<u64>::try_into(checkpoint.execute_file_position.offset)?;
+            file.seek(SeekFrom::Start(seek_offset))?;
+            file_position = checkpoint.execute_file_position.offset;
         }
 
         let rt = runtime::Builder::new_multi_thread()
@@ -438,12 +429,14 @@ impl TaskLocalToLocal {
             }
             stop_offset_save_mark.store(true, std::sync::atomic::Ordering::Relaxed);
             // 记录checkpoint
-            let position: u64 = file_position.try_into().unwrap();
+            // let position: u64 = file_position.try_into().unwrap();
             let list_file = object_list_file.as_str();
             let checkpoint = CheckPoint {
                 execute_file_path: list_file.to_string(),
-                execute_position: position,
-                line_number: line_num,
+                execute_file_position: FilePosition {
+                    offset: file_position,
+                    line_num,
+                },
                 file_for_notify: None,
                 task_running_satus: TaskRunningStatus::Stock,
             };
@@ -696,19 +689,15 @@ pub async fn snapshot_offset_to_file(
                 continue;
             }
         };
-        match offset.try_into() {
-            Ok(position) => {
-                let checkpoint = CheckPoint {
-                    execute_file_path: execute_file_path.clone(),
-                    execute_position: position,
-                    line_number: line_num,
-                    file_for_notify: notify,
-                    task_running_satus: task_running_status,
-                };
-                let _ = checkpoint.save_to(save_to);
-            }
-            _ => (),
-        }
+
+        let checkpoint = CheckPoint {
+            execute_file_path: execute_file_path.clone(),
+            execute_file_position: FilePosition { offset, line_num },
+            file_for_notify: notify,
+            task_running_satus: task_running_status,
+        };
+        let _ = checkpoint.save_to(save_to);
+
         thread::sleep(Duration::from_secs(interval));
         yield_now().await;
     }
@@ -800,22 +789,30 @@ impl TaskOssCompare {
 
         let mut set: JoinSet<()> = JoinSet::new();
         let mut file = File::open(object_list_file.as_str())?;
+
         rt.block_on(async {
             let mut file_position = 0;
             let mut vec_keys: Vec<ListedRecord> = vec![];
 
             if self.start_from_checkpoint {
-                //ToDo 错误补偿逻辑
-
                 let checkpoint =
-                    match get_task_checkpoint(check_point_file.as_str(), self.meta_dir.as_str()) {
+                    // match get_task_checkpoint(check_point_file.as_str(), self.meta_dir.as_str()) {
+                        match get_task_checkpoint(check_point_file.as_str()) {
                         Ok(c) => c,
                         Err(e) => {
                             log::error!("{}", e);
                             return;
                         }
                     };
-                if let Err(e) = file.seek(SeekFrom::Start(checkpoint.execute_position)) {
+                let seek_offset =
+                    match TryInto::<u64>::try_into(checkpoint.execute_file_position.offset) {
+                        Ok(it) => it,
+                        Err(e) => {
+                            log::error!("{}", e);
+                            return;
+                        }
+                    };
+                if let Err(e) = file.seek(SeekFrom::Start(seek_offset)) {
                     log::error!("{}", e);
                     return;
                 };
@@ -927,10 +924,12 @@ impl TaskOssCompare {
             let position: u64 = file_position.try_into().unwrap();
             let checkpoint = CheckPoint {
                 execute_file_path: object_list_file.clone(),
-                execute_position: position,
-                line_number: line_num,
                 file_for_notify: None,
                 task_running_satus: TaskRunningStatus::Stock,
+                execute_file_position: FilePosition {
+                    offset: file_position,
+                    line_num,
+                },
             };
             if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
                 log::error!("{}", e);
@@ -1071,17 +1070,26 @@ where
                 }
             };
 
-            let checkpoint = match get_task_checkpoint(
-                check_point_file.as_str(),
-                task_attributes.meta_dir.as_str(),
-            ) {
+            // let checkpoint = match get_task_checkpoint(
+            //     check_point_file.as_str(),
+            //     task_attributes.meta_dir.as_str(),
+            // ) {
+            let checkpoint = match get_task_checkpoint(check_point_file.as_str()) {
                 Ok(c) => c,
                 Err(e) => {
                     log::error!("{}", e);
                     return;
                 }
             };
-            if let Err(e) = file.seek(SeekFrom::Start(checkpoint.execute_position)) {
+            let seek_offset =
+                match TryInto::<u64>::try_into(checkpoint.execute_file_position.offset) {
+                    Ok(it) => it,
+                    Err(e) => {
+                        log::error!("{}", e);
+                        return;
+                    }
+                };
+            if let Err(e) = file.seek(SeekFrom::Start(seek_offset)) {
                 log::error!("{}", e);
                 return;
             };
@@ -1200,13 +1208,15 @@ where
         // 配置停止 offset save 标识为 true
         stop_offset_save_mark.store(true, std::sync::atomic::Ordering::Relaxed);
         // 记录checkpoint
-        let position: u64 = file_position.try_into().unwrap();
+        // let position: u64 = file_position.try_into().unwrap();
         let checkpoint = CheckPoint {
             execute_file_path: object_list_file.clone(),
-            execute_position: position,
-            line_number: line_num,
-            task_running_satus: task_running_status,
+            execute_file_position: FilePosition {
+                offset: file_position,
+                line_num,
+            },
             file_for_notify: None,
+            task_running_satus: task_running_status,
         };
         if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
             log::error!("{}", e);
@@ -1337,17 +1347,26 @@ where
                 }
             };
 
-            let checkpoint = match get_task_checkpoint(
-                check_point_file.as_str(),
-                task_attributes.meta_dir.as_str(),
-            ) {
+            // let checkpoint = match get_task_checkpoint(
+            //     check_point_file.as_str(),
+            //     task_attributes.meta_dir.as_str(),
+            // ) {
+            let checkpoint = match get_task_checkpoint(check_point_file.as_str()) {
                 Ok(c) => c,
                 Err(e) => {
                     log::error!("{}", e);
                     return;
                 }
             };
-            if let Err(e) = file.seek(SeekFrom::Start(checkpoint.execute_position)) {
+            let seek_offset =
+                match TryInto::<u64>::try_into(checkpoint.execute_file_position.offset) {
+                    Ok(it) => it,
+                    Err(e) => {
+                        log::error!("{}", e);
+                        return;
+                    }
+                };
+            if let Err(e) = file.seek(SeekFrom::Start(seek_offset)) {
                 log::error!("{}", e);
                 return;
             };
@@ -1495,13 +1514,14 @@ where
         // 配置停止 offset save 标识为 true
         snapshot_stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
         // 记录checkpoint
-        let position: u64 = file_position.try_into().unwrap();
         let checkpoint = CheckPoint {
             execute_file_path: object_list_file.clone(),
-            execute_position: position,
-            line_number: line_num,
-            task_running_satus: TaskRunningStatus::Stock,
+            execute_file_position: FilePosition {
+                offset: file_position,
+                line_num,
+            },
             file_for_notify: notify_file.clone(),
+            task_running_satus: TaskRunningStatus::Stock,
         };
         if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
             log::error!("{}", e);
@@ -1512,10 +1532,11 @@ where
         }
 
         if task_attributes.continuous {
-            let checkpoint = match get_task_checkpoint(
-                check_point_file.as_str(),
-                task_attributes.meta_dir.as_str(),
-            ) {
+            // let checkpoint = match get_task_checkpoint(
+            //     check_point_file.as_str(),
+            //     task_attributes.meta_dir.as_str(),
+            // ) {
+            let checkpoint = match get_task_checkpoint(check_point_file.as_str()) {
                 Ok(c) => c,
                 Err(e) => {
                     log::error!("{}", e);
@@ -1564,86 +1585,6 @@ where
             }
         }
     });
-
-    // if task_attributes.continuous {
-    //     let checkpoint =
-    //         match get_task_checkpoint(check_point_file.as_str(), task_attributes.meta_dir.as_str())
-    //         {
-    //             Ok(c) => c,
-    //             Err(e) => {
-    //                 log::error!("{}", e);
-    //                 return Err(e);
-    //             }
-    //         };
-
-    //     match checkpoint.file_for_notify {
-    //         Some(f) => {
-    //             // 重新初始化停止标识
-    //             snapshot_stop_mark.store(false, std::sync::atomic::Ordering::Relaxed);
-    //             offset_map.clear();
-
-    //             // 执行过程中错误数统计
-    //             let err_conter = Arc::clone(&error_conter);
-    //             let increment_file_size = Arc::clone(&notify_file_size);
-
-    //             let task_status_saver = TaskStatusSaver {
-    //                 save_to: check_point_file.clone(),
-    //                 execute_file_path: notify_file.clone().unwrap(),
-    //                 stop_mark: Arc::clone(&snapshot_stop_mark),
-    //                 offset_map: Arc::clone(&offset_map),
-    //                 file_for_notify: notify_file.clone(),
-    //                 task_running_status: TaskRunningStatus::Increment,
-    //                 interval: 3,
-    //             };
-
-    //             rt.block_on(async {
-    //                 // 启动checkpoint记录线程
-    //                 // let map = Arc::clone(&offset_map);
-    //                 // let stop_mark: Arc<AtomicBool> = Arc::clone(&snapshot_stop_mark);
-    //                 // let obj_list = object_list_file.clone();
-    //                 // let save_to = check_point_file.clone();
-    //                 // let notify_store = notify_file.clone();
-    //                 task::spawn(async move {
-    //                     // let checkpoint = CheckPoint {
-    //                     //     execute_file_path: notify_store.clone().unwrap(),
-    //                     //     execute_position: 0,
-    //                     //     line_number: 0,
-    //                     //     task_running_satus: TaskRunningStatus::Increment,
-    //                     //     file_for_notify: notify_store.clone(),
-    //                     // };
-    //                     // let _ = checkpoint.save_to(save_to.as_str());
-    //                     task_status_saver.snapshot_to_file().await;
-    //                     // snapshot_offset_to_file(
-    //                     //     save_to.as_str(),
-    //                     //     obj_list,
-    //                     //     stop_mark,
-    //                     //     map,
-    //                     //     notify_store,
-    //                     //     TaskRunningStatus::Increment,
-    //                     //     3,
-    //                     // )
-    //                     // .await;
-    //                 });
-    //                 let _ = task
-    //                     .execute_increment(
-    //                         f.as_str(),
-    //                         increment_file_size,
-    //                         err_conter,
-    //                         offset_map,
-    //                         Arc::clone(&snapshot_stop_mark),
-    //                     )
-    //                     .await;
-    //                 // 配置停止 offset save 标识为 true
-    //                 snapshot_stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
-    //             });
-    //         }
-    //         None => {
-    //             let err = anyhow!("notify_file is none");
-    //             log::error!("{}", err);
-    //             return Err(err);
-    //         }
-    //     }
-    // }
 
     Ok(())
 }
