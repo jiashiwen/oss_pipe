@@ -13,7 +13,7 @@ use std::{
 };
 
 use super::CURRENT_LINE_PREFIX;
-use super::{err_process, gen_file_path, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
+use super::{gen_file_path, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
 
 #[derive(Debug, Clone)]
 pub struct LocalToLocal {
