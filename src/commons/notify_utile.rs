@@ -159,8 +159,8 @@ mod test {
 
         let mut set: JoinSet<()> = JoinSet::new();
         let file_size = Arc::new(AtomicU64::new(0));
-        let rt_rs = rt.block_on(async move {
-            let rs_watch = set.spawn(async move {
+        let _rt_rs = rt.block_on(async move {
+            let _rs_watch = set.spawn(async move {
                 println!("begin watch");
                 let file = OpenOptions::new()
                     .create(true)
@@ -173,9 +173,8 @@ mod test {
                     .watch_to_file(file, Arc::clone(&file_size))
                     .await;
             });
-            let rs_read = set.spawn(async move {
+            let _rs_read = set.spawn(async move {
                 println!("begin read watch file");
-                // let _ = read_modifed_file(watch_file_name).await;
             });
             if set.len() > 0 {
                 set.join_next().await;

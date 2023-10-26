@@ -1,3 +1,4 @@
+use super::{gen_file_path, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::{checkpoint::ListedRecord, commons::multi_parts_copy_file};
 use anyhow::anyhow;
@@ -9,9 +10,6 @@ use std::{
     path::Path,
     sync::{atomic::AtomicUsize, Arc},
 };
-
-use super::CURRENT_LINE_PREFIX;
-use super::{gen_file_path, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
 
 #[derive(Debug, Clone)]
 pub struct LocalToLocal {
@@ -31,9 +29,7 @@ impl LocalToLocal {
         // let mut line_num = self.begin_line_number;
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
-        let mut current_line_key = CURRENT_LINE_PREFIX.to_string();
         offset_key.push_str(&subffix);
-        // current_line_key.push_str(&self.begin_line_number.to_string());
 
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
 

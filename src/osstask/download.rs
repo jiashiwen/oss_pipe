@@ -22,8 +22,8 @@ use tokio::{runtime::Runtime, task::JoinSet};
 use walkdir::WalkDir;
 
 use super::{
-    gen_file_path, task_actions::TaskActionsFromOss, TaskAttributes, TaskType, CURRENT_LINE_PREFIX,
-    ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX,
+    gen_file_path, task_actions::TaskActionsFromOss, TaskAttributes, TaskType, ERROR_RECORD_PREFIX,
+    OFFSET_EXEC_PREFIX,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
