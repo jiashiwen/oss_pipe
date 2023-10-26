@@ -1,16 +1,22 @@
-use std::{fs::File, io::Write, str::FromStr};
+use std::{
+    fs::File,
+    io::Write,
+    str::FromStr,
+    sync::{atomic::AtomicUsize, Arc},
+};
 
 use anyhow::{Error, Result};
+use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Record {
+pub struct ListedRecord {
     pub key: String,
     pub offset: usize,
     pub line_num: usize,
 }
 
-impl FromStr for Record {
+impl FromStr for ListedRecord {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self> {
         let r = serde_json::from_str::<Self>(s)?;
@@ -18,7 +24,7 @@ impl FromStr for Record {
     }
 }
 
-impl Record {
+impl ListedRecord {
     pub fn save_json_to_file(&self, file: &mut File) -> Result<()> {
         let mut json = serde_json::to_string(self)?;
         json.push_str("\n");
@@ -35,16 +41,21 @@ pub enum Opt {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct RecordNew {
+pub struct FilePosition {
+    pub offset: usize,
+    pub line_num: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RecordDescription {
     pub source_key: String,
     pub target_key: String,
     pub list_file_path: String,
-    pub list_file_offset: u64,
-    pub list_file_line_num: usize,
+    pub list_file_position: FilePosition,
     pub option: Opt,
 }
 
-impl FromStr for RecordNew {
+impl FromStr for RecordDescription {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self> {
         let r = serde_json::from_str::<Self>(s)?;
@@ -52,7 +63,24 @@ impl FromStr for RecordNew {
     }
 }
 
-impl RecordNew {
+impl RecordDescription {
+    pub fn error_handler(
+        &self,
+        e: Error,
+        error_conter: &Arc<AtomicUsize>,
+        offset_map: &Arc<DashMap<String, FilePosition>>,
+        save_to: &mut File,
+        file_position_key: &str,
+    ) {
+        log::error!("{}", e);
+        offset_map.insert(
+            file_position_key.to_string(),
+            self.list_file_position.clone(),
+        );
+
+        error_conter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let _ = self.save_json_to_file(save_to);
+    }
     pub fn save_json_to_file(&self, file: &mut File) -> Result<()> {
         let mut json = serde_json::to_string(self)?;
         json.push_str("\n");
@@ -66,7 +94,7 @@ impl RecordNew {
 mod test {
     use std::{fs::OpenOptions, io::Write, path::Path};
 
-    use super::Record;
+    use super::ListedRecord;
 
     //cargo test checkpoint::record::test::test_error_record -- --nocapture
     #[test]
@@ -89,7 +117,7 @@ mod test {
             key.push_str(i.to_string().as_str());
             let offset = 3214 + i;
             let offset_usize: usize = offset.try_into().unwrap();
-            let record = Record {
+            let record = ListedRecord {
                 key,
                 offset: offset_usize,
                 line_num: 1,
@@ -97,7 +125,7 @@ mod test {
             let _ = record.save_json_to_file(&mut file);
         }
 
-        let record1 = Record {
+        let record1 = ListedRecord {
             key: "test/test1/ttt".to_string(),
             offset: 65,
             line_num: 1,
@@ -106,7 +134,7 @@ mod test {
         let r = record1.save_json_to_file(&mut file);
         println!("r is {:?}", r);
 
-        let record2 = Record {
+        let record2 = ListedRecord {
             key: "test/test2/tt222".to_string(),
             offset: 77,
             line_num: 1,

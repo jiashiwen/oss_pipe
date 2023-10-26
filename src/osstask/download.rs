@@ -1,5 +1,5 @@
 use crate::{
-    checkpoint::Record,
+    checkpoint::ListedRecord,
     commons::{json_to_struct, read_lines},
     exception::save_error_record,
     s3::{
@@ -75,7 +75,8 @@ impl TaskActionsFromOss for DownloadTask {
                     for line in lines {
                         match line {
                             Ok(content) => {
-                                let record = match json_to_struct::<Record>(content.as_str()) {
+                                let record = match json_to_struct::<ListedRecord>(content.as_str())
+                                {
                                     Ok(r) => r,
                                     Err(e) => {
                                         log::error!("{}", e);
@@ -177,7 +178,7 @@ impl TaskActionsFromOss for DownloadTask {
     async fn records_excutor(
         &self,
         joinset: &mut JoinSet<()>,
-        records: Vec<Record>,
+        records: Vec<ListedRecord>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, usize>>,
     ) {
@@ -217,7 +218,7 @@ pub struct DownLoadRecordsExecutor {
 }
 
 impl DownLoadRecordsExecutor {
-    pub async fn exec(&self, records: Vec<Record>) -> Result<()> {
+    pub async fn exec(&self, records: Vec<ListedRecord>) -> Result<()> {
         // let mut line_num = self.begin_line_number;
         let subffix = records[0].offset.to_string();
 
