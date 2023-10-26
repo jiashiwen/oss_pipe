@@ -19,10 +19,6 @@ pub struct CheckPoint {
     // 对象列表命名规则：OBJECT_LIST_FILE_PREFIX+秒级unix 时间戳 'objeclt_list_unixtimestampe'
     pub execute_file_path: String,
     // 文件执行位置，既执行到的offset，用于断点续传
-    // pub execute_position: u64,
-    // 执行完成的行号
-    // pub line_number: usize,
-    // 执行文件执行到的位置
     pub execute_file_position: FilePosition,
     pub file_for_notify: Option<String>,
     pub task_running_satus: TaskRunningStatus,
@@ -60,7 +56,7 @@ impl CheckPoint {
 
 // pub fn get_task_checkpoint(checkpoint_file: &str, meta_dir: &str) -> Result<CheckPoint> {
 pub fn get_task_checkpoint(checkpoint_file: &str) -> Result<CheckPoint> {
-    let mut checkpoint = read_yaml_file::<CheckPoint>(checkpoint_file)?;
+    let checkpoint = read_yaml_file::<CheckPoint>(checkpoint_file)?;
 
     // 遍历offset 日志文件，选取每个文件中最大的offset，当offset 小于checkpoint中的offset，则取较小值
     // for entry in WalkDir::new(meta_dir)

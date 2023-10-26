@@ -13,7 +13,7 @@ use notify;
 use tokio::{runtime::Runtime, task::JoinSet};
 
 use crate::{
-    checkpoint::{FilePosition, ListedRecord, RecordDescription},
+    checkpoint::{FilePosition, ListedRecord},
     commons::{Modified, NotifyWatcher},
     s3::aws_s3::OssClient,
 };
@@ -35,7 +35,8 @@ pub trait TaskActionsFromOss {
         joinset: &mut JoinSet<()>,
         records: Vec<ListedRecord>,
         err_counter: Arc<AtomicUsize>,
-        offset_map: Arc<DashMap<String, usize>>,
+        offset_map: Arc<DashMap<String, FilePosition>>,
+        list_file: String,
     );
 
     // 生成对象列表
