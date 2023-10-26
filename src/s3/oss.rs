@@ -1,18 +1,13 @@
-use std::fs::File;
-use std::io::Write;
-use std::str::FromStr;
-
-// use super::aws_s3::OssClient;
 use super::{ali_oss::OssAliClient, aws_s3::OssClient, jd_s3::OssJdClient, jrss::JRSSClient};
 use aliyun_oss_client::{BucketName, EndPoint};
 use anyhow::{Ok, Result};
 use async_trait::async_trait;
 use aws_config::SdkConfig;
 use aws_credential_types::{provider::SharedCredentialsProvider, Credentials};
-
 use aws_sdk_s3::Region;
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 
 #[async_trait]
 pub trait OSSActions {
@@ -318,10 +313,7 @@ impl OSSDescription {
 mod test {
     use std::{thread, time::Duration};
 
-    use tokio::{
-        runtime,
-        task::{self, spawn_blocking, JoinSet},
-    };
+    use tokio::{runtime, task::JoinSet};
 
     use crate::commons::read_yaml_file;
 

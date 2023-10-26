@@ -278,7 +278,7 @@ mod test {
     //cargo test commons::fileutiles::test::test_gen_file -- --nocapture
     #[test]
     fn test_gen_file() {
-        let r = generate_file(128, 8, "/tmp/gen/gen_file");
+        let _ = generate_file(128, 8, "/tmp/gen/gen_file");
         // println!("test scan result {:?}", r);
     }
 

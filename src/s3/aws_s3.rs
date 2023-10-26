@@ -876,7 +876,7 @@ mod test {
         let stream = ByteStream::from(vec_u8);
 
         rt.block_on(async {
-            jd_client
+            let _ = jd_client
                 .upload_object_bytes("jsw-bucket-1", "line_file", None, stream)
                 .await;
         });

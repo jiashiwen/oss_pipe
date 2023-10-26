@@ -40,7 +40,6 @@ pub const ERROR_RECORD_PREFIX: &'static str = "error_record_";
 pub const OFFSET_PREFIX: &'static str = "offset_";
 pub const OFFSET_EXEC_PREFIX: &'static str = "offset_exec_";
 pub const COMPARE_OBJECT_DIFF_PREFIX: &'static str = "diff_object_";
-pub const CURRENT_LINE_PREFIX: &'static str = "current_line_";
 pub const NOTIFY_FILE_PREFIX: &'static str = "notify_file_";
 
 /// 任务类型，包括存量曾量全量
@@ -1054,7 +1053,7 @@ where
         let stop_mark = Arc::clone(&snapshot_stop_mark);
         let total = TryInto::<u64>::try_into(total_lines).unwrap();
         sys_set.spawn(async move {
-            exec_processbar(total, stop_mark, map, CURRENT_LINE_PREFIX).await;
+            exec_processbar(total, stop_mark, map, OFFSET_PREFIX).await;
         });
 
         // 按列表传输object from source to target
