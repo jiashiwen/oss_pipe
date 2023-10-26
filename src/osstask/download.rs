@@ -252,12 +252,15 @@ impl DownLoadRecordsExecutor {
                     log::error!("{}", e);
                     // 源端文件不存在按传输成功处理
                     match e.into_service_error().kind {
-                        GetObjectErrorKind::InvalidObjectState(_)
-                        | GetObjectErrorKind::Unhandled(_) => {
-                            save_error_record(&self.err_counter, record.clone(), &mut error_file);
-                        }
+                        // GetObjectErrorKind::InvalidObjectState(_)
+                        // | GetObjectErrorKind::Unhandled(_) => {
+                        //     save_error_record(&self.err_counter, record.clone(), &mut error_file);
+                        // }
                         GetObjectErrorKind::NoSuchKey(_) => {}
-                        _ => {}
+                        _ => {
+                            save_error_record(&self.err_counter, record.clone(), &mut error_file);
+                            continue;
+                        }
                     }
 
                     self.offset_map.insert(
@@ -362,15 +365,6 @@ impl DownLoadRecordsExecutor {
                         byte_stream_multi_partes_to_file(resp, &mut t_file, self.multi_part_chunk)
                             .await
                     {
-                        // err_process(
-                        //     &self.err_counter,
-                        //     anyhow!(e.to_string()),
-                        //     record,
-                        //     &mut error_file,
-                        //     offset_key.as_str(),
-                        //     current_line_key.as_str(),
-                        //     &self.offset_map,
-                        // );
                         let record_desc = RecordDescription {
                             source_key: record.key.clone(),
                             target_key: t_file_name.clone(),

@@ -282,9 +282,7 @@ impl OssCompare {
 mod test {
 
     use std::{fs::File, io::Read};
-
-    use bytes::BytesMut;
-    use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+    use tokio::io::AsyncReadExt;
 
     use crate::{
         commons::struct_to_json_string,
