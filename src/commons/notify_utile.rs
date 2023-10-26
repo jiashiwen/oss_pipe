@@ -147,10 +147,7 @@ mod test {
         sync::{atomic::AtomicU64, Arc},
     };
 
-    use tokio::{
-        runtime,
-        task::{self, yield_now, JoinSet},
-    };
+    use tokio::{runtime, task::JoinSet};
 
     use super::NotifyWatcher;
 

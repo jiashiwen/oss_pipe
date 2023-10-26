@@ -1,5 +1,20 @@
+use crate::{
+    checkpoint::{get_task_checkpoint, CheckPoint, FilePosition, ListedRecord},
+    commons::{
+        exec_processbar_with_file_position, json_to_struct, read_lines, read_yaml_file,
+        scan_folder_files_to_file,
+    },
+    osstask::LocalToLocal,
+    s3::OSSDescription,
+};
+use anyhow::{anyhow, Result};
+use aws_sdk_s3::model::ObjectIdentifier;
 use core::result::Result::Ok;
-
+use dashmap::DashMap;
+use indicatif::{ProgressBar, ProgressStyle};
+use regex::RegexSet;
+use serde::{Deserialize, Serialize};
+use snowflake::SnowflakeIdGenerator;
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, BufRead, Seek, SeekFrom},
@@ -12,36 +27,16 @@ use std::{
     vec,
 };
 
-use crate::{
-    checkpoint::{get_task_checkpoint, CheckPoint, FilePosition, ListedRecord},
-    commons::{
-        exec_processbar, exec_processbar_with_file_position, json_to_struct, read_lines,
-        read_yaml_file, scan_folder_files_to_file,
-    },
-    osstask::LocalToLocal,
-    s3::OSSDescription,
-};
-use anyhow::{anyhow, Result};
-
-use aws_sdk_s3::model::ObjectIdentifier;
-use dashmap::DashMap;
-use indicatif::{ProgressBar, ProgressStyle};
-
-use regex::RegexSet;
-use serde::{Deserialize, Serialize};
-use snowflake::SnowflakeIdGenerator;
-
-use tokio::{
-    runtime::{self},
-    task::{self, yield_now, JoinSet},
-};
-use walkdir::WalkDir;
-
 use super::{
     osscompare::OssCompare,
     task_actions::{TaskActionsFromLocal, TaskActionsFromOss},
     DownloadTask, TaskStatusSaver, TransferTask, UploadTask,
 };
+use tokio::{
+    runtime::{self},
+    task::{self, yield_now, JoinSet},
+};
+use walkdir::WalkDir;
 
 pub const OBJECT_LIST_FILE_PREFIX: &'static str = "objlist_";
 pub const CHECK_POINT_FILE_NAME: &'static str = "checkpoint.yml";
@@ -659,53 +654,6 @@ pub fn gen_file_path(dir: &str, file_prefix: &str, file_subffix: &str) -> String
     file_name
 }
 
-pub async fn snapshot_offset_to_file(
-    save_to: &str,
-    execute_file_path: String,
-    stop_mark: Arc<AtomicBool>,
-    offset_map: Arc<DashMap<String, usize>>,
-    file_for_notify: Option<String>,
-    task_running_status: TaskRunningStatus,
-    interval: u64,
-) {
-    while !stop_mark.load(std::sync::atomic::Ordering::Relaxed) {
-        let notify = file_for_notify.clone();
-        let offset = match offset_map
-            .iter()
-            .filter(|f| f.key().starts_with(OFFSET_PREFIX))
-            .map(|m| *m.value())
-            .min()
-        {
-            Some(o) => o,
-            None => {
-                continue;
-            }
-        };
-        let line_num = match offset_map
-            .iter()
-            .filter(|f| f.key().starts_with(CURRENT_LINE_PREFIX))
-            .map(|m| *m.value())
-            .min()
-        {
-            Some(l) => l,
-            None => {
-                continue;
-            }
-        };
-
-        let checkpoint = CheckPoint {
-            execute_file_path: execute_file_path.clone(),
-            execute_file_position: FilePosition { offset, line_num },
-            file_for_notify: notify,
-            task_running_satus: task_running_status,
-        };
-        let _ = checkpoint.save_to(save_to);
-
-        thread::sleep(Duration::from_secs(interval));
-        yield_now().await;
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TaskOssCompare {
     pub source: OSSDescription,
@@ -742,8 +690,8 @@ impl Default for TaskOssCompare {
 impl TaskOssCompare {
     pub fn exec_multi_threads(&self) -> Result<()> {
         let error_conter = Arc::new(AtomicUsize::new(0));
-        let stop_offset_save_mark = Arc::new(AtomicBool::new(false));
-        let offset_map = Arc::new(DashMap::<String, usize>::new());
+        let snapshot_stop_mark = Arc::new(AtomicBool::new(false));
+        let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
 
         let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_PREFIX, "");
         let check_point_file = gen_file_path(self.meta_dir.as_str(), CHECK_POINT_FILE_NAME, "");
@@ -822,21 +770,34 @@ impl TaskOssCompare {
             }
 
             // 启动checkpoint记录线程
-            let map = Arc::clone(&offset_map);
-            let stop_mark = Arc::clone(&stop_offset_save_mark);
-            let obj_list = object_list_file.clone();
-            let save_to = check_point_file.clone();
+            // let map = Arc::clone(&offset_map);
+            // let stop_mark = Arc::clone(&snapshot_stop_mark);
+            // let obj_list = object_list_file.clone();
+            // let save_to = check_point_file.clone();
+            // task::spawn(async move {
+            //     snapshot_offset_to_file(
+            //         save_to.as_str(),
+            //         obj_list,
+            //         stop_mark,
+            //         map,
+            //         None,
+            //         TaskRunningStatus::Stock,
+            //         3,
+            //     )
+            //     .await
+            // });
+
+            let status_saver = TaskStatusSaver {
+                save_to: check_point_file.clone(),
+                execute_file_path: object_list_file.clone(),
+                stop_mark: Arc::clone(&snapshot_stop_mark),
+                list_file_positon_map: Arc::clone(&offset_map),
+                file_for_notify: None,
+                task_running_status: TaskRunningStatus::Stock,
+                interval: 3,
+            };
             task::spawn(async move {
-                snapshot_offset_to_file(
-                    save_to.as_str(),
-                    obj_list,
-                    stop_mark,
-                    map,
-                    None,
-                    TaskRunningStatus::Stock,
-                    3,
-                )
-                .await
+                status_saver.snapshot_to_file().await;
             });
 
             // 按列表传输object from source to target
@@ -922,9 +883,8 @@ impl TaskOssCompare {
                 set.join_next().await;
             }
             // 配置停止 offset save 标识为 true
-            stop_offset_save_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+            snapshot_stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
             // 记录checkpoint
-            let position: u64 = file_position.try_into().unwrap();
             let checkpoint = CheckPoint {
                 execute_file_path: object_list_file.clone(),
                 file_for_notify: None,
@@ -957,8 +917,8 @@ where
     // 执行过程中错误数统计
     let error_conter = Arc::new(AtomicUsize::new(0));
     // 任务停止标准，用于通知所有协程任务结束
-    let stop_offset_save_mark = Arc::new(AtomicBool::new(false));
-    let offset_map = Arc::new(DashMap::<String, usize>::new());
+    let snapshot_stop_mark = Arc::new(AtomicBool::new(false));
+    let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
     let mut last_modify_timestamp = 0;
 
@@ -1073,10 +1033,6 @@ where
                 }
             };
 
-            // let checkpoint = match get_task_checkpoint(
-            //     check_point_file.as_str(),
-            //     task_attributes.meta_dir.as_str(),
-            // ) {
             let checkpoint = match get_task_checkpoint(check_point_file.as_str()) {
                 Ok(c) => c,
                 Err(e) => {
@@ -1099,29 +1055,25 @@ where
         }
 
         // 启动checkpoint记录线程
-        let map = Arc::clone(&offset_map);
-        let stop_mark: Arc<AtomicBool> = Arc::clone(&stop_offset_save_mark);
-        let obj_list = object_list_file.clone();
-        let save_to = check_point_file.clone();
+        let status_saver = TaskStatusSaver {
+            save_to: check_point_file.clone(),
+            execute_file_path: object_list_file.clone(),
+            stop_mark: Arc::clone(&snapshot_stop_mark),
+            list_file_positon_map: Arc::clone(&offset_map),
+            file_for_notify: None,
+            task_running_status: TaskRunningStatus::Stock,
+            interval: 3,
+        };
         sys_set.spawn(async move {
-            snapshot_offset_to_file(
-                save_to.as_str(),
-                obj_list,
-                stop_mark,
-                map,
-                None,
-                task_running_status,
-                3,
-            )
-            .await
+            status_saver.snapshot_to_file().await;
         });
 
         // 启动进度条线程
         let map = Arc::clone(&offset_map);
-        let stop_mark = Arc::clone(&stop_offset_save_mark);
+        let stop_mark = Arc::clone(&snapshot_stop_mark);
         let total = TryInto::<u64>::try_into(total_lines).unwrap();
         sys_set.spawn(async move {
-            exec_processbar(total, stop_mark, map, CURRENT_LINE_PREFIX).await;
+            exec_processbar_with_file_position(total, stop_mark, map, CURRENT_LINE_PREFIX).await;
         });
 
         // 按列表传输object from source to target
@@ -1179,6 +1131,7 @@ where
                     vk,
                     Arc::clone(&error_conter),
                     Arc::clone(&offset_map),
+                    object_list_file.clone(),
                 )
                 .await;
 
@@ -1201,6 +1154,7 @@ where
                 vk,
                 Arc::clone(&error_conter),
                 Arc::clone(&offset_map),
+                object_list_file.clone(),
             )
             .await;
         }
@@ -1209,7 +1163,7 @@ where
             execut_set.join_next().await;
         }
         // 配置停止 offset save 标识为 true
-        stop_offset_save_mark.store(true, std::sync::atomic::Ordering::Relaxed);
+        snapshot_stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
         // 记录checkpoint
         // let position: u64 = file_position.try_into().unwrap();
         let checkpoint = CheckPoint {
@@ -1564,7 +1518,6 @@ where
                         task_running_status: TaskRunningStatus::Increment,
                         interval: 3,
                     };
-
                     sys_set.spawn(async move {
                         task_status_saver.snapshot_to_file().await;
                     });
@@ -1590,64 +1543,4 @@ where
     });
 
     Ok(())
-}
-
-#[cfg(test)]
-mod test {
-    use std::{
-        fs::{create_dir_all, OpenOptions},
-        path::Path,
-        sync::{atomic::AtomicBool, Arc},
-        thread,
-        time::Duration,
-    };
-
-    use dashmap::DashMap;
-    use tokio::{runtime::Runtime, task};
-
-    use crate::osstask::{snapshot_offset_to_file, OFFSET_PREFIX};
-
-    //cargo test osstask::task::test::test_save_offset -- --nocapture
-    #[test]
-    fn test_save_offset() {
-        println!("save offset");
-        let stop_mark = Arc::new(AtomicBool::new(false));
-        let offset_map = Arc::new(DashMap::<String, usize>::new());
-        let rt = Runtime::new().unwrap();
-        rt.block_on(async {
-            let mark = Arc::clone(&stop_mark);
-            let map = Arc::clone(&offset_map);
-            let file_path = "/tmp/checkpoint/checkpoint.yml";
-            if let Some(path) = Path::new(file_path).parent() {
-                create_dir_all(path).unwrap();
-            }
-
-            let mut file = OpenOptions::new()
-                .create(true)
-                .write(true)
-                .open(file_path)
-                .unwrap();
-            // let mut file = fs::File::open(file_path).unwrap();
-            for i in (18usize..28).rev() {
-                let mut key = OFFSET_PREFIX.to_string();
-                key.push_str(&i.to_string());
-                map.insert(key, i);
-            }
-            task::spawn(async move {
-                snapshot_offset_to_file(
-                    "/tmp/checkpoint/checkpoint.yml",
-                    "xxx/xx/objlist".to_string(),
-                    Arc::clone(&stop_mark),
-                    Arc::clone(&offset_map),
-                    None,
-                    crate::osstask::TaskRunningStatus::Stock,
-                    3,
-                )
-                .await;
-            });
-
-            thread::sleep(Duration::from_secs(10));
-            mark.store(true, std::sync::atomic::Ordering::Relaxed);
-        });
-    }
 }

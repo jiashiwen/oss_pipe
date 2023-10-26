@@ -1,4 +1,8 @@
-use crate::{checkpoint::ListedRecord, exception::save_error_record, s3::OSSDescription};
+use crate::{
+    checkpoint::{FilePosition, ListedRecord},
+    exception::save_error_record,
+    s3::OSSDescription,
+};
 use anyhow::Result;
 use aws_sdk_s3::{error::GetObjectErrorKind, output::GetObjectOutput};
 use dashmap::DashMap;
@@ -60,7 +64,7 @@ pub struct OssCompare {
     pub source: OSSDescription,
     pub target: OSSDescription,
     pub error_conter: Arc<AtomicUsize>,
-    pub offset_map: Arc<DashMap<String, usize>>,
+    pub offset_map: Arc<DashMap<String, FilePosition>>,
     pub meta_dir: String,
     pub exprirs_diff_scope: i64,
     // pub filter: Option<String>,
@@ -106,7 +110,13 @@ impl OssCompare {
                         GetObjectErrorKind::InvalidObjectState(_)
                         | GetObjectErrorKind::Unhandled(_) => {
                             save_error_record(&self.error_conter, record.clone(), &mut error_file);
-                            self.offset_map.insert(offset_key.clone(), record.offset);
+                            self.offset_map.insert(
+                                offset_key.clone(),
+                                FilePosition {
+                                    offset: record.offset,
+                                    line_num: record.line_num,
+                                },
+                            );
                             continue;
                         }
                         GetObjectErrorKind::NoSuchKey(_) => {
@@ -136,7 +146,13 @@ impl OssCompare {
                         GetObjectErrorKind::InvalidObjectState(_)
                         | GetObjectErrorKind::Unhandled(_) => {
                             save_error_record(&self.error_conter, record.clone(), &mut error_file);
-                            self.offset_map.insert(offset_key.clone(), record.offset);
+                            self.offset_map.insert(
+                                offset_key.clone(),
+                                FilePosition {
+                                    offset: record.offset,
+                                    line_num: record.line_num,
+                                },
+                            );
                             continue;
                         }
                         GetObjectErrorKind::NoSuchKey(_) => {
@@ -145,7 +161,13 @@ impl OssCompare {
                         _ => {}
                     }
 
-                    self.offset_map.insert(offset_key.clone(), record.offset);
+                    self.offset_map.insert(
+                        offset_key.clone(),
+                        FilePosition {
+                            offset: record.offset,
+                            line_num: record.line_num,
+                        },
+                    );
                 }
             };
 
@@ -225,7 +247,13 @@ impl OssCompare {
                 };
             }
 
-            self.offset_map.insert(offset_key.clone(), record.offset);
+            self.offset_map.insert(
+                offset_key.clone(),
+                FilePosition {
+                    offset: record.offset,
+                    line_num: record.line_num,
+                },
+            );
         }
         self.offset_map.remove(&offset_key);
         let _ = error_file.flush();

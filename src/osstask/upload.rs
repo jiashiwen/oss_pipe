@@ -534,7 +534,6 @@ impl UpLoadExecutor {
                             &mut error_file,
                             offset_key.as_str(),
                         );
-
                         continue;
                     }
                 }
