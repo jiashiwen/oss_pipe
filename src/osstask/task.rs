@@ -265,8 +265,9 @@ impl Default for TaskLocalToLocal {
 impl TaskLocalToLocal {
     pub fn exec_multi_threads(&self) -> Result<()> {
         let error_times = Arc::new(AtomicUsize::new(0));
-        let stop_offset_save_mark = Arc::new(AtomicBool::new(false));
-        let offset_map = Arc::new(DashMap::<String, usize>::new());
+        let snapshot_stop_mark = Arc::new(AtomicBool::new(false));
+        // let offset_map = Arc::new(DashMap::<String, usize>::new());
+        let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
         let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_PREFIX, "");
         let check_point_file = gen_file_path(self.meta_dir.as_str(), CHECK_POINT_FILE_NAME, "");
 
@@ -308,22 +309,22 @@ impl TaskLocalToLocal {
 
         rt.block_on(async {
             let map = Arc::clone(&offset_map);
-            let stop_mark = Arc::clone(&stop_offset_save_mark);
+            let stop_mark = Arc::clone(&snapshot_stop_mark);
             let mut vec_keys: Vec<ListedRecord> = vec![];
             let obj_list = object_list_file.clone();
-            task::spawn(async move {
-                snapshot_offset_to_file(
-                    check_point_file.as_str(),
-                    obj_list,
-                    stop_mark,
-                    map,
-                    None,
-                    TaskRunningStatus::Stock,
-                    3,
-                )
-                .await;
-            });
 
+            let status_saver = TaskStatusSaver {
+                save_to: check_point_file.clone(),
+                execute_file_path: object_list_file.clone(),
+                stop_mark: Arc::clone(&snapshot_stop_mark),
+                list_file_positon_map: Arc::clone(&offset_map),
+                file_for_notify: None,
+                task_running_status: TaskRunningStatus::Stock,
+                interval: 3,
+            };
+            task::spawn(async move {
+                status_saver.snapshot_to_file().await;
+            });
             // 按列表传输object from source to target
             let lines = io::BufReader::new(file).lines();
             let mut line_num = 0;
@@ -378,6 +379,7 @@ impl TaskLocalToLocal {
                         large_file_size: self.large_file_size,
                         multi_part_chunk: self.multi_part_chunk,
                         offset_map: Arc::clone(&offset_map),
+                        list_file_path: object_list_file.clone(),
                     };
                     // let pre_offset = pre_batch_last_offset;
                     set.spawn(async move {
@@ -412,6 +414,7 @@ impl TaskLocalToLocal {
                     large_file_size: self.large_file_size,
                     multi_part_chunk: self.multi_part_chunk,
                     offset_map: Arc::clone(&offset_map),
+                    list_file_path: object_list_file.clone(),
                 };
 
                 set.spawn(async move {
@@ -427,9 +430,8 @@ impl TaskLocalToLocal {
             while set.len() > 0 {
                 set.join_next().await;
             }
-            stop_offset_save_mark.store(true, std::sync::atomic::Ordering::Relaxed);
+            snapshot_stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
             // 记录checkpoint
-            // let position: u64 = file_position.try_into().unwrap();
             let list_file = object_list_file.as_str();
             let checkpoint = CheckPoint {
                 execute_file_path: list_file.to_string(),
@@ -492,7 +494,8 @@ impl TaskLocalToLocal {
                             target_exist_skip: self.target_exists_skip,
                             large_file_size: self.large_file_size,
                             multi_part_chunk: self.multi_part_chunk,
-                            offset_map: Arc::new(DashMap::<String, usize>::new()),
+                            offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
+                            list_file_path: p.to_string(),
                         };
                         let _ = copy.exec(record_vec);
                     }

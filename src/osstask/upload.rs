@@ -1,3 +1,7 @@
+use super::task_actions::TaskActionsFromLocal;
+use super::TaskAttributes;
+use super::TaskType;
+use super::{gen_file_path, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::commons::{
     json_to_struct, read_lines, scan_folder_files_to_file, Modified, ModifyType, NotifyWatcher,
@@ -12,7 +16,6 @@ use dashmap::DashMap;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::from_str;
-use std::error::Error;
 use std::fs::File;
 use std::io::{self, BufRead, Seek, SeekFrom};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -25,12 +28,6 @@ use std::{
 use tokio::runtime::Runtime;
 use tokio::task::JoinSet;
 use walkdir::WalkDir;
-
-use super::task_actions::TaskActionsFromLocal;
-use super::TaskAttributes;
-use super::TaskType;
-use super::CURRENT_LINE_PREFIX;
-use super::{gen_file_path, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
@@ -107,7 +104,7 @@ impl TaskActionsFromLocal for UploadTask {
                             target_exist_skip: self.task_attributes.target_exists_skip,
                             large_file_size: self.task_attributes.large_file_size,
                             multi_part_chunk: self.task_attributes.multi_part_chunk,
-                            list_file: p.to_string(),
+                            list_file_path: p.to_string(),
                         };
                         let _ = upload.exec_listed_records(record_vec);
                     }
@@ -136,7 +133,7 @@ impl TaskActionsFromLocal for UploadTask {
             target_exist_skip: false,
             large_file_size: self.task_attributes.large_file_size,
             multi_part_chunk: self.task_attributes.multi_part_chunk,
-            list_file,
+            list_file_path: list_file,
         };
 
         joinset.spawn(async move {
@@ -456,7 +453,7 @@ pub struct UpLoadExecutor {
     pub target_exist_skip: bool,
     pub large_file_size: usize,
     pub multi_part_chunk: usize,
-    pub list_file: String,
+    pub list_file_path: String,
 }
 
 impl UpLoadExecutor {
@@ -523,7 +520,7 @@ impl UpLoadExecutor {
                         let record_desc = RecordDescription {
                             source_key: s_file_name.clone(),
                             target_key: target_key.clone(),
-                            list_file_path: self.list_file.clone(),
+                            list_file_path: self.list_file_path.clone(),
                             list_file_position: FilePosition {
                                 offset: record.offset,
                                 line_num: record.line_num,
@@ -556,7 +553,7 @@ impl UpLoadExecutor {
                 let record_desc = RecordDescription {
                     source_key: s_file_name.clone(),
                     target_key: target_key.clone(),
-                    list_file_path: self.list_file.clone(),
+                    list_file_path: self.list_file_path.clone(),
                     list_file_position: FilePosition {
                         offset: record.offset,
                         line_num: record.line_num,
