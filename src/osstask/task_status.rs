@@ -22,8 +22,10 @@ impl TaskStatusSaver {
     pub async fn snapshot_to_file(&self) {
         let checkpoint = CheckPoint {
             execute_file_path: self.execute_file_path.clone(),
-            execute_position: 0,
-            line_number: 0,
+            execute_file_position: FilePosition {
+                offset: 0,
+                line_num: 0,
+            },
             file_for_notify: self.file_for_notify.clone(),
             task_running_satus: self.task_running_status,
         };
@@ -55,27 +57,16 @@ impl TaskStatusSaver {
                 }
             };
 
-            // let checkpoint = CheckPoint {
-            //     execute_file_path: self.execute_file_path.clone(),
-            //     execute_position: file_position.offset,
-            //     line_number: file_position.line_num,
-            //     file_for_notify: notify,
-            //     task_running_satus: self.task_running_status,
-            // };
-            let _ = checkpoint.save_to(&self.save_to);
-            match offset.try_into() {
-                Ok(p) => {
-                    let checkpoint = CheckPoint {
-                        execute_file_path: self.execute_file_path.clone(),
-                        execute_position: p,
-                        line_number: file_position.line_num,
-                        file_for_notify: notify,
-                        task_running_satus: self.task_running_status,
-                    };
-                    let _ = checkpoint.save_to(&self.save_to);
-                }
-                _ => {}
-            }
+            let checkpoint = CheckPoint {
+                execute_file_path: self.execute_file_path.clone(),
+                execute_file_position: file_position.value().clone(),
+                file_for_notify: notify,
+                task_running_satus: self.task_running_status,
+            };
+
+            if let Err(e) = checkpoint.save_to(&self.save_to) {
+                log::error!("{}", e);
+            };
             tokio::time::sleep(tokio::time::Duration::from_secs(self.interval)).await;
             yield_now().await;
         }
