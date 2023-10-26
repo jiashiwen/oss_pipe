@@ -1,3 +1,4 @@
+use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::{
     checkpoint::ListedRecord, commons::multi_parts_copy_file, exception::save_error_record,
 };
@@ -19,11 +20,12 @@ pub struct LocalToLocal {
     pub source_path: String,
     pub target_path: String,
     pub error_conter: Arc<AtomicUsize>,
-    pub offset_map: Arc<DashMap<String, usize>>,
+    pub offset_map: Arc<DashMap<String, FilePosition>>,
     pub meta_dir: String,
     pub target_exist_skip: bool,
     pub large_file_size: usize,
     pub multi_part_chunk: usize,
+    pub list_file_path: String,
 }
 
 impl LocalToLocal {
@@ -38,8 +40,13 @@ impl LocalToLocal {
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
 
         // 先写首行日志，避免错误漏记
-        self.offset_map
-            .insert(offset_key.clone(), records[0].offset);
+        self.offset_map.insert(
+            offset_key.clone(),
+            FilePosition {
+                offset: records[0].offset,
+                line_num: records[0].line_num,
+            },
+        );
 
         let mut error_file = OpenOptions::new()
             .create(true)
@@ -54,24 +61,35 @@ impl LocalToLocal {
             // 判断源文件是否存在
             let s_path = Path::new(s_file_name.as_str());
             if !s_path.exists() {
-                self.offset_map.insert(offset_key.clone(), record.offset);
+                self.offset_map.insert(
+                    offset_key.clone(),
+                    FilePosition {
+                        offset: record.offset,
+                        line_num: record.line_num,
+                    },
+                );
                 continue;
             }
 
             let t_path = Path::new(t_file_name.as_str());
             if let Some(p) = t_path.parent() {
                 if let Err(e) = std::fs::create_dir_all(p) {
-                    // log::error!("{}", e);
-                    // save_error_record(&self.error_conter, record.clone(), &mut error_file);
-                    // self.offset_map.insert(offset_key.clone(), record.offset);
-                    err_process(
+                    let recorddesc = RecordDescription {
+                        source_key: s_file_name.clone(),
+                        target_key: t_file_name.clone(),
+                        list_file_path: self.list_file_path.clone(),
+                        list_file_position: FilePosition {
+                            offset: record.offset,
+                            line_num: record.line_num,
+                        },
+                        option: Opt::PUT,
+                    };
+                    recorddesc.error_handler(
+                        anyhow!("{}", e),
                         &self.error_conter,
-                        anyhow!(e.to_string()),
-                        record,
+                        &self.offset_map,
                         &mut error_file,
                         offset_key.as_str(),
-                        current_line_key.as_str(),
-                        &self.offset_map,
                     );
                     continue;
                 };
@@ -82,7 +100,13 @@ impl LocalToLocal {
                 Err(e) => {
                     log::error!("{}", e);
                     save_error_record(&self.error_conter, record.clone(), &mut error_file);
-                    self.offset_map.insert(offset_key.clone(), record.offset);
+                    self.offset_map.insert(
+                        offset_key.clone(),
+                        FilePosition {
+                            offset: record.offset,
+                            line_num: record.line_num,
+                        },
+                    );
                     continue;
                 }
             };
@@ -97,7 +121,13 @@ impl LocalToLocal {
                 Err(e) => {
                     log::error!("{}", e);
                     save_error_record(&self.error_conter, record.clone(), &mut error_file);
-                    self.offset_map.insert(offset_key.clone(), record.offset);
+                    self.offset_map.insert(
+                        offset_key.clone(),
+                        FilePosition {
+                            offset: record.offset,
+                            line_num: record.line_num,
+                        },
+                    );
                     continue;
                 }
             };
@@ -105,7 +135,13 @@ impl LocalToLocal {
             // 目标object存在则不推送
             if self.target_exist_skip {
                 if t_path.exists() {
-                    self.offset_map.insert(offset_key.clone(), record.offset);
+                    self.offset_map.insert(
+                        offset_key.clone(),
+                        FilePosition {
+                            offset: record.offset,
+                            line_num: record.line_num,
+                        },
+                    );
                     continue;
                 }
             }
@@ -155,7 +191,13 @@ impl LocalToLocal {
                 _ => (),
             };
 
-            self.offset_map.insert(offset_key.clone(), record.offset);
+            self.offset_map.insert(
+                offset_key.clone(),
+                FilePosition {
+                    offset: record.offset,
+                    line_num: record.line_num,
+                },
+            );
         }
 
         let _ = error_file.flush();
