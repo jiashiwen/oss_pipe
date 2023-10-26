@@ -6,12 +6,12 @@ use std::{
 use anyhow::Error;
 use dashmap::DashMap;
 
-use crate::{checkpoint::Record, exception::save_error_record};
+use crate::{checkpoint::ListedRecord, exception::save_error_record};
 
 pub fn err_process(
     error_conter: &Arc<AtomicUsize>,
     e: Error,
-    record: Record,
+    record: ListedRecord,
     err_file: &mut File,
     offset_key: &str,
     line_key: &str,

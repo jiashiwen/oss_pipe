@@ -13,7 +13,7 @@ use notify;
 use tokio::{runtime::Runtime, task::JoinSet};
 
 use crate::{
-    checkpoint::Record,
+    checkpoint::{FilePosition, ListedRecord, RecordDescription},
     commons::{Modified, NotifyWatcher},
     s3::aws_s3::OssClient,
 };
@@ -33,7 +33,7 @@ pub trait TaskActionsFromOss {
     async fn records_excutor(
         &self,
         joinset: &mut JoinSet<()>,
-        records: Vec<Record>,
+        records: Vec<ListedRecord>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, usize>>,
     );
@@ -55,12 +55,20 @@ pub trait TaskActionsFromLocal {
     // 错误记录重试
     fn error_record_retry(&self) -> Result<()>;
     // 记录执行器
+    // async fn records_excutor(
+    //     &self,
+    //     joinset: &mut JoinSet<()>,
+    //     records: Vec<Record>,
+    //     err_counter: Arc<AtomicUsize>,
+    //     offset_map: Arc<DashMap<String, FilePosition>>,
+    // );
     async fn records_excutor(
         &self,
         joinset: &mut JoinSet<()>,
-        records: Vec<Record>,
+        records: Vec<ListedRecord>,
         err_counter: Arc<AtomicUsize>,
-        offset_map: Arc<DashMap<String, usize>>,
+        offset_map: Arc<DashMap<String, FilePosition>>,
+        list_file: String,
     );
 
     // 生成对象列表
@@ -87,7 +95,7 @@ pub trait TaskActionsFromLocal {
         notify_file: &str,
         notify_file_size: Arc<AtomicU64>,
         err_counter: Arc<AtomicUsize>,
-        offset_map: Arc<DashMap<String, usize>>,
+        offset_map: Arc<DashMap<String, FilePosition>>,
         snapshot_stop_mark: Arc<AtomicBool>,
     );
     async fn modified_handler(&self, modified: Modified, client: &OssClient) -> Result<()>;

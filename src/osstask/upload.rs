@@ -1,24 +1,21 @@
-use crate::checkpoint::{Opt, RecordNew};
+use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::commons::{
     json_to_struct, read_lines, scan_folder_files_to_file, Modified, ModifyType, NotifyWatcher,
     PathType,
 };
-use crate::exception::{process_error, ErrRecord};
 use crate::s3::aws_s3::OssClient;
-use crate::{checkpoint::Record, s3::OSSDescription};
+use crate::{checkpoint::ListedRecord, s3::OSSDescription};
 use anyhow::anyhow;
-
 use anyhow::Result;
 use async_trait::async_trait;
-
 use dashmap::DashMap;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::from_str;
+use std::error::Error;
 use std::fs::File;
 use std::io::{self, BufRead, Seek, SeekFrom};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-
 use std::{
     fs::{self, OpenOptions},
     io::Write,
@@ -29,7 +26,6 @@ use tokio::runtime::Runtime;
 use tokio::task::JoinSet;
 use walkdir::WalkDir;
 
-use super::err_process;
 use super::task_actions::TaskActionsFromLocal;
 use super::TaskAttributes;
 use super::TaskType;
@@ -67,7 +63,6 @@ impl TaskActionsFromLocal for UploadTask {
             .filter_map(Result::ok)
             .filter(|e| !e.file_type().is_dir() && e.file_name().to_str().is_some())
         {
-            // let file_name = entry.file_name().to_str().unwrap();
             let file_name = match entry.file_name().to_str() {
                 Some(name) => name,
                 None => {
@@ -85,7 +80,8 @@ impl TaskActionsFromLocal for UploadTask {
                     for line in lines {
                         match line {
                             Ok(content) => {
-                                let record = match json_to_struct::<Record>(content.as_str()) {
+                                let record = match json_to_struct::<ListedRecord>(content.as_str())
+                                {
                                     Ok(r) => r,
                                     Err(e) => {
                                         log::error!("{}", e);
@@ -106,13 +102,14 @@ impl TaskActionsFromLocal for UploadTask {
                             local_path: self.local_path.clone(),
                             target: self.target.clone(),
                             err_counter: Arc::new(AtomicUsize::new(0)),
-                            offset_map: Arc::new(DashMap::<String, usize>::new()),
+                            offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
                             meta_dir: self.task_attributes.meta_dir.clone(),
                             target_exist_skip: self.task_attributes.target_exists_skip,
                             large_file_size: self.task_attributes.large_file_size,
                             multi_part_chunk: self.task_attributes.multi_part_chunk,
+                            list_file: p.to_string(),
                         };
-                        let _ = upload.exec_records(record_vec);
+                        let _ = upload.exec_listed_records(record_vec);
                     }
                 }
                 let _ = fs::remove_file(p);
@@ -125,9 +122,10 @@ impl TaskActionsFromLocal for UploadTask {
     async fn records_excutor(
         &self,
         joinset: &mut JoinSet<()>,
-        records: Vec<Record>,
+        records: Vec<ListedRecord>,
         err_counter: Arc<AtomicUsize>,
-        offset_map: Arc<DashMap<String, usize>>,
+        offset_map: Arc<DashMap<std::string::String, FilePosition>>,
+        list_file: String,
     ) {
         let upload = UpLoadExecutor {
             local_path: self.local_path.clone(),
@@ -138,10 +136,11 @@ impl TaskActionsFromLocal for UploadTask {
             target_exist_skip: false,
             large_file_size: self.task_attributes.large_file_size,
             multi_part_chunk: self.task_attributes.multi_part_chunk,
+            list_file,
         };
 
         joinset.spawn(async move {
-            if let Err(e) = upload.exec_records(records).await {
+            if let Err(e) = upload.exec_listed_records(records).await {
                 upload
                     .err_counter
                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -184,7 +183,7 @@ impl TaskActionsFromLocal for UploadTask {
         notify_file: &str,
         notify_file_size: Arc<AtomicU64>,
         err_counter: Arc<AtomicUsize>,
-        offset_map: Arc<DashMap<String, usize>>,
+        offset_map: Arc<DashMap<String, FilePosition>>,
         snapshot_stop_mark: Arc<AtomicBool>,
     ) {
         let client = match self.target.gen_oss_client() {
@@ -200,9 +199,12 @@ impl TaskActionsFromLocal for UploadTask {
 
         let subffix = offset.to_string();
         let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
-        let mut current_line_key = CURRENT_LINE_PREFIX.to_string();
         offset_key.push_str(&subffix);
-        current_line_key.push_str(&line_num.to_string());
+        let error_file_name = gen_file_path(
+            &self.task_attributes.meta_dir,
+            ERROR_RECORD_PREFIX,
+            &subffix,
+        );
 
         loop {
             if notify_file_size.load(Ordering::SeqCst).le(&offset) {
@@ -222,7 +224,7 @@ impl TaskActionsFromLocal for UploadTask {
                 Ok(f) => f,
                 Err(e) => {
                     log::error!("{}", e);
-                    continue;
+                    return;
                 }
             };
 
@@ -230,12 +232,6 @@ impl TaskActionsFromLocal for UploadTask {
                 log::error!("{}", e);
                 continue;
             };
-
-            let error_file_name = gen_file_path(
-                &self.task_attributes.meta_dir,
-                ERROR_RECORD_PREFIX,
-                &subffix,
-            );
 
             let mut error_file = OpenOptions::new()
                 .create(true)
@@ -245,11 +241,12 @@ impl TaskActionsFromLocal for UploadTask {
                 .unwrap();
 
             let lines = io::BufReader::new(file).lines();
+            let mut offset_usize = TryInto::<usize>::try_into(offset).unwrap();
             for line in lines {
                 line_num += 1;
                 if let Result::Ok(key) = line {
                     // Modifed 解析
-                    offset += TryInto::<u64>::try_into(key.len()).unwrap();
+                    offset_usize += key.len();
                     match from_str::<Modified>(key.as_str()) {
                         Ok(m) => {
                             let mut target_path = m.path.clone();
@@ -273,9 +270,9 @@ impl TaskActionsFromLocal for UploadTask {
                             }
 
                             if PathType::File.eq(&m.path_type) {
-                                let r = match m.modify_type {
+                                match m.modify_type {
                                     ModifyType::Create | ModifyType::Modify => {
-                                        client
+                                        if let Err(e) = client
                                             .upload_from_local(
                                                 &self.target.bucket,
                                                 target_path.as_str(),
@@ -284,41 +281,56 @@ impl TaskActionsFromLocal for UploadTask {
                                                 self.task_attributes.multi_part_chunk,
                                             )
                                             .await
+                                        {
+                                            let recorddesc = RecordDescription {
+                                                source_key: m.path.clone(),
+                                                target_key: target_path.clone(),
+                                                list_file_path: notify_file.to_string(),
+                                                list_file_position: FilePosition {
+                                                    offset: offset_usize,
+                                                    line_num,
+                                                },
+                                                option: Opt::PUT,
+                                            };
+                                            recorddesc.error_handler(
+                                                e,
+                                                &err_counter,
+                                                &offset_map,
+                                                &mut error_file,
+                                                offset_key.as_str(),
+                                            );
+                                        }
                                     }
                                     ModifyType::Delete => {
-                                        match client
+                                        if let Err(e) = client
                                             .remove_object(
                                                 &self.target.bucket,
                                                 target_path.as_str(),
                                             )
                                             .await
                                         {
-                                            Ok(_) => Ok(()),
-                                            Err(e) => Err(anyhow!("{}", e.to_string())),
+                                            let recorddesc = RecordDescription {
+                                                source_key: m.path.clone(),
+                                                target_key: target_path.clone(),
+                                                list_file_path: notify_file.to_string(),
+                                                list_file_position: FilePosition {
+                                                    offset: offset_usize,
+                                                    line_num,
+                                                },
+                                                option: Opt::REMOVE,
+                                            };
+                                            recorddesc.error_handler(
+                                                anyhow!("{}", e),
+                                                &err_counter,
+                                                &offset_map,
+                                                &mut error_file,
+                                                offset_key.as_str(),
+                                            );
                                         }
                                     }
 
-                                    ModifyType::Unkown => Ok(()),
+                                    ModifyType::Unkown => {}
                                 };
-                                if let Err(e) = r {
-                                    let record = ErrRecord {
-                                        source: m.path.clone(),
-                                        target: target_path,
-                                        list_file_offset: TryInto::<usize>::try_into(offset)
-                                            .unwrap(),
-                                        list_file_line_num: line_num,
-                                        list_file_path: notify_file.to_string(),
-                                    };
-                                    process_error(
-                                        &err_counter,
-                                        e,
-                                        record,
-                                        &mut error_file,
-                                        &offset_key,
-                                        &current_line_key,
-                                        &offset_map,
-                                    )
-                                }
                             };
                         }
                         Err(e) => {
@@ -328,7 +340,7 @@ impl TaskActionsFromLocal for UploadTask {
                     };
                 }
             }
-            // offset_map.remove(&offset_key);
+
             let _ = error_file.flush();
             match error_file.metadata() {
                 Ok(meta) => {
@@ -340,8 +352,12 @@ impl TaskActionsFromLocal for UploadTask {
             };
             offset = notify_file_size.load(Ordering::SeqCst);
             let offset_usize = TryInto::<usize>::try_into(offset).unwrap();
-            offset_map.insert(offset_key.clone(), offset_usize);
-            offset_map.insert(current_line_key.clone(), line_num);
+            let position = FilePosition {
+                offset: offset_usize,
+                line_num,
+            };
+            offset_map.insert(offset_key.clone(), position);
+
             println!("{}", offset);
         }
         let _ = offset_map.remove(&offset_key);
@@ -395,9 +411,9 @@ impl UploadTask {
         &self,
         modified: Modified,
         list_file_path: &str,
-        offset: u64,
+        offset: usize,
         line_num: usize,
-    ) -> Option<RecordNew> {
+    ) -> Option<RecordDescription> {
         let mut target_path = modified.path.clone();
         match self.local_path.ends_with("/") {
             true => target_path.drain(..self.local_path.len()),
@@ -409,20 +425,18 @@ impl UploadTask {
         let mut recordnew = None;
         if PathType::File.eq(&modified.path_type) {
             recordnew = match modified.modify_type {
-                ModifyType::Create | ModifyType::Modify => Some(RecordNew {
+                ModifyType::Create | ModifyType::Modify => Some(RecordDescription {
                     source_key: modified.path.clone(),
                     target_key: target_path,
                     list_file_path: list_file_path.to_string(),
-                    list_file_offset: offset,
-                    list_file_line_num: line_num,
+                    list_file_position: FilePosition { offset, line_num },
                     option: Opt::PUT,
                 }),
-                ModifyType::Delete => Some(RecordNew {
+                ModifyType::Delete => Some(RecordDescription {
                     source_key: modified.path.clone(),
                     target_key: target_path,
                     list_file_path: list_file_path.to_string(),
-                    list_file_offset: offset,
-                    list_file_line_num: line_num,
+                    list_file_position: FilePosition { offset, line_num },
                     option: Opt::REMOVE,
                 }),
                 ModifyType::Unkown => None,
@@ -437,35 +451,28 @@ pub struct UpLoadExecutor {
     pub local_path: String,
     pub target: OSSDescription,
     pub err_counter: Arc<AtomicUsize>,
-    pub offset_map: Arc<DashMap<String, usize>>,
+    pub offset_map: Arc<DashMap<String, FilePosition>>,
     pub meta_dir: String,
     pub target_exist_skip: bool,
     pub large_file_size: usize,
     pub multi_part_chunk: usize,
+    pub list_file: String,
 }
 
 impl UpLoadExecutor {
-    pub async fn exec_records(&self, records: Vec<Record>) -> Result<()> {
+    pub async fn exec_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
-        let mut current_line_key = CURRENT_LINE_PREFIX.to_string();
         offset_key.push_str(&subffix);
-        current_line_key.push_str(&records[0].line_num.to_string());
-        // 先写首行日志，避免错误漏记
-        self.offset_map
-            .insert(offset_key.clone(), records[0].offset);
-        // 与记录当前行数
-        self.offset_map
-            .insert(current_line_key.clone(), records[0].line_num);
 
-        let subffix = records[0].offset.to_string();
-        let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
-        offset_key.push_str(&subffix);
+        // 先写首行日志，避免错误漏记
+        let positon: FilePosition = FilePosition {
+            offset: records[0].offset,
+            line_num: records[0].line_num,
+        };
+        self.offset_map.insert(offset_key.clone(), positon);
+
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
-
-        // 先写首行日志，避免错误漏记
-        self.offset_map
-            .insert(offset_key.clone(), records[0].offset);
 
         let mut error_file = OpenOptions::new()
             .create(true)
@@ -480,7 +487,11 @@ impl UpLoadExecutor {
             // 判断源文件是否存在
             let s_path = Path::new(s_file_name.as_str());
             if !s_path.exists() {
-                self.offset_map.insert(offset_key.clone(), record.offset);
+                let positon = FilePosition {
+                    offset: record.offset,
+                    line_num: record.line_num,
+                };
+                self.offset_map.insert(offset_key.clone(), positon);
                 continue;
             }
 
@@ -500,20 +511,33 @@ impl UpLoadExecutor {
                 match target_obj_exists {
                     Ok(b) => {
                         if b {
-                            self.offset_map.insert(offset_key.clone(), record.offset);
+                            let positon = FilePosition {
+                                offset: record.offset,
+                                line_num: record.line_num,
+                            };
+                            self.offset_map.insert(offset_key.clone(), positon);
                             continue;
                         }
                     }
                     Err(e) => {
-                        err_process(
+                        let record_desc = RecordDescription {
+                            source_key: s_file_name.clone(),
+                            target_key: target_key.clone(),
+                            list_file_path: self.list_file.clone(),
+                            list_file_position: FilePosition {
+                                offset: record.offset,
+                                line_num: record.line_num,
+                            },
+                            option: Opt::PUT,
+                        };
+                        record_desc.error_handler(
+                            e,
                             &self.err_counter,
-                            anyhow!(e.to_string()),
-                            record.clone(),
+                            &self.offset_map,
                             &mut error_file,
                             offset_key.as_str(),
-                            current_line_key.as_str(),
-                            &self.offset_map,
                         );
+
                         continue;
                     }
                 }
@@ -529,21 +553,33 @@ impl UpLoadExecutor {
                 )
                 .await
             {
-                err_process(
+                let record_desc = RecordDescription {
+                    source_key: s_file_name.clone(),
+                    target_key: target_key.clone(),
+                    list_file_path: self.list_file.clone(),
+                    list_file_position: FilePosition {
+                        offset: record.offset,
+                        line_num: record.line_num,
+                    },
+                    option: Opt::PUT,
+                };
+                record_desc.error_handler(
+                    e,
                     &self.err_counter,
-                    anyhow!(e.to_string()),
-                    record,
+                    &self.offset_map,
                     &mut error_file,
                     offset_key.as_str(),
-                    current_line_key.as_str(),
-                    &self.offset_map,
                 );
                 continue;
             }
 
-            self.offset_map.insert(offset_key.clone(), record.offset);
-            self.offset_map
-                .insert(current_line_key.clone(), record.line_num);
+            self.offset_map.insert(
+                offset_key.clone(),
+                FilePosition {
+                    offset: record.offset,
+                    line_num: record.line_num,
+                },
+            );
         }
         self.offset_map.remove(&offset_key);
         let _ = error_file.flush();
@@ -559,119 +595,96 @@ impl UpLoadExecutor {
         Ok(())
     }
 
-    // pub async fn exec_recordnews(&self, records: Vec<RecordNew>) -> Result<()> {
-    //     let subffix = records[0].list_file_offset.to_string();
-    //     let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
-    //     let mut current_line_key = CURRENT_LINE_PREFIX.to_string();
-    //     offset_key.push_str(&subffix);
-    //     current_line_key.push_str(&records[0].list_file_line_num.to_string());
-    //     // 先写首行日志，避免错误漏记
-    //     self.offset_map
-    //         .insert(offset_key.clone(), records[0].list_file_offset);
-    //     // 与记录当前行数
-    //     self.offset_map
-    //         .insert(current_line_key.clone(), records[0].list_file_line_num);
+    pub async fn exec_recorddescriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
+        let subffix = records[0].list_file_position.offset.to_string();
+        let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
+        offset_key.push_str(&subffix);
 
-    //     let subffix = records[0].offset.to_string();
-    //     let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
-    //     offset_key.push_str(&subffix);
-    //     let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
+        // 先写首行日志，避免错误漏记
+        self.offset_map
+            .insert(offset_key.clone(), records[0].list_file_position.clone());
 
-    //     // 先写首行日志，避免错误漏记
-    //     self.offset_map
-    //         .insert(offset_key.clone(), records[0].offset);
+        let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
 
-    //     let mut error_file = OpenOptions::new()
-    //         .create(true)
-    //         .write(true)
-    //         .truncate(true)
-    //         .open(error_file_name.as_str())?;
+        let mut error_file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(error_file_name.as_str())?;
 
-    //     let c_t = self.target.gen_oss_client()?;
-    //     for record in records {
-    //         let s_file_name = gen_file_path(self.local_path.as_str(), &record.key.as_str(), "");
+        let c_t = self.target.gen_oss_client()?;
+        for record in records {
+            // 判断源文件是否存在
+            let s_path = Path::new(&record.source_key);
+            if !s_path.exists() {
+                self.offset_map
+                    .insert(offset_key.clone(), record.list_file_position.clone());
+                continue;
+            }
 
-    //         // 判断源文件是否存在
-    //         let s_path = Path::new(s_file_name.as_str());
-    //         if !s_path.exists() {
-    //             self.offset_map.insert(offset_key.clone(), record.offset);
-    //             continue;
-    //         }
+            // 目标object存在则不推送
+            if self.target_exist_skip {
+                match c_t
+                    .object_exists(self.target.bucket.as_str(), &record.target_key)
+                    .await
+                {
+                    Ok(b) => {
+                        if b {
+                            self.offset_map
+                                .insert(offset_key.clone(), record.list_file_position.clone());
+                            continue;
+                        }
+                    }
+                    Err(e) => {
+                        record.error_handler(
+                            e,
+                            &self.err_counter,
+                            &self.offset_map,
+                            &mut error_file,
+                            offset_key.as_str(),
+                        );
 
-    //         let mut s_file = OpenOptions::new().read(true).open(s_file_name.as_str())?;
+                        continue;
+                    }
+                }
+            }
 
-    //         let mut target_key = "".to_string();
-    //         if let Some(s) = self.target.prefix.clone() {
-    //             target_key.push_str(&s);
-    //         };
-    //         target_key.push_str(&record.key);
+            if let Err(e) = c_t
+                .upload_from_local(
+                    self.target.bucket.as_str(),
+                    &record.target_key,
+                    &record.source_key,
+                    self.large_file_size,
+                    self.multi_part_chunk,
+                )
+                .await
+            {
+                record.error_handler(
+                    e,
+                    &self.err_counter,
+                    &self.offset_map,
+                    &mut error_file,
+                    offset_key.as_str(),
+                );
+                continue;
+            }
 
-    //         // 目标object存在则不推送
-    //         if self.target_exist_skip {
-    //             let target_obj_exists = c_t
-    //                 .object_exists(self.target.bucket.as_str(), target_key.as_str())
-    //                 .await;
-    //             match target_obj_exists {
-    //                 Ok(b) => {
-    //                     if b {
-    //                         self.offset_map.insert(offset_key.clone(), record.offset);
-    //                         continue;
-    //                     }
-    //                 }
-    //                 Err(e) => {
-    //                     err_process(
-    //                         &self.err_counter,
-    //                         anyhow!(e.to_string()),
-    //                         record.clone(),
-    //                         &mut error_file,
-    //                         offset_key.as_str(),
-    //                         current_line_key.as_str(),
-    //                         &self.offset_map,
-    //                     );
-    //                     continue;
-    //                 }
-    //             }
-    //         }
+            self.offset_map
+                .insert(offset_key.clone(), record.list_file_position.clone());
+        }
+        self.offset_map.remove(&offset_key);
+        let _ = error_file.flush();
+        match error_file.metadata() {
+            Ok(meta) => {
+                if meta.len() == 0 {
+                    let _ = fs::remove_file(error_file_name.as_str());
+                }
+            }
+            Err(_) => {}
+        };
 
-    //         if let Err(e) = c_t
-    //             .upload_from_local(
-    //                 self.target.bucket.as_str(),
-    //                 target_key.as_str(),
-    //                 &s_file_name,
-    //                 self.large_file_size,
-    //                 self.multi_part_chunk,
-    //             )
-    //             .await
-    //         {
-    //             err_process(
-    //                 &self.err_counter,
-    //                 anyhow!(e.to_string()),
-    //                 record,
-    //                 &mut error_file,
-    //                 offset_key.as_str(),
-    //                 current_line_key.as_str(),
-    //                 &self.offset_map,
-    //             );
-    //             continue;
-    //         }
-
-    //         self.offset_map.insert(offset_key.clone(), record.offset);
-    //         self.offset_map
-    //             .insert(current_line_key.clone(), record.line_num);
-    //     }
-    //     self.offset_map.remove(&offset_key);
-    //     let _ = error_file.flush();
-    //     match error_file.metadata() {
-    //         Ok(meta) => {
-    //             if meta.len() == 0 {
-    //                 let _ = fs::remove_file(error_file_name.as_str());
-    //             }
-    //         }
-    //         Err(_) => {}
-    //     };
-
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
     async fn modified_handler(&self, modified: Modified, client: &OssClient) {
         let mut target_path = modified.path.clone();

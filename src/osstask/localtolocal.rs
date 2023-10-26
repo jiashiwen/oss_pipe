@@ -1,4 +1,6 @@
-use crate::{checkpoint::Record, commons::multi_parts_copy_file, exception::save_error_record};
+use crate::{
+    checkpoint::ListedRecord, commons::multi_parts_copy_file, exception::save_error_record,
+};
 use anyhow::anyhow;
 use anyhow::Result;
 use dashmap::DashMap;
@@ -25,7 +27,7 @@ pub struct LocalToLocal {
 }
 
 impl LocalToLocal {
-    pub async fn exec(&self, records: Vec<Record>) -> Result<()> {
+    pub async fn exec(&self, records: Vec<ListedRecord>) -> Result<()> {
         // let mut line_num = self.begin_line_number;
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_EXEC_PREFIX.to_string();

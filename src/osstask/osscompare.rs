@@ -1,4 +1,4 @@
-use crate::{checkpoint::Record, exception::save_error_record, s3::OSSDescription};
+use crate::{checkpoint::ListedRecord, exception::save_error_record, s3::OSSDescription};
 use anyhow::Result;
 use aws_sdk_s3::{error::GetObjectErrorKind, output::GetObjectOutput};
 use dashmap::DashMap;
@@ -69,7 +69,7 @@ pub struct OssCompare {
 impl OssCompare {
     // todo
     // key filter 正则表达式支持
-    pub async fn compare(&self, records: Vec<Record>) -> Result<()> {
+    pub async fn compare(&self, records: Vec<ListedRecord>) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
         offset_key.push_str(&subffix);

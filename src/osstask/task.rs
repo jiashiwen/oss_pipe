@@ -13,9 +13,10 @@ use std::{
 };
 
 use crate::{
-    checkpoint::{get_task_checkpoint, CheckPoint, Record},
+    checkpoint::{get_task_checkpoint, CheckPoint, FilePosition, ListedRecord},
     commons::{
-        exec_processbar, json_to_struct, read_lines, read_yaml_file, scan_folder_files_to_file,
+        exec_processbar, exec_processbar_with_file_position, json_to_struct, read_lines,
+        read_yaml_file, scan_folder_files_to_file,
     },
     osstask::LocalToLocal,
     s3::OSSDescription,
@@ -317,7 +318,7 @@ impl TaskLocalToLocal {
         rt.block_on(async {
             let map = Arc::clone(&offset_map);
             let stop_mark = Arc::clone(&stop_offset_save_mark);
-            let mut vec_keys: Vec<Record> = vec![];
+            let mut vec_keys: Vec<ListedRecord> = vec![];
             let obj_list = object_list_file.clone();
             task::spawn(async move {
                 snapshot_offset_to_file(
@@ -345,7 +346,7 @@ impl TaskLocalToLocal {
                     file_position += len;
                     line_num += 1;
                     if !key.ends_with("/") {
-                        let record = Record {
+                        let record = ListedRecord {
                             key,
                             offset: file_position,
                             line_num,
@@ -472,7 +473,8 @@ impl TaskLocalToLocal {
                     for line in lines {
                         match line {
                             Ok(content) => {
-                                let record = match json_to_struct::<Record>(content.as_str()) {
+                                let record = match json_to_struct::<ListedRecord>(content.as_str())
+                                {
                                     Ok(r) => r,
                                     Err(e) => {
                                         log::error!("{}", e);
@@ -800,7 +802,7 @@ impl TaskOssCompare {
         let mut file = File::open(object_list_file.as_str())?;
         rt.block_on(async {
             let mut file_position = 0;
-            let mut vec_keys: Vec<Record> = vec![];
+            let mut vec_keys: Vec<ListedRecord> = vec![];
 
             if self.start_from_checkpoint {
                 //ToDo 错误补偿逻辑
@@ -850,7 +852,7 @@ impl TaskOssCompare {
                     file_position += len;
                     line_num += 1;
                     if !key.ends_with("/") {
-                        let record = Record {
+                        let record = ListedRecord {
                             key,
                             offset: file_position,
                             line_num,
@@ -1057,7 +1059,7 @@ where
 
     rt.block_on(async {
         let mut file_position = 0;
-        let mut vec_keys: Vec<Record> = vec![];
+        let mut vec_keys: Vec<ListedRecord> = vec![];
 
         if task_attributes.start_from_checkpoint {
             // 执行错误补偿，重新执行错误日志中的记录
@@ -1125,7 +1127,7 @@ where
                 file_position += len;
                 line_num += 1;
                 if !key.ends_with("/") {
-                    let record = Record {
+                    let record = ListedRecord {
                         key,
                         offset: file_position,
                         line_num,
@@ -1232,7 +1234,7 @@ where
     let error_conter = Arc::new(AtomicUsize::new(0));
     // 任务停止标准，用于通知所有协程任务结束
     let snapshot_stop_mark = Arc::new(AtomicBool::new(false));
-    let offset_map = Arc::new(DashMap::<String, usize>::new());
+    let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
     // 增量任务计数器，用于记录notify file 的文件大小
     let notify_file_size = Arc::new(AtomicU64::new(0));
@@ -1323,7 +1325,7 @@ where
 
     rt.block_on(async {
         let mut file_position = 0;
-        let mut vec_keys: Vec<Record> = vec![];
+        let mut vec_keys: Vec<ListedRecord> = vec![];
 
         if task_attributes.start_from_checkpoint {
             // 执行错误补偿，重新执行错误日志中的记录
@@ -1352,31 +1354,17 @@ where
         }
 
         // 启动checkpoint记录线程
-        let map = Arc::clone(&offset_map);
-        let stop_mark: Arc<AtomicBool> = Arc::clone(&snapshot_stop_mark);
-        let obj_list = object_list_file.clone();
-        let save_to = check_point_file.clone();
-        let notify_store = notify_file.clone();
-
+        let status_saver = TaskStatusSaver {
+            save_to: check_point_file.clone(),
+            execute_file_path: object_list_file.clone(),
+            stop_mark: Arc::clone(&snapshot_stop_mark),
+            list_file_positon_map: Arc::clone(&offset_map),
+            file_for_notify: notify_file.clone(),
+            task_running_status: TaskRunningStatus::Stock,
+            interval: 3,
+        };
         sys_set.spawn(async move {
-            let checkpoint = CheckPoint {
-                execute_file_path: obj_list.clone(),
-                execute_position: 0,
-                line_number: 0,
-                task_running_satus: TaskRunningStatus::Stock,
-                file_for_notify: notify_store.clone(),
-            };
-            let _ = checkpoint.save_to(save_to.as_str());
-            snapshot_offset_to_file(
-                save_to.as_str(),
-                obj_list,
-                stop_mark,
-                map,
-                notify_store,
-                TaskRunningStatus::Stock,
-                3,
-            )
-            .await;
+            status_saver.snapshot_to_file().await;
         });
 
         // 持续同步逻辑: 启动本地目录notify 线程
@@ -1414,7 +1402,9 @@ where
         let stop_mark = Arc::clone(&snapshot_stop_mark);
         let total = TryInto::<u64>::try_into(total_lines).unwrap();
         sys_set.spawn(async move {
-            exec_processbar(total, stop_mark, map, CURRENT_LINE_PREFIX).await;
+            // Todo 调整进度条
+            // exec_processbar(total, stop_mark, map, CURRENT_LINE_PREFIX).await;
+            exec_processbar_with_file_position(total, stop_mark, map, OFFSET_PREFIX).await;
         });
 
         // 按列表传输object from source to target
@@ -1431,7 +1421,7 @@ where
                 file_position += len;
                 line_num += 1;
                 if !key.ends_with("/") {
-                    let record = Record {
+                    let record = ListedRecord {
                         key,
                         offset: file_position,
                         line_num,
@@ -1471,6 +1461,7 @@ where
                     vk,
                     Arc::clone(&error_conter),
                     Arc::clone(&offset_map),
+                    object_list_file.clone(),
                 )
                 .await;
 
@@ -1493,6 +1484,7 @@ where
                 vk,
                 Arc::clone(&error_conter),
                 Arc::clone(&offset_map),
+                object_list_file.clone(),
             )
             .await;
         }
@@ -1534,7 +1526,7 @@ where
             match checkpoint.file_for_notify {
                 Some(f) => {
                     let stop_mark = Arc::new(AtomicBool::new(false));
-                    let offset_map = Arc::new(DashMap::<String, usize>::new());
+                    let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
                     // 执行过程中错误数统计
                     // let err_conter = Arc::clone(&error_conter);
                     let increment_file_size = Arc::clone(&notify_file_size);
@@ -1543,7 +1535,7 @@ where
                         save_to: check_point_file.clone(),
                         execute_file_path: notify_file.clone().unwrap(),
                         stop_mark: Arc::clone(&stop_mark),
-                        offset_map: Arc::clone(&offset_map),
+                        list_file_positon_map: Arc::clone(&offset_map),
                         file_for_notify: notify_file.clone(),
                         task_running_status: TaskRunningStatus::Increment,
                         interval: 3,

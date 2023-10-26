@@ -1,5 +1,5 @@
 use crate::{
-    checkpoint::Record,
+    checkpoint::ListedRecord,
     commons::{json_to_struct, read_lines},
     exception::save_error_record,
     s3::OSSDescription,
@@ -66,7 +66,8 @@ impl TaskActionsFromOss for TransferTask {
                     for line in lines {
                         match line {
                             Ok(content) => {
-                                let record = match json_to_struct::<Record>(content.as_str()) {
+                                let record = match json_to_struct::<ListedRecord>(content.as_str())
+                                {
                                     Ok(r) => r,
                                     Err(e) => {
                                         log::error!("{}", e);
@@ -108,7 +109,7 @@ impl TaskActionsFromOss for TransferTask {
     async fn records_excutor(
         &self,
         joinset: &mut JoinSet<()>,
-        records: Vec<Record>,
+        records: Vec<ListedRecord>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, usize>>,
     ) {
@@ -210,7 +211,7 @@ pub struct TransferRecordsExecutor {
 }
 
 impl TransferRecordsExecutor {
-    pub async fn exec(&self, records: Vec<Record>) -> Result<()> {
+    pub async fn exec(&self, records: Vec<ListedRecord>) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
         offset_key.push_str(&subffix);
@@ -244,12 +245,14 @@ impl TransferRecordsExecutor {
                     log::error!("{}", e);
                     // 源端文件不存在按传输成功处理
                     match e.into_service_error().kind {
-                        GetObjectErrorKind::InvalidObjectState(_)
-                        | GetObjectErrorKind::Unhandled(_) => {
+                        // GetObjectErrorKind::InvalidObjectState(_)
+                        // | GetObjectErrorKind::Unhandled(_) => {
+                        //     save_error_record(&self.err_counter, record.clone(), &mut error_file);
+                        // }
+                        GetObjectErrorKind::NoSuchKey(_) => {}
+                        _ => {
                             save_error_record(&self.err_counter, record.clone(), &mut error_file);
                         }
-                        GetObjectErrorKind::NoSuchKey(_) => {}
-                        _ => {}
                     }
 
                     self.offset_map.insert(offset_key.clone(), record.offset);
