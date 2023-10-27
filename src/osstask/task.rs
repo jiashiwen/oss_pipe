@@ -285,7 +285,7 @@ impl TaskLocalToLocal {
         if self.start_from_checkpoint {
             // 执行错误补偿，重新执行错误日志中的记录
             self.error_retry()?;
-            // let checkpoint = get_task_checkpoint(CHECK_POINT_FILE_NAME, self.meta_dir.as_str())?;
+
             let checkpoint = get_task_checkpoint(CHECK_POINT_FILE_NAME)?;
             let seek_offset = TryInto::<u64>::try_into(checkpoint.execute_file_position.offset)?;
             file.seek(SeekFrom::Start(seek_offset))?;
@@ -298,11 +298,7 @@ impl TaskLocalToLocal {
             .build()?;
 
         rt.block_on(async {
-            let map = Arc::clone(&offset_map);
-            let stop_mark = Arc::clone(&snapshot_stop_mark);
             let mut vec_keys: Vec<ListedRecord> = vec![];
-            let obj_list = object_list_file.clone();
-
             let status_saver = TaskStatusSaver {
                 save_to: check_point_file.clone(),
                 execute_file_path: object_list_file.clone(),
@@ -317,6 +313,7 @@ impl TaskLocalToLocal {
             });
             // 按列表传输object from source to target
             let lines = io::BufReader::new(file).lines();
+
             let mut line_num = 0;
             for line in lines {
                 // 若错误达到上限，则停止任务
@@ -371,7 +368,7 @@ impl TaskLocalToLocal {
                         offset_map: Arc::clone(&offset_map),
                         list_file_path: object_list_file.clone(),
                     };
-                    // let pre_offset = pre_batch_last_offset;
+
                     set.spawn(async move {
                         if let Err(e) = localtolocal.exec(vk).await {
                             localtolocal
