@@ -203,6 +203,8 @@ impl TaskActionsFromLocal for UploadTask {
             &subffix,
         );
 
+        // Todo
+        // 重构，抽象modify handler函数
         loop {
             if notify_file_size.load(Ordering::SeqCst).le(&offset) {
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
@@ -470,87 +472,34 @@ impl UpLoadExecutor {
         self.offset_map.insert(offset_key.clone(), positon);
 
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
-
         let mut error_file = OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
             .open(error_file_name.as_str())?;
 
-        let c_t = self.target.gen_oss_client()?;
+        let target_oss_client = self.target.gen_oss_client()?;
         for record in records {
-            let s_file_name = gen_file_path(self.local_path.as_str(), &record.key.as_str(), "");
-
-            // 判断源文件是否存在
-            let s_path = Path::new(s_file_name.as_str());
-            if !s_path.exists() {
-                let positon = FilePosition {
-                    offset: record.offset,
-                    line_num: record.line_num,
-                };
-                self.offset_map.insert(offset_key.clone(), positon);
-                continue;
-            }
-
-            let mut s_file = OpenOptions::new().read(true).open(s_file_name.as_str())?;
-
+            let source_file_path =
+                gen_file_path(self.local_path.as_str(), &record.key.as_str(), "");
             let mut target_key = "".to_string();
             if let Some(s) = self.target.prefix.clone() {
                 target_key.push_str(&s);
             };
             target_key.push_str(&record.key);
 
-            // 目标object存在则不推送
-            if self.target_exist_skip {
-                let target_obj_exists = c_t
-                    .object_exists(self.target.bucket.as_str(), target_key.as_str())
-                    .await;
-                match target_obj_exists {
-                    Ok(b) => {
-                        if b {
-                            let positon = FilePosition {
-                                offset: record.offset,
-                                line_num: record.line_num,
-                            };
-                            self.offset_map.insert(offset_key.clone(), positon);
-                            continue;
-                        }
-                    }
-                    Err(e) => {
-                        let record_desc = RecordDescription {
-                            source_key: s_file_name.clone(),
-                            target_key: target_key.clone(),
-                            list_file_path: self.list_file_path.clone(),
-                            list_file_position: FilePosition {
-                                offset: record.offset,
-                                line_num: record.line_num,
-                            },
-                            option: Opt::PUT,
-                        };
-                        record_desc.error_handler(
-                            e,
-                            &self.err_counter,
-                            &self.offset_map,
-                            &mut error_file,
-                            offset_key.as_str(),
-                        );
-                        continue;
-                    }
-                }
-            }
-
-            if let Err(e) = c_t
-                .upload_from_local(
-                    self.target.bucket.as_str(),
-                    target_key.as_str(),
-                    &s_file_name,
-                    self.large_file_size,
-                    self.multi_part_chunk,
+            if let Err(e) = self
+                .listed_record_handler(
+                    &offset_key,
+                    &record,
+                    &source_file_path,
+                    &target_oss_client,
+                    &target_key,
                 )
                 .await
             {
                 let record_desc = RecordDescription {
-                    source_key: s_file_name.clone(),
+                    source_key: source_file_path.clone(),
                     target_key: target_key.clone(),
                     list_file_path: self.list_file_path.clone(),
                     list_file_position: FilePosition {
@@ -566,7 +515,6 @@ impl UpLoadExecutor {
                     &mut error_file,
                     offset_key.as_str(),
                 );
-                continue;
             }
 
             self.offset_map.insert(
@@ -577,11 +525,12 @@ impl UpLoadExecutor {
                 },
             );
         }
+
         self.offset_map.remove(&offset_key);
         let _ = error_file.flush();
         match error_file.metadata() {
             Ok(meta) => {
-                if meta.len() == 0 {
+                if 0.eq(&meta.len()) {
                     let _ = fs::remove_file(error_file_name.as_str());
                 }
             }
@@ -591,6 +540,49 @@ impl UpLoadExecutor {
         Ok(())
     }
 
+    async fn listed_record_handler(
+        &self,
+        offset_key: &str,
+        record: &ListedRecord,
+        source_file: &str,
+        target_oss: &OssClient,
+        target_key: &str,
+    ) -> Result<()> {
+        // 判断源文件是否存在
+        let s_path = Path::new(source_file);
+        if !s_path.exists() {
+            let positon = FilePosition {
+                offset: record.offset,
+                line_num: record.line_num,
+            };
+            self.offset_map.insert(offset_key.to_string(), positon);
+            return Ok(());
+        }
+
+        // 目标object存在则不推送
+        if self.target_exist_skip {
+            let target_obj_exists = target_oss
+                .object_exists(self.target.bucket.as_str(), target_key)
+                .await?;
+
+            if target_obj_exists {
+                return Ok(());
+            }
+        }
+
+        target_oss
+            .upload_from_local(
+                self.target.bucket.as_str(),
+                target_key,
+                source_file,
+                self.large_file_size,
+                self.multi_part_chunk,
+            )
+            .await
+    }
+
+    //Todo
+    // 重构
     pub async fn exec_recorddescriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
         let subffix = records[0].list_file_position.offset.to_string();
         let mut offset_key = OFFSET_EXEC_PREFIX.to_string();

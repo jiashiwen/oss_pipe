@@ -1,7 +1,7 @@
 use crate::{
     checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
     commons::{json_to_struct, read_lines},
-    s3::OSSDescription,
+    s3::{aws_s3::OssClient, OSSDescription},
 };
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -94,7 +94,7 @@ impl TaskActionsFromOss for TransferTask {
                             offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
                             list_file_path: p.to_string(),
                         };
-                        let _ = copy.exec(record_vec);
+                        let _ = copy.exec_listed_records(record_vec);
                     }
                 }
 
@@ -126,7 +126,7 @@ impl TaskActionsFromOss for TransferTask {
         };
 
         joinset.spawn(async move {
-            if let Err(e) = transfer.exec(records).await {
+            if let Err(e) = transfer.exec_listed_records(records).await {
                 transfer
                     .err_counter
                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -212,7 +212,7 @@ pub struct TransferRecordsExecutor {
 }
 
 impl TransferRecordsExecutor {
-    pub async fn exec(&self, records: Vec<ListedRecord>) -> Result<()> {
+    pub async fn exec_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
         offset_key.push_str(&subffix);
@@ -242,148 +242,11 @@ impl TransferRecordsExecutor {
             };
             target_key.push_str(&record.key);
 
-            let resp = match c_s
-                .get_object(&self.source.bucket.as_str(), record.key.as_str())
+            if let Err(e) = self
+                .listed_record_handler(&offset_key, &record, &c_s, &c_t, &target_key)
                 .await
             {
-                core::result::Result::Ok(b) => b,
-                Err(e) => {
-                    log::error!("{}", e);
-                    // 源端文件不存在按传输成功处理
-                    let service_err = e.into_service_error();
-                    match service_err.kind {
-                        // GetObjectErrorKind::InvalidObjectState(_)
-                        // | GetObjectErrorKind::Unhandled(_) => {
-                        //     save_error_record(&self.err_counter, record.clone(), &mut error_file);
-                        // }
-                        GetObjectErrorKind::NoSuchKey(_) => {}
-                        _ => {
-                            let recorddesc = RecordDescription {
-                                source_key: record.key.clone(),
-                                target_key: target_key.clone(),
-                                list_file_path: self.list_file_path.clone(),
-                                list_file_position: FilePosition {
-                                    offset: record.offset,
-                                    line_num: record.line_num,
-                                },
-                                option: Opt::PUT,
-                            };
-                            recorddesc.error_handler(
-                                anyhow!("{}", service_err),
-                                &self.err_counter,
-                                &self.offset_map,
-                                &mut error_file,
-                                offset_key.as_str(),
-                            );
-                            continue;
-                        }
-                    }
-
-                    self.offset_map.insert(
-                        offset_key.clone(),
-                        FilePosition {
-                            offset: record.offset,
-                            line_num: record.line_num,
-                        },
-                    );
-                    continue;
-                }
-            };
-
-            // 目标object存在则不推送
-            if self.target_exist_skip {
-                let target_obj_exists = c_t
-                    .object_exists(self.target.bucket.as_str(), target_key.as_str())
-                    .await;
-                match target_obj_exists {
-                    Ok(b) => {
-                        if b {
-                            self.offset_map.insert(
-                                offset_key.clone(),
-                                FilePosition {
-                                    offset: record.offset,
-                                    line_num: record.line_num,
-                                },
-                            );
-                            continue;
-                        }
-                    }
-                    Err(e) => {
-                        let record_desc = RecordDescription {
-                            source_key: record.key.clone(),
-                            target_key: target_key.clone(),
-                            list_file_path: self.list_file_path.clone(),
-                            list_file_position: FilePosition {
-                                offset: record.offset,
-                                line_num: record.line_num,
-                            },
-                            option: Opt::PUT,
-                        };
-                        record_desc.error_handler(
-                            e,
-                            &self.err_counter,
-                            &self.offset_map,
-                            &mut error_file,
-                            offset_key.as_str(),
-                        );
-                        continue;
-                    }
-                }
-            }
-
-            let content_len = match usize::try_from(resp.content_length()) {
-                Ok(c) => c,
-                Err(e) => {
-                    let record_desc = RecordDescription {
-                        source_key: record.key.clone(),
-                        target_key: target_key.clone(),
-                        list_file_path: self.list_file_path.clone(),
-                        list_file_position: FilePosition {
-                            offset: record.offset,
-                            line_num: record.line_num,
-                        },
-                        option: Opt::PUT,
-                    };
-                    record_desc.error_handler(
-                        anyhow!("{}", e),
-                        &self.err_counter,
-                        &self.offset_map,
-                        &mut error_file,
-                        offset_key.as_str(),
-                    );
-                    continue;
-                }
-            };
-
-            let expr = match resp.expires() {
-                Some(datetime) => Some(*datetime),
-                None => None,
-            };
-
-            // 大文件走 multi part upload 分支
-            if let Err(e) = match content_len > self.large_file_size {
-                true => {
-                    c_t.multipart_upload_byte_stream(
-                        self.target.bucket.as_str(),
-                        target_key.as_str(),
-                        expr,
-                        content_len,
-                        self.multi_part_chunk,
-                        resp.body,
-                    )
-                    .await
-                }
-                false => {
-                    c_t.upload_object_bytes(
-                        self.target.bucket.as_str(),
-                        target_key.as_str(),
-                        expr,
-                        resp.body,
-                    )
-                    .await
-                }
-            } {
-                let record_desc = RecordDescription {
+                let recorddesc = RecordDescription {
                     source_key: record.key.clone(),
                     target_key: target_key.clone(),
                     list_file_path: self.list_file_path.clone(),
@@ -393,16 +256,16 @@ impl TransferRecordsExecutor {
                     },
                     option: Opt::PUT,
                 };
-                record_desc.error_handler(
-                    e,
+                recorddesc.error_handler(
+                    anyhow!("{}", e),
                     &self.err_counter,
                     &self.offset_map,
                     &mut error_file,
                     offset_key.as_str(),
                 );
-                continue;
-            };
+            }
 
+            // 插入文件offset记录
             self.offset_map.insert(
                 offset_key.clone(),
                 FilePosition {
@@ -423,5 +286,81 @@ impl TransferRecordsExecutor {
         };
 
         Ok(())
+    }
+
+    async fn listed_record_handler(
+        &self,
+        offset_key: &str,
+        record: &ListedRecord,
+        source_oss: &OssClient,
+        target_oss: &OssClient,
+        target_key: &str,
+    ) -> Result<()> {
+        let resp = match source_oss
+            .get_object(&self.source.bucket.as_str(), record.key.as_str())
+            .await
+        {
+            core::result::Result::Ok(resp) => resp,
+            Err(e) => {
+                // 源端文件不存在按传输成功处理
+                let service_err = e.into_service_error();
+                match service_err.kind {
+                    // GetObjectErrorKind::InvalidObjectState(_)
+                    // | GetObjectErrorKind::Unhandled(_) => {
+                    //     save_error_record(&self.err_counter, record.clone(), &mut error_file);
+                    // }
+                    GetObjectErrorKind::NoSuchKey(_) => {
+                        self.offset_map.insert(
+                            offset_key.to_string(),
+                            FilePosition {
+                                offset: record.offset,
+                                line_num: record.line_num,
+                            },
+                        );
+                        return Ok(());
+                    }
+                    _ => {
+                        return Err(service_err.into());
+                    }
+                }
+            }
+        };
+
+        // 目标object存在则不推送
+        if self.target_exist_skip {
+            let target_obj_exists = target_oss
+                .object_exists(self.target.bucket.as_str(), target_key)
+                .await?;
+            if target_obj_exists {
+                return Ok(());
+            }
+        }
+        let content_len = usize::try_from(resp.content_length())?;
+
+        let expr = match resp.expires() {
+            Some(datetime) => Some(*datetime),
+            None => None,
+        };
+
+        // 大文件走 multi part upload 分支
+        match content_len > self.large_file_size {
+            true => {
+                target_oss
+                    .multipart_upload_byte_stream(
+                        self.target.bucket.as_str(),
+                        target_key,
+                        expr,
+                        content_len,
+                        self.multi_part_chunk,
+                        resp.body,
+                    )
+                    .await
+            }
+            false => {
+                target_oss
+                    .upload_object_bytes(self.target.bucket.as_str(), target_key, expr, resp.body)
+                    .await
+            }
+        }
     }
 }
