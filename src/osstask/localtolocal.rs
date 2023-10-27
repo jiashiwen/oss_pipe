@@ -25,12 +25,12 @@ pub struct LocalToLocal {
 }
 
 impl LocalToLocal {
+    // Todo
+    // 如果在批次处理开始前出现报错则整批数据都不执行，需要有逻辑执行错误记录
     pub async fn exec(&self, records: Vec<ListedRecord>) -> Result<()> {
-        // let mut line_num = self.begin_line_number;
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
         offset_key.push_str(&subffix);
-
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
 
         // 先写首行日志，避免错误漏记
@@ -49,165 +49,36 @@ impl LocalToLocal {
             .open(error_file_name.as_str())?;
 
         for record in records {
-            let s_file_name = gen_file_path(self.source_path.as_str(), &record.key.as_str(), "");
+            let s_file_name = gen_file_path(self.source_path.as_str(), record.key.as_str(), "");
             let t_file_name = gen_file_path(self.target_path.as_str(), record.key.as_str(), "");
 
-            // 判断源文件是否存在
-            let s_path = Path::new(s_file_name.as_str());
-            if !s_path.exists() {
-                self.offset_map.insert(
-                    offset_key.clone(),
-                    FilePosition {
+            if let Err(e) = self
+                .record_handler(
+                    offset_key.as_str(),
+                    &record,
+                    s_file_name.as_str(),
+                    t_file_name.as_str(),
+                )
+                .await
+            {
+                // 记录错误记录
+                let recorddesc = RecordDescription {
+                    source_key: s_file_name,
+                    target_key: t_file_name,
+                    list_file_path: self.list_file_path.clone(),
+                    list_file_position: FilePosition {
                         offset: record.offset,
                         line_num: record.line_num,
                     },
-                );
-                continue;
-            }
-
-            let t_path = Path::new(t_file_name.as_str());
-            if let Some(p) = t_path.parent() {
-                if let Err(e) = std::fs::create_dir_all(p) {
-                    let recorddesc = RecordDescription {
-                        source_key: s_file_name.clone(),
-                        target_key: t_file_name.clone(),
-                        list_file_path: self.list_file_path.clone(),
-                        list_file_position: FilePosition {
-                            offset: record.offset,
-                            line_num: record.line_num,
-                        },
-                        option: Opt::PUT,
-                    };
-                    recorddesc.error_handler(
-                        anyhow!("{}", e),
-                        &self.error_conter,
-                        &self.offset_map,
-                        &mut error_file,
-                        offset_key.as_str(),
-                    );
-                    continue;
+                    option: Opt::PUT,
                 };
-            };
-
-            let s_file = match OpenOptions::new().read(true).open(s_file_name.as_str()) {
-                Ok(p) => p,
-                Err(e) => {
-                    // log::error!("{}", e);
-                    // save_error_record(&self.error_conter, record.clone(), &mut error_file);
-                    // self.offset_map.insert(
-                    //     offset_key.clone(),
-                    //     FilePosition {
-                    //         offset: record.offset,
-                    //         line_num: record.line_num,
-                    //     },
-                    // );
-                    let recorddesc = RecordDescription {
-                        source_key: s_file_name.clone(),
-                        target_key: t_file_name.clone(),
-                        list_file_path: self.list_file_path.clone(),
-                        list_file_position: FilePosition {
-                            offset: record.offset,
-                            line_num: record.line_num,
-                        },
-                        option: Opt::PUT,
-                    };
-                    recorddesc.error_handler(
-                        anyhow!("{}", e),
-                        &self.error_conter,
-                        &self.offset_map,
-                        &mut error_file,
-                        offset_key.as_str(),
-                    );
-                    continue;
-                }
-            };
-
-            let mut t_file = match OpenOptions::new()
-                .truncate(true)
-                .create(true)
-                .write(true)
-                .open(t_file_name.as_str())
-            {
-                Ok(p) => p,
-                Err(e) => {
-                    let recorddesc = RecordDescription {
-                        source_key: s_file_name.clone(),
-                        target_key: t_file_name.clone(),
-                        list_file_path: self.list_file_path.clone(),
-                        list_file_position: FilePosition {
-                            offset: record.offset,
-                            line_num: record.line_num,
-                        },
-                        option: Opt::PUT,
-                    };
-                    recorddesc.error_handler(
-                        anyhow!("{}", e),
-                        &self.error_conter,
-                        &self.offset_map,
-                        &mut error_file,
-                        offset_key.as_str(),
-                    );
-                    continue;
-                }
-            };
-
-            // 目标object存在则不推送
-            if self.target_exist_skip {
-                if t_path.exists() {
-                    self.offset_map.insert(
-                        offset_key.clone(),
-                        FilePosition {
-                            offset: record.offset,
-                            line_num: record.line_num,
-                        },
-                    );
-                    continue;
-                }
-            }
-
-            let s_file_len = match s_file.metadata() {
-                Ok(m) => m.len(),
-                Err(e) => {
-                    log::error!("{}", e);
-                    self.error_conter
-                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    let _ = record.save_json_to_file(&mut error_file);
-                    continue;
-                }
-            };
-
-            let len: usize = match s_file_len.try_into() {
-                Ok(l) => l,
-                Err(e) => {
-                    log::error!("{}", e);
-                    self.error_conter
-                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    let _ = record.save_json_to_file(&mut error_file);
-                    continue;
-                }
-            };
-
-            // 大文件走 multi part upload 分支
-            match match len > self.large_file_size {
-                true => multi_parts_copy_file(
-                    s_file_name.as_str(),
-                    t_file_name.as_str(),
-                    self.multi_part_chunk,
-                ),
-                false => {
-                    let data = fs::read(s_file_name.as_str())?;
-                    t_file.write_all(&data)?;
-                    t_file.flush()?;
-                    Ok(())
-                }
-            } {
-                Err(e) => {
-                    log::error!("{}", e);
-                    self.error_conter
-                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    let _ = record.save_json_to_file(&mut error_file);
-                }
-                _ => (),
+                recorddesc.error_handler(
+                    anyhow!("{}", e),
+                    &self.error_conter,
+                    &self.offset_map,
+                    &mut error_file,
+                    offset_key.as_str(),
+                );
             };
 
             self.offset_map.insert(
@@ -232,5 +103,66 @@ impl LocalToLocal {
         let _ = fs::remove_file(offset_key.as_str());
 
         Ok(())
+    }
+
+    async fn record_handler(
+        &self,
+        offset_key: &str,
+        record: &ListedRecord,
+        source_file: &str,
+        target_file: &str,
+    ) -> Result<()> {
+        // 判断源文件是否存在，若不存判定为成功传输
+        let s_path = Path::new(source_file);
+        if !s_path.exists() {
+            self.offset_map.insert(
+                offset_key.to_string(),
+                FilePosition {
+                    offset: record.offset,
+                    line_num: record.line_num,
+                },
+            );
+            return Ok(());
+        }
+
+        let t_path = Path::new(target_file);
+        if let Some(p) = t_path.parent() {
+            std::fs::create_dir_all(p)?
+        };
+
+        // 目标object存在则不推送
+        if self.target_exist_skip {
+            if t_path.exists() {
+                self.offset_map.insert(
+                    offset_key.to_string(),
+                    FilePosition {
+                        offset: record.offset,
+                        line_num: record.line_num,
+                    },
+                );
+                return Ok(());
+            }
+        }
+
+        let s_file = OpenOptions::new().read(true).open(source_file)?;
+        let mut t_file = OpenOptions::new()
+            .truncate(true)
+            .create(true)
+            .write(true)
+            .open(target_file)?;
+
+        let s_file_len = s_file.metadata()?.len();
+        let len: usize = TryInto::try_into(s_file_len)?;
+
+        // 大文件走 multi part upload 分支
+        match len > self.large_file_size {
+            true => multi_parts_copy_file(source_file, target_file, self.multi_part_chunk),
+            false => {
+                let data = fs::read(source_file)?;
+                t_file.write_all(&data)?;
+                t_file.flush()?;
+                Ok(())
+            }
+        }
     }
 }

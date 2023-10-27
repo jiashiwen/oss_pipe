@@ -2,7 +2,7 @@ use crate::{
     checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
     commons::{json_to_struct, read_lines},
     s3::{
-        aws_s3::{byte_stream_multi_partes_to_file, byte_stream_to_file},
+        aws_s3::{byte_stream_multi_partes_to_file, byte_stream_to_file, OssClient},
         OSSDescription,
     },
 };
@@ -52,6 +52,7 @@ impl TaskActionsFromOss for DownloadTask {
 
     fn error_record_retry(&self) -> Result<()> {
         // 遍历错误记录
+        // 每个错误文件重新处理
         for entry in WalkDir::new(self.task_attributes.meta_dir.as_str())
             .into_iter()
             .filter_map(Result::ok)
@@ -120,8 +121,6 @@ impl TaskActionsFromOss for DownloadTask {
         last_modify_timestamp: i64,
         object_list_file: &str,
     ) -> Result<usize> {
-        // 预清理meta目录
-        // let _ = fs::remove_dir_all(self.task_attributes.meta_dir.as_str());
         let mut interrupted = false;
         let mut total_lines = 0;
 
@@ -243,94 +242,10 @@ impl DownLoadRecordsExecutor {
         let c_s = self.source.gen_oss_client()?;
         for record in records {
             let t_file_name = gen_file_path(self.local_path.as_str(), &record.key.as_str(), "");
-            let t_path = Path::new(t_file_name.as_str());
-
-            // 目标object存在则不下载
-            if self.target_exist_skip {
-                if t_path.exists() {
-                    self.offset_map.insert(
-                        offset_key.clone(),
-                        FilePosition {
-                            offset: record.offset,
-                            line_num: record.line_num,
-                        },
-                    );
-                    continue;
-                }
-            }
-
-            let resp = match c_s
-                .get_object(&self.source.bucket.as_str(), record.key.as_str())
+            if let Err(e) = self
+                .record_handler(offset_key.as_str(), &record, &c_s, t_file_name.as_str())
                 .await
             {
-                core::result::Result::Ok(b) => b,
-                Err(e) => {
-                    log::error!("{}", e);
-                    // 源端文件不存在按传输成功处理
-                    let service_err = e.into_service_error();
-                    match service_err.kind {
-                        // GetObjectErrorKind::InvalidObjectState(_)
-                        // | GetObjectErrorKind::Unhandled(_) => {
-                        //     save_error_record(&self.err_counter, record.clone(), &mut error_file);
-                        // }
-                        GetObjectErrorKind::NoSuchKey(_) => {}
-                        _ => {
-                            // save_error_record(&self.err_counter, record.clone(), &mut error_file);
-                            let record_desc = RecordDescription {
-                                source_key: record.key.clone(),
-                                target_key: t_file_name.clone(),
-                                list_file_path: self.list_file_path.clone(),
-                                list_file_position: FilePosition {
-                                    offset: record.offset,
-                                    line_num: record.line_num,
-                                },
-                                option: Opt::PUT,
-                            };
-                            record_desc.error_handler(
-                                anyhow!("{}", service_err),
-                                &self.err_counter,
-                                &self.offset_map,
-                                &mut error_file,
-                                offset_key.as_str(),
-                            );
-                        }
-                    }
-                    self.offset_map.insert(
-                        offset_key.clone(),
-                        FilePosition {
-                            offset: record.offset,
-                            line_num: record.line_num,
-                        },
-                    );
-                    continue;
-                }
-            };
-
-            let r = {
-                if let Some(p) = t_path.parent() {
-                    std::fs::create_dir_all(p)?;
-                };
-
-                let mut t_file = OpenOptions::new()
-                    .truncate(true)
-                    .create(true)
-                    .write(true)
-                    .open(t_file_name.as_str())?;
-
-                let s_len: usize = resp.content_length().try_into()?;
-
-                // 大文件走 multi part download 分支
-                let r = match s_len > self.large_file_size {
-                    true => {
-                        byte_stream_multi_partes_to_file(resp, &mut t_file, self.multi_part_chunk)
-                            .await
-                    }
-                    false => byte_stream_to_file(resp.body, &mut t_file).await,
-                };
-                r
-            };
-
-            if let Err(e) = r {
                 let record_desc = RecordDescription {
                     source_key: record.key.clone(),
                     target_key: t_file_name.clone(),
@@ -348,9 +263,7 @@ impl DownLoadRecordsExecutor {
                     &mut error_file,
                     offset_key.as_str(),
                 );
-                continue;
             }
-
             self.offset_map.insert(
                 offset_key.clone(),
                 FilePosition {
@@ -371,5 +284,66 @@ impl DownLoadRecordsExecutor {
         };
 
         Ok(())
+    }
+    async fn record_handler(
+        &self,
+        offset_key: &str,
+        record: &ListedRecord,
+        source_oss_client: &OssClient,
+        target_file: &str,
+    ) -> Result<()> {
+        let t_path = Path::new(target_file);
+        if let Some(p) = t_path.parent() {
+            std::fs::create_dir_all(p)?;
+        };
+
+        // 目标object存在则不下载
+        if self.target_exist_skip {
+            if t_path.exists() {
+                self.offset_map.insert(
+                    offset_key.to_string(),
+                    FilePosition {
+                        offset: record.offset,
+                        line_num: record.line_num,
+                    },
+                );
+                return Ok(());
+            }
+        }
+
+        let resp = match source_oss_client
+            .get_object(&self.source.bucket.as_str(), record.key.as_str())
+            .await
+        {
+            core::result::Result::Ok(resp) => resp,
+            Err(e) => {
+                // 源端文件不存在按传输成功处理
+                let service_err = e.into_service_error();
+                match service_err.kind {
+                    GetObjectErrorKind::NoSuchKey(_) => {
+                        return Ok(());
+                    }
+                    _ => {
+                        return Err(service_err.into());
+                    }
+                }
+            }
+        };
+
+        let mut t_file = OpenOptions::new()
+            .truncate(true)
+            .create(true)
+            .write(true)
+            .open(target_file)?;
+
+        let s_len: usize = resp.content_length().try_into()?;
+
+        // 大文件走 multi part download 分支
+        match s_len > self.large_file_size {
+            true => {
+                byte_stream_multi_partes_to_file(resp, &mut t_file, self.multi_part_chunk).await
+            }
+            false => byte_stream_to_file(resp.body, &mut t_file).await,
+        }
     }
 }

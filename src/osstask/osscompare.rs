@@ -68,7 +68,6 @@ pub struct OssCompare {
     pub meta_dir: String,
     pub exprirs_diff_scope: i64,
     pub list_file_path: String,
-    // pub filter: Option<String>,
 }
 
 impl OssCompare {
