@@ -92,9 +92,8 @@ impl RecordDescription {
 
 #[cfg(test)]
 mod test {
-    use std::{fs::OpenOptions, io::Write, path::Path};
-
     use super::ListedRecord;
+    use std::{fs::OpenOptions, io::Write, path::Path};
 
     //cargo test checkpoint::record::test::test_error_record -- --nocapture
     #[test]

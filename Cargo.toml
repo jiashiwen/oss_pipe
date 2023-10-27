@@ -87,5 +87,9 @@ path = "examples/notify_sample.rs"
 name = "indicatif"
 path = "examples/indicatif_sample.rs"
 
+[[example]]
+name = "deal"
+path = "examples/result_deal.rs"
+
 [profile.release]
 lto = true
