@@ -285,6 +285,7 @@ impl DownLoadRecordsExecutor {
 
         Ok(())
     }
+
     async fn record_handler(
         &self,
         offset_key: &str,
