@@ -60,6 +60,12 @@ pub enum TaskType {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum ObjectStorage {
+    Local(String),
+    OSS(OSSDescription),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 // #[serde(untagged)]
 pub enum TaskDescription {
     // Download(TaskDownload),
@@ -256,7 +262,6 @@ impl TaskLocalToLocal {
     pub fn exec_multi_threads(&self) -> Result<()> {
         let error_times = Arc::new(AtomicUsize::new(0));
         let snapshot_stop_mark = Arc::new(AtomicBool::new(false));
-        // let offset_map = Arc::new(DashMap::<String, usize>::new());
         let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
         let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_PREFIX, "");
         let check_point_file = gen_file_path(self.meta_dir.as_str(), CHECK_POINT_FILE_NAME, "");

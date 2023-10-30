@@ -1,6 +1,6 @@
 use crate::{
     checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
-    s3::OSSDescription,
+    s3::{aws_s3::OssClient, OSSDescription},
 };
 use anyhow::anyhow;
 use anyhow::Result;
@@ -12,14 +12,16 @@ use std::{
     io::Write,
     sync::{atomic::AtomicUsize, Arc},
 };
+use tokio::io::AsyncReadExt;
 
 use super::{gen_file_path, COMPARE_OBJECT_DIFF_PREFIX, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ObjectDiff {
     NotExists(DiffNotExists),
-    ContentLenthDiff(DiffContentLenth),
+    ContentLenthDiff(DiffLenth),
     ExpiresDiff(DiffExpires),
+    ContentDiff(DiffContent),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -42,10 +44,18 @@ pub struct DateTime {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct DiffContentLenth {
+pub struct DiffLenth {
     key: String,
     source_content_len: i64,
     target_content_len: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DiffContent {
+    key: String,
+    stream_position: usize,
+    source_byte: u8,
+    target_byte: u8,
 }
 
 impl ObjectDiff {
@@ -71,8 +81,6 @@ pub struct OssCompare {
 }
 
 impl OssCompare {
-    // todo
-    // key filter 正则表达式支持
     pub async fn compare(&self, records: Vec<ListedRecord>) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
@@ -95,187 +103,34 @@ impl OssCompare {
         let c_s = self.source.gen_oss_client()?;
         let c_t = self.target.gen_oss_client()?;
         for record in records {
-            let mut s_exists = false;
-            let mut t_exists = false;
-            let mut resp_s = GetObjectOutput::builder().build();
-            let mut resp_t = GetObjectOutput::builder().build();
+            let r = self.compare_listed_record(&record, &c_s, &c_t).await;
 
-            let mut target_key = "".to_string();
-            if let Some(s) = self.target.prefix.clone() {
-                target_key.push_str(&s);
-            };
-            target_key.push_str(&record.key);
-
-            match c_s
-                .get_object(&self.source.bucket.as_str(), record.key.as_str())
-                .await
-            {
-                Err(e) => {
-                    log::error!("{}", e);
-                    // 源端文件不存在按传输成功处理
-                    let service_err = e.into_service_error();
-                    match service_err.kind {
-                        GetObjectErrorKind::InvalidObjectState(_)
-                        | GetObjectErrorKind::Unhandled(_) => {
-                            // save_error_record(&self.error_conter, record.clone(), &mut error_file);
-                            // self.offset_map.insert(
-                            //     offset_key.clone(),
-                            //     FilePosition {
-                            //         offset: record.offset,
-                            //         line_num: record.line_num,
-                            //     },
-                            // );
-
-                            let recorddesc = RecordDescription {
-                                source_key: record.key.clone(),
-                                target_key: target_key.clone(),
-                                list_file_path: self.list_file_path.clone(),
-                                list_file_position: FilePosition {
-                                    offset: record.offset,
-                                    line_num: record.line_num,
-                                },
-                                option: Opt::PUT,
-                            };
-                            recorddesc.error_handler(
-                                anyhow!("{}", service_err),
-                                &self.error_conter,
-                                &self.offset_map,
-                                &mut error_file,
-                                offset_key.as_str(),
-                            );
-                            continue;
-                        }
-                        GetObjectErrorKind::NoSuchKey(_) => {
-                            s_exists = true;
-                        }
-                        _ => {}
+            match r {
+                Ok(diff) => match diff {
+                    Some(d) => {
+                        let _ = d.save_json_to_file(&mut diff_file);
                     }
-                }
-                Ok(r) => resp_s = r,
-            };
-
-            match c_t
-                .get_object(&self.target.bucket.as_str(), target_key.as_str())
-                .await
-            {
-                core::result::Result::Ok(t) => resp_t = t,
-
+                    None => {}
+                },
                 Err(e) => {
-                    log::error!("{}", e);
-                    // 源端文件不存在按传输成功处理
-                    let service_err = e.into_service_error();
-                    match service_err.kind {
-                        GetObjectErrorKind::InvalidObjectState(_)
-                        | GetObjectErrorKind::Unhandled(_) => {
-                            let recorddesc = RecordDescription {
-                                source_key: record.key.clone(),
-                                target_key: target_key.clone(),
-                                list_file_path: self.list_file_path.clone(),
-                                list_file_position: FilePosition {
-                                    offset: record.offset,
-                                    line_num: record.line_num,
-                                },
-                                option: Opt::PUT,
-                            };
-                            recorddesc.error_handler(
-                                anyhow!("{}", service_err),
-                                &self.error_conter,
-                                &self.offset_map,
-                                &mut error_file,
-                                offset_key.as_str(),
-                            );
-                            continue;
-                        }
-                        GetObjectErrorKind::NoSuchKey(_) => {
-                            t_exists = true;
-                        }
-                        _ => {}
-                    }
-
-                    self.offset_map.insert(
-                        offset_key.clone(),
-                        FilePosition {
+                    let recorddesc = RecordDescription {
+                        source_key: record.key.clone(),
+                        target_key: record.key.clone(),
+                        list_file_path: self.list_file_path.clone(),
+                        list_file_position: FilePosition {
                             offset: record.offset,
                             line_num: record.line_num,
                         },
+                        option: Opt::PUT,
+                    };
+                    recorddesc.error_handler(
+                        anyhow!("{}", e),
+                        &self.error_conter,
+                        &self.offset_map,
+                        &mut error_file,
+                        offset_key.as_str(),
                     );
                 }
-            };
-
-            if !s_exists.eq(&t_exists) {
-                let diff = ObjectDiff::NotExists(DiffNotExists {
-                    key: record.key,
-                    source_exists: s_exists,
-                    target_exists: t_exists,
-                });
-                let _ = diff.save_json_to_file(&mut diff_file);
-                continue;
-            }
-
-            let content_len_s = resp_s.content_length();
-            let content_len_t = resp_t.content_length();
-
-            if !content_len_s.eq(&content_len_t) {
-                let diff = ObjectDiff::ContentLenthDiff(DiffContentLenth {
-                    key: record.key,
-                    source_content_len: content_len_s,
-                    target_content_len: content_len_t,
-                });
-                let _ = diff.save_json_to_file(&mut diff_file);
-                continue;
-            }
-
-            let expr_s = match resp_s.expires() {
-                Some(datetime) => Some(*datetime),
-                None => None,
-            };
-
-            let expr_t = match resp_t.expires() {
-                Some(datetime) => Some(*datetime),
-                None => None,
-            };
-
-            if !expr_s.eq(&expr_t) {
-                let mut s_second = 0;
-                let mut t_second = 0;
-                let s_data = match expr_s {
-                    Some(d) => {
-                        s_second = d.secs();
-                        Some(DateTime {
-                            seconds: d.secs(),
-                            subsecond_nanos: d.subsec_nanos(),
-                        })
-                    }
-                    None => None,
-                };
-                let t_data = match expr_t {
-                    Some(d) => {
-                        t_second = d.secs();
-                        Some(DateTime {
-                            seconds: d.secs(),
-                            subsecond_nanos: d.subsec_nanos(),
-                        })
-                    }
-                    None => None,
-                };
-                if s_data.is_none() || t_data.is_none() {
-                    let diff = ObjectDiff::ExpiresDiff(DiffExpires {
-                        key: record.key,
-                        source_expires: s_data,
-                        target_expires: t_data,
-                    });
-                    let _ = diff.save_json_to_file(&mut diff_file);
-                    continue;
-                }
-
-                if i64::abs(s_second - t_second) > self.exprirs_diff_scope {
-                    let diff = ObjectDiff::ExpiresDiff(DiffExpires {
-                        key: record.key,
-                        source_expires: s_data,
-                        target_expires: t_data,
-                    });
-                    let _ = diff.save_json_to_file(&mut diff_file);
-                };
             }
 
             self.offset_map.insert(
@@ -306,6 +161,198 @@ impl OssCompare {
         };
 
         Ok(())
+    }
+
+    async fn compare_listed_record(
+        &self,
+        record: &ListedRecord,
+        source: &OssClient,
+        target: &OssClient,
+    ) -> Result<Option<ObjectDiff>> {
+        let mut s_exists = false;
+        let mut t_exists = false;
+        let mut obj_s = GetObjectOutput::builder().build();
+        let mut obj_t = GetObjectOutput::builder().build();
+        match source
+            .get_object(&self.source.bucket.as_str(), record.key.as_str())
+            .await
+        {
+            core::result::Result::Ok(o) => {
+                s_exists = true;
+                obj_s = o;
+            }
+            Err(e) => {
+                let service_err = e.into_service_error();
+                match service_err.kind {
+                    GetObjectErrorKind::NoSuchKey(_) => {}
+                    _ => return Err(service_err.into()),
+                }
+            }
+        };
+
+        match target
+            .get_object(&self.target.bucket.as_str(), record.key.as_str())
+            .await
+        {
+            core::result::Result::Ok(o) => {
+                t_exists = true;
+                obj_t = o;
+            }
+            Err(e) => {
+                // 源端文件不存在按传输成功处理
+                let service_err = e.into_service_error();
+                match service_err.kind {
+                    GetObjectErrorKind::NoSuchKey(_) => {}
+                    _ => return Err(service_err.into()),
+                }
+            }
+        };
+
+        if !s_exists.eq(&t_exists) {
+            let diff = ObjectDiff::NotExists(DiffNotExists {
+                key: record.key.to_string(),
+                source_exists: s_exists,
+                target_exists: t_exists,
+            });
+            return Ok(Some(diff));
+        }
+
+        if !s_exists && !t_exists {
+            return Ok(None);
+        }
+
+        if let Some(diff) = self.compare_content_len(record, &obj_s, &obj_t) {
+            return Ok(Some(diff));
+        }
+
+        if let Some(diff) = self.compare_expires(record, &obj_s, &obj_t) {
+            return Ok(Some(diff));
+        }
+
+        Ok(None)
+    }
+
+    fn compare_content_len(
+        &self,
+        record: &ListedRecord,
+        s_obj: &GetObjectOutput,
+        t_obj: &GetObjectOutput,
+    ) -> Option<ObjectDiff> {
+        let len_s = s_obj.content_length();
+        let len_t = t_obj.content_length();
+        if !len_s.eq(&len_t) {
+            let diff = ObjectDiff::ContentLenthDiff(DiffLenth {
+                key: record.key.to_string(),
+                source_content_len: len_s,
+                target_content_len: len_t,
+            });
+            return Some(diff);
+        }
+        None
+    }
+
+    fn compare_expires(
+        &self,
+        record: &ListedRecord,
+        s_obj: &GetObjectOutput,
+        t_obj: &GetObjectOutput,
+    ) -> Option<ObjectDiff> {
+        let expr_s = match s_obj.expires() {
+            Some(datetime) => Some(*datetime),
+            None => None,
+        };
+
+        let expr_t = match t_obj.expires() {
+            Some(datetime) => Some(*datetime),
+            None => None,
+        };
+
+        if !expr_s.eq(&expr_t) {
+            let mut s_second = 0;
+            let mut t_second = 0;
+            let s_date = match expr_s {
+                Some(d) => {
+                    s_second = d.secs();
+                    Some(DateTime {
+                        seconds: d.secs(),
+                        subsecond_nanos: d.subsec_nanos(),
+                    })
+                }
+                None => None,
+            };
+            let t_date = match expr_t {
+                Some(d) => {
+                    t_second = d.secs();
+                    Some(DateTime {
+                        seconds: d.secs(),
+                        subsecond_nanos: d.subsec_nanos(),
+                    })
+                }
+                None => None,
+            };
+
+            if s_date.is_none() || t_date.is_none() {
+                let diff = ObjectDiff::ExpiresDiff(DiffExpires {
+                    key: record.key.to_string(),
+                    source_expires: s_date,
+                    target_expires: t_date,
+                });
+                return Some(diff);
+            }
+
+            if i64::abs(s_second - t_second) > self.exprirs_diff_scope {
+                let diff = ObjectDiff::ExpiresDiff(DiffExpires {
+                    key: record.key.to_string(),
+                    source_expires: s_date,
+                    target_expires: t_date,
+                });
+                return Some(diff);
+            };
+        }
+        None
+    }
+
+    async fn compare_content(
+        &self,
+        record: &ListedRecord,
+        s_obj: GetObjectOutput,
+        t_obj: GetObjectOutput,
+    ) -> Result<Option<ObjectDiff>> {
+        let buffer_size = 1048577;
+        let obj_len = TryInto::<usize>::try_into(s_obj.content_length())?;
+        let mut left = obj_len.clone();
+        let mut reader_s = s_obj.body.into_async_read();
+        let mut reader_t = t_obj.body.into_async_read();
+
+        loop {
+            let mut buf_s = vec![0; buffer_size];
+            let mut buf_t = vec![0; buffer_size];
+            if left > buffer_size {
+                let _ = reader_s.read_exact(&mut buf_s).await?;
+                let _ = reader_t.read_exact(&mut buf_t).await?;
+                left -= buffer_size;
+            } else {
+                buf_s = vec![0; left];
+                buf_t = vec![0; left];
+                let _ = reader_s.read_exact(&mut buf_s).await?;
+                let _ = reader_t.read_exact(&mut buf_t).await?;
+                break;
+            }
+            if !buf_s.eq(&buf_t) {
+                for (idx, byte) in buf_s.iter().enumerate() {
+                    if !byte.eq(&buf_t[idx]) {
+                        let diff = DiffContent {
+                            key: record.key.to_string(),
+                            stream_position: obj_len - left + idx,
+                            source_byte: *byte,
+                            target_byte: buf_t[idx],
+                        };
+                        return Ok(Some(ObjectDiff::ContentDiff(diff)));
+                    }
+                }
+            }
+        }
+        Ok(None)
     }
 }
 
@@ -338,11 +385,18 @@ mod test {
                 subsecond_nanos: 132132,
             }),
         };
-
         let diff = ObjectDiff::ExpiresDiff(expires_diff);
         let diff_str = struct_to_json_string(&diff);
-
         println!("{}", diff_str.unwrap());
+
+        let v_a = vec![1, 2, 3];
+        let v_b = vec![1, 4, 3];
+
+        for (idx, byte) in v_a.iter().enumerate() {
+            if !byte.eq(&v_b[idx]) {
+                println!("{}", idx);
+            }
+        }
     }
 
     //cargo test osstask::osscompare::test::test_compare_oss_local_by_stream -- --nocapture
