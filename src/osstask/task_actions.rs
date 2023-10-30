@@ -56,13 +56,6 @@ pub trait TaskActionsFromLocal {
     // 错误记录重试
     fn error_record_retry(&self) -> Result<()>;
     // 记录执行器
-    // async fn records_excutor(
-    //     &self,
-    //     joinset: &mut JoinSet<()>,
-    //     records: Vec<Record>,
-    //     err_counter: Arc<AtomicUsize>,
-    //     offset_map: Arc<DashMap<String, FilePosition>>,
-    // );
     async fn records_excutor(
         &self,
         joinset: &mut JoinSet<()>,
