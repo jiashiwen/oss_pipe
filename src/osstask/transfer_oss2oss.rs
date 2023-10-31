@@ -1,6 +1,7 @@
 use super::{
-    gen_file_path, task_actions::TaskActionsFromOss, TaskAttributes, TaskType, ERROR_RECORD_PREFIX,
-    OFFSET_EXEC_PREFIX,
+    gen_file_path,
+    task_actions::{TaskActionsFromOss, TransferTaskActions},
+    TaskAttributes, TaskType, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX,
 };
 use crate::{
     checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
@@ -22,13 +23,13 @@ use walkdir::WalkDir;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
-pub struct TransferTask {
+pub struct TransferOss2Oss {
     pub source: OSSDescription,
     pub target: OSSDescription,
     pub task_attributes: TaskAttributes,
 }
 
-impl Default for TransferTask {
+impl Default for TransferOss2Oss {
     fn default() -> Self {
         Self {
             source: OSSDescription::default(),
@@ -39,11 +40,7 @@ impl Default for TransferTask {
 }
 
 #[async_trait]
-impl TaskActionsFromOss for TransferTask {
-    fn task_type(&self) -> TaskType {
-        TaskType::Transfer
-    }
-
+impl TransferTaskActions for TransferOss2Oss {
     // 错误记录重试
     fn error_record_retry(&self) -> Result<()> {
         // 遍历错误记录

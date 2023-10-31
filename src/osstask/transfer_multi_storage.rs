@@ -1,7 +1,3 @@
-use super::{
-    gen_file_path, task_actions::TaskActionsFromOss, TaskAttributes, TaskType, ERROR_RECORD_PREFIX,
-    OFFSET_EXEC_PREFIX,
-};
 use crate::{
     checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
     commons::{json_to_struct, read_lines},
@@ -20,15 +16,83 @@ use std::{
 use tokio::{runtime::Runtime, task::JoinSet};
 use walkdir::WalkDir;
 
+use super::{
+    gen_file_path, task_actions::TransferTaskActions, TaskAttributes, TransferLocal2Local,
+    TransferLocal2Oss, TransferOss2Local, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX,
+};
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum ObjectStorage {
+    Local(String),
+    OSS(OSSDescription),
+}
+
+impl Default for ObjectStorage {
+    fn default() -> Self {
+        ObjectStorage::OSS(OSSDescription::default())
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
-pub struct TransferTask {
+pub struct TransferTaskWithMultiStorage {
+    pub source: ObjectStorage,
+    pub target: ObjectStorage,
+    pub task_attributes: TaskAttributes,
+}
+
+impl TransferTaskWithMultiStorage {
+    pub fn gen_transfer_actions(&self) -> Box<dyn TransferTaskActions> {
+        match &self.source {
+            ObjectStorage::Local(path_s) => match &self.target {
+                ObjectStorage::Local(path_t) => {
+                    let t = TransferLocal2Local {
+                        source: path_s.to_string(),
+                        target: path_t.to_string(),
+                        task_attributes: self.task_attributes.clone(),
+                    };
+                    Box::new(t)
+                }
+                ObjectStorage::OSS(oss_t) => {
+                    let t = TransferLocal2Oss {
+                        source: path_s.to_string(),
+                        target: oss_t.clone(),
+                        task_attributes: self.task_attributes.clone(),
+                    };
+                    Box::new(t)
+                }
+            },
+            ObjectStorage::OSS(oss_s) => match &self.target {
+                ObjectStorage::Local(path_t) => {
+                    let t = TransferOss2Local {
+                        source: oss_s.clone(),
+                        target: path_t.to_string(),
+                        task_attributes: self.task_attributes.clone(),
+                    };
+                    Box::new(t)
+                }
+                ObjectStorage::OSS(oss_t) => {
+                    let t = TransferOss2Oss {
+                        source: oss_s.clone(),
+                        target: oss_t.clone(),
+                        task_attributes: self.task_attributes.clone(),
+                    };
+                    Box::new(t)
+                }
+            },
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "lowercase")]
+pub struct TransferOss2Oss {
     pub source: OSSDescription,
     pub target: OSSDescription,
     pub task_attributes: TaskAttributes,
 }
 
-impl Default for TransferTask {
+impl Default for TransferOss2Oss {
     fn default() -> Self {
         Self {
             source: OSSDescription::default(),
@@ -39,11 +103,7 @@ impl Default for TransferTask {
 }
 
 #[async_trait]
-impl TaskActionsFromOss for TransferTask {
-    fn task_type(&self) -> TaskType {
-        TaskType::Transfer
-    }
-
+impl TransferTaskActions for TransferOss2Oss {
     // 错误记录重试
     fn error_record_retry(&self) -> Result<()> {
         // 遍历错误记录
@@ -61,6 +121,7 @@ impl TaskActionsFromOss for TransferTask {
             if let Some(p) = entry.path().to_str() {
                 if let Ok(lines) = read_lines(p) {
                     let mut record_vec = vec![];
+
                     for line in lines {
                         match line {
                             Ok(content) => {
@@ -82,7 +143,7 @@ impl TaskActionsFromOss for TransferTask {
                     }
 
                     if record_vec.len() > 0 {
-                        let copy = TransferRecordsExecutor {
+                        let copy = TransferWithMultiStorageRecordsExecutor {
                             source: self.source.clone(),
                             target: self.target.clone(),
                             err_counter: Arc::new(AtomicUsize::new(0)),
@@ -112,7 +173,7 @@ impl TaskActionsFromOss for TransferTask {
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file: String,
     ) {
-        let transfer = TransferRecordsExecutor {
+        let transfer = TransferWithMultiStorageRecordsExecutor {
             source: self.source.clone(),
             target: self.target.clone(),
             err_counter,
@@ -198,7 +259,7 @@ impl TaskActionsFromOss for TransferTask {
 }
 
 #[derive(Debug, Clone)]
-pub struct TransferRecordsExecutor {
+pub struct TransferWithMultiStorageRecordsExecutor {
     pub source: OSSDescription,
     pub target: OSSDescription,
     pub err_counter: Arc<AtomicUsize>,
@@ -210,7 +271,7 @@ pub struct TransferRecordsExecutor {
     pub list_file_path: String,
 }
 
-impl TransferRecordsExecutor {
+impl TransferWithMultiStorageRecordsExecutor {
     pub async fn exec_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
@@ -361,5 +422,27 @@ impl TransferRecordsExecutor {
                     .await
             }
         }
+    }
+}
+
+mod test {
+    use crate::{
+        osstask::{ObjectStorage, TaskAttributes, TransferTaskWithMultiStorage},
+        s3::OSSDescription,
+    };
+
+    //cargo test osstask::transfer_multi_storage::test::test_gen_transfer_actions -- --nocapture
+    #[test]
+    fn test_gen_transfer_actions() {
+        println!("gen_transfer_actions");
+
+        let task = TransferTaskWithMultiStorage {
+            source: ObjectStorage::OSS(OSSDescription::default()),
+            target: ObjectStorage::Local("/tmp".to_string()),
+            task_attributes: TaskAttributes::default(),
+        };
+
+        let t = task.gen_transfer_actions();
+        println!("{:?}", t.error_record_retry());
     }
 }

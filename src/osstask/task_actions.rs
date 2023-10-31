@@ -21,6 +21,29 @@ use crate::{
 use super::TaskType;
 
 #[async_trait]
+pub trait TransferTaskActions {
+    // 错误记录重试
+    fn error_record_retry(&self) -> Result<()>;
+    // 记录执行器
+    async fn records_excutor(
+        &self,
+        joinset: &mut JoinSet<()>,
+        records: Vec<ListedRecord>,
+        err_counter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, FilePosition>>,
+        list_file: String,
+    );
+
+    // 生成对象列表
+    fn generate_object_list(
+        &self,
+        rt: &Runtime,
+        _last_modify_timestamp: i64,
+        object_list_file: &str,
+    ) -> Result<usize>;
+}
+
+#[async_trait]
 pub trait TaskActionsFromOss {
     // type Item;
     // 返回任务类型

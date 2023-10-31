@@ -60,12 +60,6 @@ pub enum TaskType {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum ObjectStorage {
-    Local(String),
-    OSS(OSSDescription),
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
 // #[serde(untagged)]
 pub enum TaskDescription {
     // Download(TaskDownload),

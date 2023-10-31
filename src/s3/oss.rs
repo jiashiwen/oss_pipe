@@ -87,21 +87,6 @@ pub struct OssObjectsList {
     pub next_token: Option<String>,
 }
 
-// impl OssObjectsList {
-//     pub fn write_to_file(&self, mut file: &File) -> Result<usize> {
-//         let mut total = 0;
-//         if let Some(objects) = &self.object_list {
-//             for item in objects.iter() {
-//                 let _ = file.write_all(item.as_bytes());
-//                 let _ = file.write_all("\n".as_bytes());
-//                 total += 1;
-//             }
-//             file.flush()?;
-//         }
-//         Ok(total)
-//     }
-// }
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct OSSDescription {
     pub provider: OssProvider,
