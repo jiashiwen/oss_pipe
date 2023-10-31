@@ -1,4 +1,5 @@
 use super::task_actions::TaskActionsFromLocal;
+use super::task_actions::TransferTaskActions;
 use super::TaskAttributes;
 use super::TaskType;
 use super::{gen_file_path, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
@@ -31,27 +32,24 @@ use walkdir::WalkDir;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
-pub struct UploadTask {
+pub struct TransferLocal2Oss {
+    pub source: String,
     pub target: OSSDescription,
-    pub local_path: String,
     pub task_attributes: TaskAttributes,
 }
 
-impl Default for UploadTask {
+impl Default for TransferLocal2Oss {
     fn default() -> Self {
         Self {
             target: OSSDescription::default(),
-            local_path: "/tmp".to_string(),
+            source: "/tmp".to_string(),
             task_attributes: TaskAttributes::default(),
         }
     }
 }
 
 #[async_trait]
-impl TaskActionsFromLocal for UploadTask {
-    fn task_type(&self) -> TaskType {
-        TaskType::Upload
-    }
+impl TransferTaskActions for TransferLocal2Oss {
     // 错误记录重试
     fn error_record_retry(&self) -> Result<()> {
         // 遍历错误记录
@@ -96,7 +94,7 @@ impl TaskActionsFromLocal for UploadTask {
 
                     if record_vec.len() > 0 {
                         let upload = UpLoadExecutor {
-                            local_path: self.local_path.clone(),
+                            local_path: self.source.clone(),
                             target: self.target.clone(),
                             err_counter: Arc::new(AtomicUsize::new(0)),
                             offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
@@ -125,7 +123,7 @@ impl TaskActionsFromLocal for UploadTask {
         list_file: String,
     ) {
         let upload = UpLoadExecutor {
-            local_path: self.local_path.clone(),
+            local_path: self.source.clone(),
             target: self.target.clone(),
             err_counter,
             offset_map,
@@ -147,13 +145,18 @@ impl TaskActionsFromLocal for UploadTask {
     }
 
     // 生成对象列表
-    fn generate_object_list(&self, rt: &Runtime, object_list_file: &str) -> Result<usize> {
+    fn generate_object_list(
+        &self,
+        rt: &Runtime,
+        _last_modify_timestamp: i64,
+        object_list_file: &str,
+    ) -> Result<usize> {
         let mut interrupted = false;
         let mut total_lines = 0;
 
         rt.block_on(async {
             // 遍历目录并生成文件列表
-            let total_rs = scan_folder_files_to_file(self.local_path.as_str(), &object_list_file);
+            let total_rs = scan_folder_files_to_file(self.source.as_str(), &object_list_file);
             match total_rs {
                 Ok(size) => total_lines = size,
                 Err(e) => {
@@ -169,9 +172,11 @@ impl TaskActionsFromLocal for UploadTask {
         }
         Ok(total_lines)
     }
+}
 
+impl TransferLocal2Oss {
     fn gen_watcher(&self) -> notify::Result<NotifyWatcher> {
-        let watcher = NotifyWatcher::new(self.local_path.as_str())?;
+        let watcher = NotifyWatcher::new(self.source.as_str())?;
         Ok(watcher)
     }
 
@@ -251,9 +256,9 @@ impl TaskActionsFromLocal for UploadTask {
                     match from_str::<Modified>(key.as_str()) {
                         Ok(m) => {
                             let mut target_path = m.path.clone();
-                            match self.local_path.ends_with("/") {
-                                true => target_path.drain(..self.local_path.len()),
-                                false => target_path.drain(..self.local_path.len() + 1),
+                            match self.source.ends_with("/") {
+                                true => target_path.drain(..self.source.len()),
+                                false => target_path.drain(..self.source.len() + 1),
                             };
                             if let Some(prefix) = self.target.prefix.clone() {
                                 target_path.insert_str(0, &prefix);
@@ -261,9 +266,9 @@ impl TaskActionsFromLocal for UploadTask {
 
                             let mut target_path = m.path.clone();
 
-                            match self.local_path.ends_with("/") {
-                                true => target_path.drain(..self.local_path.len()),
-                                false => target_path.drain(..self.local_path.len() + 1),
+                            match self.source.ends_with("/") {
+                                true => target_path.drain(..self.source.len()),
+                                false => target_path.drain(..self.source.len() + 1),
                             };
 
                             if let Some(prefix) = self.target.prefix.clone() {
@@ -366,9 +371,9 @@ impl TaskActionsFromLocal for UploadTask {
     async fn modified_handler(&self, modified: Modified, client: &OssClient) -> Result<()> {
         let mut target_path = modified.path.clone();
 
-        match self.local_path.ends_with("/") {
-            true => target_path.drain(..self.local_path.len()),
-            false => target_path.drain(..self.local_path.len() + 1),
+        match self.source.ends_with("/") {
+            true => target_path.drain(..self.source.len()),
+            false => target_path.drain(..self.source.len() + 1),
         };
 
         if let Some(prefix) = self.target.prefix.clone() {
@@ -404,10 +409,8 @@ impl TaskActionsFromLocal for UploadTask {
         };
         Ok(())
     }
-}
 
-impl UploadTask {
-    async fn modified_to_recordnew(
+    async fn modified_to_recorddescription(
         &self,
         modified: Modified,
         list_file_path: &str,
@@ -415,9 +418,9 @@ impl UploadTask {
         line_num: usize,
     ) -> Option<RecordDescription> {
         let mut target_path = modified.path.clone();
-        match self.local_path.ends_with("/") {
-            true => target_path.drain(..self.local_path.len()),
-            false => target_path.drain(..self.local_path.len() + 1),
+        match self.source.ends_with("/") {
+            true => target_path.drain(..self.source.len()),
+            false => target_path.drain(..self.source.len() + 1),
         };
         if let Some(prefix) = self.target.prefix.clone() {
             target_path.insert_str(0, &prefix);
