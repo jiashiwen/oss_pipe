@@ -12,7 +12,7 @@ use crate::configure::{get_config_file_path, get_current_config_yml, set_config}
 use crate::interact;
 use crate::osstask::{
     task_id_generator, DownloadTask, Task, TaskDescription, TaskLocalToLocal, TaskOssCompare,
-    TaskTruncateBucket, TaskType, TransferTask, UploadTask,
+    TaskTransfer, TaskTruncateBucket, TaskType, UploadTask,
 };
 use crate::s3::oss::OSSDescription;
 use crate::s3::oss::OssProvider;
@@ -227,7 +227,7 @@ fn cmd_match(matches: &ArgMatches) {
             let file = transfer.get_one::<String>("file");
             let task_id = task_id_generator();
             // let mut task_transfer = TaskTransfer::default();
-            let mut task_transfer = TransferTask::default();
+            let mut task_transfer = TaskTransfer::default();
             let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
             let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
             task_transfer.task_attributes.exclude = Some(exclude_vec);

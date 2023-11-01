@@ -17,8 +17,8 @@ use tokio::{runtime::Runtime, task::JoinSet};
 use walkdir::WalkDir;
 
 use super::{
-    gen_file_path, task_actions::TransferTaskActions, TaskAttributes, TransferLocal2Local,
-    TransferLocal2Oss, TransferOss2Local, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX,
+    gen_file_path, task_actions::TransferTaskActions, TransferLocal2Local, TransferLocal2Oss,
+    TransferOss2Local, TransferTaskAttributes, ERROR_RECORD_PREFIX, OFFSET_PREFIX,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -35,13 +35,13 @@ impl Default for ObjectStorage {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
-pub struct TransferTaskWithMultiStorage {
+pub struct TransferTask {
     pub source: ObjectStorage,
     pub target: ObjectStorage,
-    pub task_attributes: TaskAttributes,
+    pub task_attributes: TransferTaskAttributes,
 }
 
-impl TransferTaskWithMultiStorage {
+impl TransferTask {
     pub fn gen_transfer_actions(&self) -> Box<dyn TransferTaskActions> {
         match &self.source {
             ObjectStorage::Local(path_s) => match &self.target {
@@ -89,7 +89,7 @@ impl TransferTaskWithMultiStorage {
 pub struct TransferOss2Oss {
     pub source: OSSDescription,
     pub target: OSSDescription,
-    pub task_attributes: TaskAttributes,
+    pub task_attributes: TransferTaskAttributes,
 }
 
 impl Default for TransferOss2Oss {
@@ -97,7 +97,7 @@ impl Default for TransferOss2Oss {
         Self {
             source: OSSDescription::default(),
             target: OSSDescription::default(),
-            task_attributes: TaskAttributes::default(),
+            task_attributes: TransferTaskAttributes::default(),
         }
     }
 }
@@ -274,7 +274,7 @@ pub struct TransferWithMultiStorageRecordsExecutor {
 impl TransferWithMultiStorageRecordsExecutor {
     pub async fn exec_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
         let subffix = records[0].offset.to_string();
-        let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
+        let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
 
@@ -316,7 +316,7 @@ impl TransferWithMultiStorageRecordsExecutor {
                     },
                     option: Opt::PUT,
                 };
-                recorddesc.error_handler(
+                recorddesc.handle_error(
                     anyhow!("{}", e),
                     &self.err_counter,
                     &self.offset_map,
@@ -427,7 +427,7 @@ impl TransferWithMultiStorageRecordsExecutor {
 
 mod test {
     use crate::{
-        osstask::{ObjectStorage, TaskAttributes, TransferTaskWithMultiStorage},
+        osstask::{ObjectStorage, TransferTask, TransferTaskAttributes},
         s3::OSSDescription,
     };
 
@@ -436,10 +436,10 @@ mod test {
     fn test_gen_transfer_actions() {
         println!("gen_transfer_actions");
 
-        let task = TransferTaskWithMultiStorage {
+        let task = TransferTask {
             source: ObjectStorage::OSS(OSSDescription::default()),
             target: ObjectStorage::Local("/tmp".to_string()),
-            task_attributes: TaskAttributes::default(),
+            task_attributes: TransferTaskAttributes::default(),
         };
 
         let t = task.gen_transfer_actions();

@@ -1,5 +1,5 @@
 use super::task_actions::TransferTaskActions;
-use super::{gen_file_path, TaskAttributes, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
+use super::{gen_file_path, TransferTaskAttributes, ERROR_RECORD_PREFIX, OFFSET_PREFIX};
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::commons::{copy_file, scan_folder_files_to_file};
 use crate::{checkpoint::ListedRecord, commons::multi_parts_copy_file};
@@ -22,7 +22,7 @@ use tokio::task::JoinSet;
 pub struct TransferLocal2Local {
     pub source: String,
     pub target: String,
-    pub task_attributes: TaskAttributes,
+    pub task_attributes: TransferTaskAttributes,
 }
 
 #[async_trait]
@@ -106,7 +106,7 @@ impl Local2LocalExecutor {
     // 如果在批次处理开始前出现报错则整批数据都不执行，需要有逻辑执行错误记录
     pub async fn exec_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
         let subffix = records[0].offset.to_string();
-        let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
+        let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
 
@@ -149,7 +149,7 @@ impl Local2LocalExecutor {
                     },
                     option: Opt::PUT,
                 };
-                recorddesc.error_handler(
+                recorddesc.handle_error(
                     anyhow!("{}", e),
                     &self.err_counter,
                     &self.offset_map,
@@ -244,7 +244,7 @@ impl Local2LocalExecutor {
 
     pub async fn exec_recorddescriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
         let subffix = records[0].list_file_position.offset.to_string();
-        let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
+        let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
 
@@ -256,7 +256,7 @@ impl Local2LocalExecutor {
 
         for record in records {
             if let Err(e) = self.record_description_handler(&record).await {
-                record.error_handler(
+                record.handle_error(
                     anyhow!("{}", e),
                     &self.err_counter,
                     &self.offset_map,
@@ -290,6 +290,7 @@ impl Local2LocalExecutor {
                 )?;
             }
             Opt::REMOVE => fs::remove_file(record.target_key.as_str())?,
+            Opt::UNKOWN => return Err(anyhow!("unknow option")),
         };
         Ok(())
     }

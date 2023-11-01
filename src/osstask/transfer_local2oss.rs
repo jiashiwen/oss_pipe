@@ -1,8 +1,7 @@
-use super::task_actions::TaskActionsFromLocal;
 use super::task_actions::TransferTaskActions;
-use super::TaskAttributes;
-use super::TaskType;
-use super::{gen_file_path, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
+use super::TransferTaskAttributes;
+use super::OFFSET_PREFIX;
+use super::{gen_file_path, ERROR_RECORD_PREFIX};
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::commons::{
     json_to_struct, read_lines, scan_folder_files_to_file, Modified, ModifyType, NotifyWatcher,
@@ -35,7 +34,7 @@ use walkdir::WalkDir;
 pub struct TransferLocal2Oss {
     pub source: String,
     pub target: OSSDescription,
-    pub task_attributes: TaskAttributes,
+    pub task_attributes: TransferTaskAttributes,
 }
 
 impl Default for TransferLocal2Oss {
@@ -43,7 +42,7 @@ impl Default for TransferLocal2Oss {
         Self {
             target: OSSDescription::default(),
             source: "/tmp".to_string(),
-            task_attributes: TaskAttributes::default(),
+            task_attributes: TransferTaskAttributes::default(),
         }
     }
 }
@@ -202,7 +201,7 @@ impl TransferLocal2Oss {
         let mut line_num = 0;
 
         let subffix = offset.to_string();
-        let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
+        let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
         let error_file_name = gen_file_path(
             &self.task_attributes.meta_dir,
@@ -298,7 +297,7 @@ impl TransferLocal2Oss {
                                                 },
                                                 option: Opt::PUT,
                                             };
-                                            recorddesc.error_handler(
+                                            recorddesc.handle_error(
                                                 e,
                                                 &err_counter,
                                                 &offset_map,
@@ -325,7 +324,7 @@ impl TransferLocal2Oss {
                                                 },
                                                 option: Opt::REMOVE,
                                             };
-                                            recorddesc.error_handler(
+                                            recorddesc.handle_error(
                                                 anyhow!("{}", e),
                                                 &err_counter,
                                                 &offset_map,
@@ -465,7 +464,7 @@ pub struct UpLoadExecutor {
 impl UpLoadExecutor {
     pub async fn exec_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
         let subffix = records[0].offset.to_string();
-        let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
+        let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
 
         // 先写首行日志，避免错误漏记
@@ -512,7 +511,7 @@ impl UpLoadExecutor {
                     },
                     option: Opt::PUT,
                 };
-                record_desc.error_handler(
+                record_desc.handle_error(
                     e,
                     &self.err_counter,
                     &self.offset_map,
@@ -589,7 +588,7 @@ impl UpLoadExecutor {
     // 重构
     pub async fn exec_recorddescriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
         let subffix = records[0].list_file_position.offset.to_string();
-        let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
+        let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
 
         // 先写首行日志，避免错误漏记
@@ -628,7 +627,7 @@ impl UpLoadExecutor {
                         }
                     }
                     Err(e) => {
-                        record.error_handler(
+                        record.handle_error(
                             e,
                             &self.err_counter,
                             &self.offset_map,
@@ -651,7 +650,7 @@ impl UpLoadExecutor {
                 )
                 .await
             {
-                record.error_handler(
+                record.handle_error(
                     e,
                     &self.err_counter,
                     &self.offset_map,

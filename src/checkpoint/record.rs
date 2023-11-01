@@ -38,6 +38,7 @@ impl ListedRecord {
 pub enum Opt {
     PUT,
     REMOVE,
+    UNKOWN,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -64,10 +65,10 @@ impl FromStr for RecordDescription {
 }
 
 impl RecordDescription {
-    pub fn error_handler(
+    pub fn handle_error(
         &self,
         e: Error,
-        error_conter: &Arc<AtomicUsize>,
+        err_counter: &Arc<AtomicUsize>,
         offset_map: &Arc<DashMap<String, FilePosition>>,
         save_to: &mut File,
         file_position_key: &str,
@@ -78,7 +79,7 @@ impl RecordDescription {
             self.list_file_position.clone(),
         );
 
-        error_conter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        err_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let _ = self.save_json_to_file(save_to);
     }
     pub fn save_json_to_file(&self, file: &mut File) -> Result<()> {

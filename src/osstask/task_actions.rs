@@ -44,6 +44,30 @@ pub trait TransferTaskActions {
 }
 
 #[async_trait]
+pub trait CompareTaskActions {
+    async fn compare_listed_records(&self, records: Vec<ListedRecord>) -> Result<()>;
+    // // 错误记录重试
+    // fn error_record_retry(&self) -> Result<()>;
+    // // 记录执行器
+    // async fn records_excutor(
+    //     &self,
+    //     joinset: &mut JoinSet<()>,
+    //     records: Vec<ListedRecord>,
+    //     err_counter: Arc<AtomicUsize>,
+    //     offset_map: Arc<DashMap<String, FilePosition>>,
+    //     list_file: String,
+    // );
+
+    // // 生成对象列表
+    // fn generate_object_list(
+    //     &self,
+    //     rt: &Runtime,
+    //     _last_modify_timestamp: i64,
+    //     object_list_file: &str,
+    // ) -> Result<usize>;
+}
+
+#[async_trait]
 pub trait TaskActionsFromOss {
     // type Item;
     // 返回任务类型
@@ -115,5 +139,5 @@ pub trait TaskActionsFromLocal {
         offset_map: Arc<DashMap<String, FilePosition>>,
         snapshot_stop_mark: Arc<AtomicBool>,
     );
-    async fn modified_handler(&self, modified: Modified, client: &OssClient) -> Result<()>;
+    // async fn modified_handler(&self, modified: Modified, client: &OssClient) -> Result<()>;
 }

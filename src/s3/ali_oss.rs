@@ -49,7 +49,6 @@ impl OSSActions for OssAliClient {
             .await
             .map_err(|e| anyhow!(e.to_string()))
             .unwrap();
-        // println!("list :{:?}", list.bucket());
 
         let token = list.next_continuation_token().clone();
 

@@ -16,6 +16,8 @@ use notify::{
 use serde::{Deserialize, Serialize};
 use tokio::task::yield_now;
 
+use crate::checkpoint::RecordDescription;
+
 use super::struct_to_json_string;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -50,6 +52,8 @@ impl Modified {
             modify_type: ModifyType::Unkown,
         }
     }
+
+    // pub fn to_record_discription(&self) -> Result<RecordDescription> {}
 }
 
 #[derive(Debug)]
