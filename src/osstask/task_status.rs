@@ -32,7 +32,7 @@ impl TaskStatusSaver {
             let offset = match self
                 .list_file_positon_map
                 .iter()
-                .filter(|f| f.key().starts_with(OFFSET_PREFIX))
+                .filter(|item| item.key().starts_with(OFFSET_PREFIX))
                 .map(|m| m.offset)
                 .min()
             {
@@ -42,6 +42,7 @@ impl TaskStatusSaver {
                     continue;
                 }
             };
+
             let mut offset_key = OFFSET_PREFIX.to_string();
             offset_key.push_str(offset.to_string().as_str());
 
@@ -63,6 +64,7 @@ impl TaskStatusSaver {
             if let Err(e) = checkpoint.save_to(&self.save_to) {
                 log::error!("{}", e);
             };
+
             tokio::time::sleep(tokio::time::Duration::from_secs(self.interval)).await;
             yield_now().await;
         }

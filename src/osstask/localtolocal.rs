@@ -1,4 +1,4 @@
-use super::{gen_file_path, ERROR_RECORD_PREFIX, OFFSET_EXEC_PREFIX};
+use super::{gen_file_path, ERROR_RECORD_PREFIX, OFFSET_PREFIX};
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::{checkpoint::ListedRecord, commons::multi_parts_copy_file};
 use anyhow::anyhow;
@@ -29,7 +29,7 @@ impl LocalToLocal {
     // 如果在批次处理开始前出现报错则整批数据都不执行，需要有逻辑执行错误记录
     pub async fn exec(&self, records: Vec<ListedRecord>) -> Result<()> {
         let subffix = records[0].offset.to_string();
-        let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
+        let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
 
@@ -72,7 +72,7 @@ impl LocalToLocal {
                     },
                     option: Opt::PUT,
                 };
-                recorddesc.error_handler(
+                recorddesc.handle_error(
                     anyhow!("{}", e),
                     &self.error_conter,
                     &self.offset_map,

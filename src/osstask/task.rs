@@ -1,7 +1,7 @@
 use super::{
     osscompare::OssCompare,
     task_actions::{TaskActionsFromLocal, TaskActionsFromOss},
-    DownloadTask, TaskStatusSaver, TransferTask, UploadTask,
+    DownloadTask, TaskStatusSaver, TaskTransfer, UploadTask,
 };
 use crate::{
     checkpoint::{get_task_checkpoint, CheckPoint, FilePosition, ListedRecord},
@@ -38,7 +38,6 @@ pub const OBJECT_LIST_FILE_PREFIX: &'static str = "objlist_";
 pub const CHECK_POINT_FILE_NAME: &'static str = "checkpoint.yml";
 pub const ERROR_RECORD_PREFIX: &'static str = "error_record_";
 pub const OFFSET_PREFIX: &'static str = "offset_";
-pub const OFFSET_EXEC_PREFIX: &'static str = "offset_exec_";
 pub const COMPARE_OBJECT_DIFF_PREFIX: &'static str = "diff_object_";
 pub const NOTIFY_FILE_PREFIX: &'static str = "notify_file_";
 
@@ -62,12 +61,9 @@ pub enum TaskType {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 // #[serde(untagged)]
 pub enum TaskDescription {
-    // Download(TaskDownload),
     Download(DownloadTask),
-    // Upload(TaskUpLoad),
     Upload(UploadTask),
-    // Transfer(TaskTransfer),
-    Transfer(TransferTask),
+    Transfer(TaskTransfer),
     LocalToLocal(TaskLocalToLocal),
     OssCompare(TaskOssCompare),
     TruncateBucket(TaskTruncateBucket),
@@ -81,14 +77,21 @@ impl TaskDescription {
             TaskDescription::Download(download) => {
                 execute_task_from_oss_multi_threads(true, download, &download.task_attributes)
             }
-            // TaskDescription::Upload(upload) => upload.exec_multi_threads(),
             TaskDescription::Upload(upload) => {
                 execute_task_from_local_multi_threads(true, upload, &upload.task_attributes)
             }
             TaskDescription::Transfer(transfer) => {
                 execute_task_from_oss_multi_threads(true, transfer, &transfer.task_attributes)
             }
-            TaskDescription::LocalToLocal(local_to_local) => local_to_local.exec_multi_threads(),
+            TaskDescription::LocalToLocal(local_to_local) => {
+                local_to_local.exec_multi_threads()
+
+                // execute_task_from_local_multi_threads(
+                //     true,
+                //     local_to_local,
+                //     &local_to_local.task_attributes,
+                // )
+            }
             TaskDescription::TruncateBucket(truncate) => truncate.exec_multi_threads(),
             TaskDescription::OssCompare(oss_compare) => oss_compare.exec_multi_threads(),
         }
@@ -164,7 +167,7 @@ pub struct Task {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct TaskAttributes {
+pub struct TransferTaskAttributes {
     #[serde(default = "TaskDefaultParameters::batch_size_default")]
     pub bach_size: i32,
     #[serde(default = "TaskDefaultParameters::task_threads_default")]
@@ -189,7 +192,7 @@ pub struct TaskAttributes {
     pub continuous: bool,
 }
 
-impl Default for TaskAttributes {
+impl Default for TransferTaskAttributes {
     fn default() -> Self {
         Self {
             bach_size: TaskDefaultParameters::batch_size_default(),
@@ -805,7 +808,7 @@ impl TaskOssCompare {
                     let compare = OssCompare {
                         source: self.source.clone(),
                         target: self.target.clone(),
-                        error_conter: Arc::clone(&error_conter),
+                        err_conter: Arc::clone(&error_conter),
                         offset_map: Arc::clone(&offset_map),
                         meta_dir: self.meta_dir.clone(),
                         exprirs_diff_scope: self.exprirs_diff_scope,
@@ -814,7 +817,7 @@ impl TaskOssCompare {
                     set.spawn(async move {
                         if let Err(e) = compare.compare(vk).await {
                             compare
-                                .error_conter
+                                .err_conter
                                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                             log::error!("{}", e);
                         };
@@ -838,7 +841,7 @@ impl TaskOssCompare {
                 let compare = OssCompare {
                     source: self.source.clone(),
                     target: self.target.clone(),
-                    error_conter: Arc::clone(&error_conter),
+                    err_conter: Arc::clone(&error_conter),
                     offset_map: Arc::clone(&offset_map),
                     meta_dir: self.meta_dir.clone(),
                     exprirs_diff_scope: self.exprirs_diff_scope,
@@ -848,7 +851,7 @@ impl TaskOssCompare {
                 set.spawn(async move {
                     if let Err(e) = compare.compare(vk).await {
                         compare
-                            .error_conter
+                            .err_conter
                             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         log::error!("{}", e);
                     };
@@ -882,7 +885,7 @@ impl TaskOssCompare {
 pub fn execute_task_from_oss_multi_threads<T>(
     init: bool,
     task: &T,
-    task_attributes: &TaskAttributes,
+    task_attributes: &TransferTaskAttributes,
 ) -> Result<()>
 where
     T: TaskActionsFromOss,
@@ -1166,7 +1169,7 @@ where
 pub fn execute_task_from_local_multi_threads<T>(
     init: bool,
     task: &T,
-    task_attributes: &TaskAttributes,
+    task_attributes: &TransferTaskAttributes,
 ) -> Result<()>
 where
     T: TaskActionsFromLocal,
@@ -1465,10 +1468,6 @@ where
         }
 
         if task_attributes.continuous {
-            // let checkpoint = match get_task_checkpoint(
-            //     check_point_file.as_str(),
-            //     task_attributes.meta_dir.as_str(),
-            // ) {
             let checkpoint = match get_task_checkpoint(check_point_file.as_str()) {
                 Ok(c) => c,
                 Err(e) => {
@@ -1497,6 +1496,7 @@ where
                     sys_set.spawn(async move {
                         task_status_saver.snapshot_to_file().await;
                     });
+
                     let _ = task
                         .execute_increment(
                             f.as_str(),

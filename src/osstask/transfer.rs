@@ -1,6 +1,6 @@
 use super::{
-    gen_file_path, task_actions::TaskActionsFromOss, TaskAttributes, TaskType, ERROR_RECORD_PREFIX,
-    OFFSET_EXEC_PREFIX,
+    gen_file_path, task_actions::TaskActionsFromOss, TaskType, TransferTaskAttributes,
+    ERROR_RECORD_PREFIX, OFFSET_PREFIX,
 };
 use crate::{
     checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
@@ -22,24 +22,24 @@ use walkdir::WalkDir;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
-pub struct TransferTask {
+pub struct TaskTransfer {
     pub source: OSSDescription,
     pub target: OSSDescription,
-    pub task_attributes: TaskAttributes,
+    pub task_attributes: TransferTaskAttributes,
 }
 
-impl Default for TransferTask {
+impl Default for TaskTransfer {
     fn default() -> Self {
         Self {
             source: OSSDescription::default(),
             target: OSSDescription::default(),
-            task_attributes: TaskAttributes::default(),
+            task_attributes: TransferTaskAttributes::default(),
         }
     }
 }
 
 #[async_trait]
-impl TaskActionsFromOss for TransferTask {
+impl TaskActionsFromOss for TaskTransfer {
     fn task_type(&self) -> TaskType {
         TaskType::Transfer
     }
@@ -213,7 +213,7 @@ pub struct TransferRecordsExecutor {
 impl TransferRecordsExecutor {
     pub async fn exec_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
         let subffix = records[0].offset.to_string();
-        let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
+        let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
 
@@ -255,7 +255,7 @@ impl TransferRecordsExecutor {
                     },
                     option: Opt::PUT,
                 };
-                recorddesc.error_handler(
+                recorddesc.handle_error(
                     anyhow!("{}", e),
                     &self.err_counter,
                     &self.offset_map,

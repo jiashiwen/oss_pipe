@@ -21,8 +21,8 @@ use tokio::{runtime::Runtime, task::JoinSet};
 use walkdir::WalkDir;
 
 use super::{
-    gen_file_path, task_actions::TransferTaskActions, TaskAttributes, ERROR_RECORD_PREFIX,
-    OFFSET_EXEC_PREFIX,
+    gen_file_path, task_actions::TransferTaskActions, TransferTaskAttributes, ERROR_RECORD_PREFIX,
+    OFFSET_PREFIX,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -30,7 +30,7 @@ use super::{
 pub struct TransferOss2Local {
     pub source: OSSDescription,
     pub target: String,
-    pub task_attributes: TaskAttributes,
+    pub task_attributes: TransferTaskAttributes,
 }
 
 impl Default for TransferOss2Local {
@@ -38,7 +38,7 @@ impl Default for TransferOss2Local {
         Self {
             source: OSSDescription::default(),
             target: "/tmp".to_string(),
-            task_attributes: TaskAttributes::default(),
+            task_attributes: TransferTaskAttributes::default(),
         }
     }
 }
@@ -216,7 +216,7 @@ pub struct Oss2LocalListedRecordsExecutor {
 impl Oss2LocalListedRecordsExecutor {
     pub async fn exec(&self, records: Vec<ListedRecord>) -> Result<()> {
         let subffix = records[0].offset.to_string();
-        let mut offset_key = OFFSET_EXEC_PREFIX.to_string();
+        let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
         // 先写首行日志，避免错误漏记
@@ -251,7 +251,7 @@ impl Oss2LocalListedRecordsExecutor {
                     },
                     option: Opt::PUT,
                 };
-                record_desc.error_handler(
+                record_desc.handle_error(
                     anyhow!("{}", e),
                     &self.err_counter,
                     &self.offset_map,
