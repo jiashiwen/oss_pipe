@@ -1,3 +1,8 @@
+use super::struct_to_json_string;
+use notify::{
+    event::CreateKind, Config, Error, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
+};
+use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
     io::{LineWriter, Write},
@@ -8,17 +13,7 @@ use std::{
         Arc,
     },
 };
-
-use notify::{
-    event::CreateKind, Config, Error, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
-};
-
-use serde::{Deserialize, Serialize};
 use tokio::task::yield_now;
-
-use crate::checkpoint::RecordDescription;
-
-use super::struct_to_json_string;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -52,8 +47,6 @@ impl Modified {
             modify_type: ModifyType::Unkown,
         }
     }
-
-    // pub fn to_record_discription(&self) -> Result<RecordDescription> {}
 }
 
 #[derive(Debug)]
@@ -78,6 +71,7 @@ impl NotifyWatcher {
 
     pub async fn watch_to_file(self, file: File, file_size: Arc<AtomicU64>) {
         let mut linewiter = LineWriter::new(&file);
+        let mut tmp_modified = Modified::new();
         for res in self.reciver {
             let mut modified = Modified::new();
             match res {
@@ -120,6 +114,16 @@ impl NotifyWatcher {
                 Err(error) => println!("{}", error),
             }
 
+            // 避免在 echo 时 重复put文件，只保留创建事件
+            if tmp_modified.path.eq(&modified.path)
+                && tmp_modified.path_type.eq(&modified.path_type)
+                && matches!(tmp_modified.modify_type, ModifyType::Create)
+                && matches!(modified.modify_type, ModifyType::Modify)
+            {
+                tmp_modified = modified;
+                continue;
+            }
+
             match modified.modify_type {
                 ModifyType::Unkown => {}
                 _ => {
@@ -132,12 +136,15 @@ impl NotifyWatcher {
                     };
                 }
             }
+
             match file.metadata() {
                 Ok(meta) => {
                     file_size.store(meta.len(), Ordering::SeqCst);
                 }
                 Err(_) => {}
             };
+
+            tmp_modified = modified;
 
             yield_now().await;
         }

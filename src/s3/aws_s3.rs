@@ -1,17 +1,15 @@
-use std::{
-    fs::{File, OpenOptions},
-    io::{LineWriter, Read, Write},
-    path::Path,
-};
-
-use anyhow::{anyhow, Ok, Result};
+use anyhow::{anyhow, Result};
 use aws_sdk_s3::{
     model::{CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier},
     output::{CreateMultipartUploadOutput, GetObjectOutput},
     types::ByteStream,
     Client,
 };
-use aws_smithy_types::date_time::DateTime;
+use std::{
+    fs::{File, OpenOptions},
+    io::{LineWriter, Read, Write},
+    path::Path,
+};
 use tokio::io::AsyncReadExt;
 
 use super::OssObjectsList;
@@ -192,81 +190,6 @@ impl OssClient {
         };
     }
 
-    pub async fn download_object_to_local(
-        &self,
-        bucket: String,
-        key: String,
-        dir: String,
-    ) -> Result<()> {
-        let resp = self
-            .client
-            .get_object()
-            .bucket(bucket)
-            .key(key.clone())
-            .send()
-            .await?;
-        let data = resp.body.collect().await?;
-        let bytes = data.into_bytes();
-        let mut store = dir.clone();
-        store.push_str("/");
-        store.push_str(&key);
-
-        let store_path = Path::new(store.as_str());
-        let path = std::path::Path::new(store_path);
-
-        if let Some(p) = path.parent() {
-            std::fs::create_dir_all(p)?;
-        };
-
-        let mut file = OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .create(true)
-            .open(store_path)?;
-        let _ = file.write(&*bytes);
-        file.flush()?;
-        Ok(())
-    }
-
-    pub async fn download_objects_to_local(
-        self,
-        bucket: String,
-        keys: Vec<String>,
-        dir: String,
-    ) -> Result<()> {
-        for key in keys {
-            let resp = self
-                .client
-                .get_object()
-                .bucket(&bucket)
-                .key(key.clone())
-                .send()
-                .await?;
-
-            let data = resp.body.collect().await?;
-            let bytes = data.into_bytes();
-            let mut store = dir.clone();
-            store.push_str("/");
-            store.push_str(&key);
-
-            let store_path = Path::new(store.as_str());
-            let path = std::path::Path::new(store_path);
-
-            if let Some(p) = path.parent() {
-                std::fs::create_dir_all(p)?;
-            };
-
-            let mut file = OpenOptions::new()
-                .write(true)
-                .truncate(true)
-                .create(true)
-                .open(store_path)?;
-            let _ = file.write(&*bytes);
-            file.flush()?;
-        }
-        Ok(())
-    }
-
     pub async fn get_object(
         &self,
         bucket: &str,
@@ -317,17 +240,6 @@ impl OssClient {
             .delete(Delete::builder().set_objects(Some(keys)).build())
             .send()
             .await
-    }
-
-    pub async fn get_object_bytes(&self, bucket: &str, key: &str) -> Result<ByteStream> {
-        let resp = self
-            .client
-            .get_object()
-            .bucket(bucket)
-            .key(key.clone())
-            .send()
-            .await?;
-        Ok(resp.body)
     }
 
     pub async fn get_object_etag(&self, bucket: &str, key: &str) -> Result<Option<String>> {
@@ -390,6 +302,33 @@ impl OssClient {
             next_token: token,
         };
         Ok(oss_list)
+    }
+
+    pub async fn transfer_object(
+        &self,
+        bucket: &str,
+        key: &str,
+        expires: Option<aws_smithy_types::DateTime>,
+        splite_size: usize,
+        chunk_size: usize,
+        object: GetObjectOutput,
+    ) -> Result<()> {
+        let content_len_usize: usize = object.content_length().try_into()?;
+        // match content_len_usize.le(&splite_size){
+        //     true => {todo!()},
+        //     false => {
+        //         self.multipart_upload_byte_stream(
+        //             bucket,
+        //             key,
+        //             expires:object.expires(),
+        //             body_len: content_len_usize,
+        //             chunk_size,
+        //             body: object.body,
+        //         ).aw
+        //     },
+        // }
+
+        Ok(())
     }
 
     pub async fn multipart_upload_byte_stream(
@@ -515,74 +454,27 @@ impl OssClient {
             return Ok(());
         }
 
-        let mut part_number = 0;
-        let mut upload_parts: Vec<CompletedPart> = Vec::new();
+        self.multipart_upload_local_file(bucket, key, &mut file, chuck_size)
+            .await
+    }
 
-        //获取上传id
-        let multipart_upload_res: CreateMultipartUploadOutput = self
+    pub async fn upload_object_bytes(
+        &self,
+        bucket: &str,
+        key: &str,
+        expires: Option<aws_smithy_types::DateTime>,
+        content: ByteStream,
+    ) -> Result<()> {
+        let mut upload = self
             .client
-            .create_multipart_upload()
+            .put_object()
             .bucket(bucket)
             .key(key)
-            .send()
-            .await?;
-        let upload_id = match multipart_upload_res.upload_id() {
-            Some(id) => id,
-            None => {
-                return Err(anyhow!("upload id is None"));
-            }
+            .body(content);
+        if let Some(exp) = expires {
+            upload = upload.expires(exp);
         };
-
-        //分段上传文件并记录completer_part
-        loop {
-            let mut buf = vec![0; chuck_size];
-            let read_count = file.read(&mut buf)?;
-            part_number += 1;
-
-            if read_count == 0 {
-                break;
-            }
-
-            let body = &buf[..read_count];
-            let stream = ByteStream::from(body.to_vec());
-
-            let upload_part_res = self
-                .client
-                .upload_part()
-                .key(key)
-                .bucket(bucket)
-                .upload_id(upload_id)
-                .body(stream)
-                .part_number(part_number)
-                .send()
-                .await?;
-
-            let completed_part = CompletedPart::builder()
-                .e_tag(upload_part_res.e_tag.unwrap_or_default())
-                .part_number(part_number)
-                .build();
-
-            upload_parts.push(completed_part);
-
-            if read_count != chuck_size {
-                break;
-            }
-        }
-        // 完成上传文件合并
-        let completed_multipart_upload: CompletedMultipartUpload =
-            CompletedMultipartUpload::builder()
-                .set_parts(Some(upload_parts))
-                .build();
-
-        let _complete_multipart_upload_res = self
-            .client
-            .complete_multipart_upload()
-            .bucket(bucket)
-            .key(key)
-            .multipart_upload(completed_multipart_upload)
-            .upload_id(upload_id)
-            .send()
-            .await?;
+        upload.send().await?;
         Ok(())
     }
 
@@ -684,76 +576,24 @@ impl OssClient {
         };
         Ok(exist)
     }
-
-    pub async fn object_last_modified(&self, bucket: &str, key: &str) -> Result<Option<DateTime>> {
-        let head = self
-            .client
-            .head_object()
-            .bucket(bucket)
-            .key(key)
-            .send()
-            .await?;
-        return match head.last_modified() {
-            Some(d) => Ok(Some(d.clone())),
-            None => Ok(None),
-        };
-    }
-
-    pub async fn upload_object_bytes(
-        &self,
-        bucket: &str,
-        key: &str,
-        expires: Option<aws_smithy_types::DateTime>,
-        content: ByteStream,
-    ) -> Result<()> {
-        let mut upload = self
-            .client
-            .put_object()
-            .bucket(bucket)
-            .key(key)
-            .body(content);
-        if let Some(exp) = expires {
-            upload = upload.expires(exp);
-        };
-        upload.send().await?;
-        Ok(())
-    }
-
-    pub async fn upload_object_from_local(
-        &self,
-        bucket: &str,
-        key: &str,
-        file_path: &str,
-    ) -> Result<()> {
-        let body = ByteStream::from_path(Path::new(&file_path)).await?;
-        self.client
-            .put_object()
-            .bucket(bucket)
-            .key(key)
-            .body(body)
-            .send()
-            .await?;
-
-        Ok(())
-    }
 }
 
-pub async fn byte_stream_to_file(b: ByteStream, file: &mut File) -> Result<()> {
-    let content = b.collect().await?;
-    let bytes = content.into_bytes();
-    file.write_all(&bytes)?;
-    file.flush()?;
-    Ok(())
-}
-
-pub async fn byte_stream_multi_partes_to_file(
-    resp: GetObjectOutput,
+pub async fn oss_download_to_file(
+    get_object: GetObjectOutput,
     file: &mut File,
+    splite_size: usize,
     chunk_size: usize,
 ) -> Result<()> {
-    let content_len = resp.content_length();
-    let mut byte_stream_async_reader = resp.body.into_async_read();
-    let mut content_len_usize: usize = content_len.try_into()?;
+    let mut content_len_usize: usize = get_object.content_length().try_into()?;
+    if content_len_usize.le(&splite_size) {
+        let content = get_object.body.collect().await?;
+        let bytes = content.into_bytes();
+        file.write_all(&bytes)?;
+        file.flush()?;
+        return Ok(());
+    }
+
+    let mut byte_stream_async_reader = get_object.body.into_async_read();
     loop {
         if content_len_usize > chunk_size {
             let mut buffer = vec![0; chunk_size];
@@ -768,8 +608,8 @@ pub async fn byte_stream_multi_partes_to_file(
             break;
         }
     }
-    file.flush()?;
 
+    file.flush()?;
     Ok(())
 }
 
@@ -805,51 +645,6 @@ mod test {
             if let Err(e) = r {
                 println!("{}", e.to_string());
                 return;
-            }
-        });
-    }
-
-    //cargo test s3::aws_s3::test::test_read_byte_stream_by_line -- --nocapture
-    #[test]
-    fn test_read_byte_stream_by_line() {
-        // 获取oss连接参数
-        let vec_oss = crate::commons::read_yaml_file::<Vec<OSSDescription>>("osscfg.yml").unwrap();
-        let oss_desc = vec_oss[0].clone();
-        let jd_client = oss_desc.gen_oss_client().unwrap();
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let file_path = "/tmp/line_file";
-        let mut file = OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .create(true)
-            .open(file_path)
-            .unwrap();
-        for _ in 0..99 {
-            let mut s = rand_string(8);
-            s.push('\n');
-
-            let _ = file.write(s.as_bytes());
-        }
-
-        file.flush().unwrap();
-
-        rt.block_on(async {
-            let _ = jd_client
-                .upload_object_from_local("jsw-bucket-1", "line_file", "/tmp/line_file")
-                .await;
-
-            let stream: aws_sdk_s3::types::ByteStream = jd_client
-                .get_object_bytes("jsw-bucket-1", "line_file")
-                .await
-                .unwrap();
-            let mut lines = BufReader::new(stream.into_async_read()).lines();
-
-            // 按行读取ByteStream
-            while let Ok(line) = lines.next_line().await {
-                match line {
-                    Some(l) => println!("{}", l),
-                    None => break,
-                }
             }
         });
     }

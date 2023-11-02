@@ -33,8 +33,8 @@ use walkdir::WalkDir;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub struct UploadTask {
+    pub source: String,
     pub target: OSSDescription,
-    pub local_path: String,
     pub task_attributes: TransferTaskAttributes,
 }
 
@@ -42,7 +42,7 @@ impl Default for UploadTask {
     fn default() -> Self {
         Self {
             target: OSSDescription::default(),
-            local_path: "/tmp".to_string(),
+            source: "/tmp".to_string(),
             task_attributes: TransferTaskAttributes::default(),
         }
     }
@@ -97,7 +97,7 @@ impl TaskActionsFromLocal for UploadTask {
 
                     if record_vec.len() > 0 {
                         let upload = UpLoadExecutor {
-                            local_path: self.local_path.clone(),
+                            source: self.source.clone(),
                             target: self.target.clone(),
                             err_counter: Arc::new(AtomicUsize::new(0)),
                             offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
@@ -116,6 +116,7 @@ impl TaskActionsFromLocal for UploadTask {
 
         Ok(())
     }
+
     // 记录执行器
     async fn records_excutor(
         &self,
@@ -126,7 +127,7 @@ impl TaskActionsFromLocal for UploadTask {
         list_file: String,
     ) {
         let upload = UpLoadExecutor {
-            local_path: self.local_path.clone(),
+            source: self.source.clone(),
             target: self.target.clone(),
             err_counter,
             offset_map,
@@ -154,7 +155,7 @@ impl TaskActionsFromLocal for UploadTask {
 
         rt.block_on(async {
             // 遍历目录并生成文件列表
-            let total_rs = scan_folder_files_to_file(self.local_path.as_str(), &object_list_file);
+            let total_rs = scan_folder_files_to_file(self.source.as_str(), &object_list_file);
             match total_rs {
                 Ok(size) => total_lines = size,
                 Err(e) => {
@@ -172,7 +173,7 @@ impl TaskActionsFromLocal for UploadTask {
     }
 
     fn gen_watcher(&self) -> notify::Result<NotifyWatcher> {
-        let watcher = NotifyWatcher::new(self.local_path.as_str())?;
+        let watcher = NotifyWatcher::new(self.source.as_str())?;
         Ok(watcher)
     }
 
@@ -208,7 +209,6 @@ impl TaskActionsFromLocal for UploadTask {
         );
 
         // Todo
-        // 重构，抽象modify handler函数
         loop {
             if notify_file_size.load(Ordering::SeqCst).le(&offset) {
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
@@ -249,7 +249,7 @@ impl TaskActionsFromLocal for UploadTask {
             for line in lines {
                 line_num += 1;
                 if let Result::Ok(key) = line {
-                    //     // Modifed 解析
+                    // Modifed 解析
                     offset_usize += key.len();
                     match self
                         .modified_str_to_record_description(
@@ -273,112 +273,19 @@ impl TaskActionsFromLocal for UploadTask {
                                 option: Opt::UNKOWN,
                             };
                             r.handle_error(
-                                e,
                                 &err_counter,
                                 &offset_map,
                                 &mut error_file,
                                 offset_key.as_str(),
-                            )
+                            );
+                            log::error!("{}", e);
                         }
                     }
-
-                    // records.push(record);
-                    //     match from_str::<Modified>(key.as_str()) {
-                    //         Ok(m) => {
-                    //             let mut target_path = m.path.clone();
-                    //             match self.local_path.ends_with("/") {
-                    //                 true => target_path.drain(..self.local_path.len()),
-                    //                 false => target_path.drain(..self.local_path.len() + 1),
-                    //             };
-                    //             if let Some(prefix) = self.target.prefix.clone() {
-                    //                 target_path.insert_str(0, &prefix);
-                    //             }
-
-                    //             let mut target_path = m.path.clone();
-
-                    //             match self.local_path.ends_with("/") {
-                    //                 true => target_path.drain(..self.local_path.len()),
-                    //                 false => target_path.drain(..self.local_path.len() + 1),
-                    //             };
-
-                    //             if let Some(prefix) = self.target.prefix.clone() {
-                    //                 target_path.insert_str(0, &prefix);
-                    //             }
-
-                    //             if PathType::File.eq(&m.path_type) {
-                    //                 match m.modify_type {
-                    //                     ModifyType::Create | ModifyType::Modify => {
-                    //                         if let Err(e) = client
-                    //                             .upload_from_local(
-                    //                                 &self.target.bucket,
-                    //                                 target_path.as_str(),
-                    //                                 &m.path,
-                    //                                 self.task_attributes.large_file_size,
-                    //                                 self.task_attributes.multi_part_chunk,
-                    //                             )
-                    //                             .await
-                    //                         {
-                    //                             let recorddesc = RecordDescription {
-                    //                                 source_key: m.path.clone(),
-                    //                                 target_key: target_path.clone(),
-                    //                                 list_file_path: notify_file.to_string(),
-                    //                                 list_file_position: FilePosition {
-                    //                                     offset: offset_usize,
-                    //                                     line_num,
-                    //                                 },
-                    //                                 option: Opt::PUT,
-                    //                             };
-                    //                             recorddesc.handle_error(
-                    //                                 e,
-                    //                                 &err_counter,
-                    //                                 &offset_map,
-                    //                                 &mut error_file,
-                    //                                 offset_key.as_str(),
-                    //                             );
-                    //                         }
-                    //                     }
-                    //                     ModifyType::Delete => {
-                    //                         if let Err(e) = client
-                    //                             .remove_object(
-                    //                                 &self.target.bucket,
-                    //                                 target_path.as_str(),
-                    //                             )
-                    //                             .await
-                    //                         {
-                    //                             let recorddesc = RecordDescription {
-                    //                                 source_key: m.path.clone(),
-                    //                                 target_key: target_path.clone(),
-                    //                                 list_file_path: notify_file.to_string(),
-                    //                                 list_file_position: FilePosition {
-                    //                                     offset: offset_usize,
-                    //                                     line_num,
-                    //                                 },
-                    //                                 option: Opt::REMOVE,
-                    //                             };
-                    //                             recorddesc.handle_error(
-                    //                                 anyhow!("{}", e),
-                    //                                 &err_counter,
-                    //                                 &offset_map,
-                    //                                 &mut error_file,
-                    //                                 offset_key.as_str(),
-                    //                             );
-                    //                         }
-                    //                     }
-
-                    //                     ModifyType::Unkown => {}
-                    //                 };
-                    //             };
-                    //         }
-                    //         Err(e) => {
-                    //             log::error!("{}", e);
-                    //             continue;
-                    //         }
-                    //     };
                 }
             }
 
             let executer = UpLoadExecutor {
-                local_path: self.local_path.clone(),
+                source: self.source.clone(),
                 target: self.target.clone(),
                 err_counter: Arc::clone(&err_counter),
                 offset_map: Arc::clone(&offset_map),
@@ -390,7 +297,7 @@ impl TaskActionsFromLocal for UploadTask {
             };
 
             if records.len() > 0 {
-                executer.exec_record_descriptions(records);
+                let _ = executer.exec_record_descriptions(records).await;
             }
 
             let _ = error_file.flush();
@@ -419,48 +326,6 @@ impl TaskActionsFromLocal for UploadTask {
 }
 
 impl UploadTask {
-    async fn modified_handler(&self, modified: Modified, client: &OssClient) -> Result<()> {
-        let mut target_path = modified.path.clone();
-
-        match self.local_path.ends_with("/") {
-            true => target_path.drain(..self.local_path.len()),
-            false => target_path.drain(..self.local_path.len() + 1),
-        };
-
-        if let Some(prefix) = self.target.prefix.clone() {
-            target_path.insert_str(0, &prefix);
-        }
-
-        if PathType::File.eq(&modified.path_type) {
-            let r = match modified.modify_type {
-                ModifyType::Create | ModifyType::Modify => {
-                    client
-                        .upload_from_local(
-                            &self.target.bucket,
-                            target_path.as_str(),
-                            &modified.path,
-                            self.task_attributes.large_file_size,
-                            self.task_attributes.multi_part_chunk,
-                        )
-                        .await
-                }
-                ModifyType::Delete => {
-                    match client
-                        .remove_object(&self.target.bucket, target_path.as_str())
-                        .await
-                    {
-                        Ok(_) => Ok(()),
-                        Err(e) => Err(anyhow!("{}", e.to_string())),
-                    }
-                }
-
-                ModifyType::Unkown => Ok(()),
-            };
-            return r;
-        };
-        Ok(())
-    }
-
     async fn modified_str_to_record_description(
         &self,
         modified_str: &str,
@@ -470,9 +335,9 @@ impl UploadTask {
     ) -> Result<RecordDescription> {
         let modified = from_str::<Modified>(modified_str)?;
         let mut target_path = modified.path.clone();
-        match self.local_path.ends_with("/") {
-            true => target_path.drain(..self.local_path.len()),
-            false => target_path.drain(..self.local_path.len() + 1),
+        match self.source.ends_with("/") {
+            true => target_path.drain(..self.source.len()),
+            false => target_path.drain(..self.source.len() + 1),
         };
         if let Some(prefix) = self.target.prefix.clone() {
             target_path.insert_str(0, &prefix);
@@ -510,7 +375,7 @@ impl UploadTask {
 
 #[derive(Debug, Clone)]
 pub struct UpLoadExecutor {
-    pub local_path: String,
+    pub source: String,
     pub target: OSSDescription,
     pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
@@ -543,8 +408,7 @@ impl UpLoadExecutor {
 
         let target_oss_client = self.target.gen_oss_client()?;
         for record in records {
-            let source_file_path =
-                gen_file_path(self.local_path.as_str(), &record.key.as_str(), "");
+            let source_file_path = gen_file_path(self.source.as_str(), &record.key.as_str(), "");
             let mut target_key = "".to_string();
             if let Some(s) = self.target.prefix.clone() {
                 target_key.push_str(&s);
@@ -572,12 +436,12 @@ impl UpLoadExecutor {
                     option: Opt::PUT,
                 };
                 record_desc.handle_error(
-                    e,
                     &self.err_counter,
                     &self.offset_map,
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                log::error!("{}", e);
             }
 
             self.offset_map.insert(
@@ -668,12 +532,13 @@ impl UpLoadExecutor {
         for record in records {
             if let Err(e) = self.record_description_handler(&record, &c_t).await {
                 record.handle_error(
-                    e,
+                    // e,
                     &self.err_counter,
                     &self.offset_map,
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                log::error!("{}", e);
             }
 
             self.offset_map
@@ -736,43 +601,5 @@ impl UpLoadExecutor {
             }
             Opt::UNKOWN => Err(anyhow!("option unkown")),
         }
-    }
-
-    async fn modified_handler(&self, modified: Modified, client: &OssClient) {
-        let mut target_path = modified.path.clone();
-        match self.local_path.ends_with("/") {
-            true => target_path.drain(..self.local_path.len()),
-            false => target_path.drain(..self.local_path.len() + 1),
-        };
-        if let Some(prefix) = self.target.prefix.clone() {
-            target_path.insert_str(0, &prefix);
-        }
-
-        if PathType::File.eq(&modified.path_type) {
-            let r = match modified.modify_type {
-                ModifyType::Create | ModifyType::Modify => {
-                    client
-                        .upload_from_local(
-                            &self.target.bucket,
-                            target_path.as_str(),
-                            &modified.path,
-                            self.large_file_size,
-                            self.multi_part_chunk,
-                        )
-                        .await
-                }
-                ModifyType::Delete => {
-                    match client
-                        .remove_object(&self.target.bucket, target_path.as_str())
-                        .await
-                    {
-                        Ok(_) => Ok(()),
-                        Err(e) => Err(anyhow!("{}", e.to_string())),
-                    }
-                }
-
-                ModifyType::Unkown => Ok(()),
-            };
-        };
     }
 }

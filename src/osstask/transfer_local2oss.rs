@@ -34,7 +34,7 @@ use walkdir::WalkDir;
 pub struct TransferLocal2Oss {
     pub source: String,
     pub target: OSSDescription,
-    pub task_attributes: TransferTaskAttributes,
+    pub attributes: TransferTaskAttributes,
 }
 
 impl Default for TransferLocal2Oss {
@@ -42,7 +42,7 @@ impl Default for TransferLocal2Oss {
         Self {
             target: OSSDescription::default(),
             source: "/tmp".to_string(),
-            task_attributes: TransferTaskAttributes::default(),
+            attributes: TransferTaskAttributes::default(),
         }
     }
 }
@@ -52,7 +52,7 @@ impl TransferTaskActions for TransferLocal2Oss {
     // 错误记录重试
     fn error_record_retry(&self) -> Result<()> {
         // 遍历错误记录
-        for entry in WalkDir::new(self.task_attributes.meta_dir.as_str())
+        for entry in WalkDir::new(self.attributes.meta_dir.as_str())
             .into_iter()
             .filter_map(Result::ok)
             .filter(|e| !e.file_type().is_dir() && e.file_name().to_str().is_some())
@@ -97,10 +97,10 @@ impl TransferTaskActions for TransferLocal2Oss {
                             target: self.target.clone(),
                             err_counter: Arc::new(AtomicUsize::new(0)),
                             offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
-                            meta_dir: self.task_attributes.meta_dir.clone(),
-                            target_exist_skip: self.task_attributes.target_exists_skip,
-                            large_file_size: self.task_attributes.large_file_size,
-                            multi_part_chunk: self.task_attributes.multi_part_chunk,
+                            meta_dir: self.attributes.meta_dir.clone(),
+                            target_exist_skip: self.attributes.target_exists_skip,
+                            large_file_size: self.attributes.large_file_size,
+                            multi_part_chunk: self.attributes.multi_part_chunk,
                             list_file_path: p.to_string(),
                         };
                         let _ = upload.exec_listed_records(record_vec);
@@ -126,10 +126,10 @@ impl TransferTaskActions for TransferLocal2Oss {
             target: self.target.clone(),
             err_counter,
             offset_map,
-            meta_dir: self.task_attributes.meta_dir.clone(),
+            meta_dir: self.attributes.meta_dir.clone(),
             target_exist_skip: false,
-            large_file_size: self.task_attributes.large_file_size,
-            multi_part_chunk: self.task_attributes.multi_part_chunk,
+            large_file_size: self.attributes.large_file_size,
+            multi_part_chunk: self.attributes.multi_part_chunk,
             list_file_path: list_file,
         };
 
@@ -144,32 +144,14 @@ impl TransferTaskActions for TransferLocal2Oss {
     }
 
     // 生成对象列表
-    fn generate_object_list(
+    async fn generate_object_list(
         &self,
-        rt: &Runtime,
+        // rt: &Runtime,
         _last_modify_timestamp: i64,
         object_list_file: &str,
     ) -> Result<usize> {
-        let mut interrupted = false;
-        let mut total_lines = 0;
-
-        rt.block_on(async {
-            // 遍历目录并生成文件列表
-            let total_rs = scan_folder_files_to_file(self.source.as_str(), &object_list_file);
-            match total_rs {
-                Ok(size) => total_lines = size,
-                Err(e) => {
-                    log::error!("{}", e);
-                    interrupted = true;
-                    return;
-                }
-            }
-        });
-
-        if interrupted {
-            return Err(anyhow!("get object list error"));
-        }
-        Ok(total_lines)
+        // 遍历目录并生成文件列表
+        scan_folder_files_to_file(self.source.as_str(), &object_list_file)
     }
 }
 
@@ -180,7 +162,6 @@ impl TransferLocal2Oss {
     }
 
     // Todo
-    // 抽象
     async fn execute_increment(
         &self,
         notify_file: &str,
@@ -203,11 +184,8 @@ impl TransferLocal2Oss {
         let subffix = offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
-        let error_file_name = gen_file_path(
-            &self.task_attributes.meta_dir,
-            ERROR_RECORD_PREFIX,
-            &subffix,
-        );
+        let error_file_name =
+            gen_file_path(&self.attributes.meta_dir, ERROR_RECORD_PREFIX, &subffix);
 
         // Todo
         // 重构，抽象modify handler函数
@@ -217,7 +195,7 @@ impl TransferLocal2Oss {
                 continue;
             }
             if self
-                .task_attributes
+                .attributes
                 .max_errors
                 .le(&err_counter.load(std::sync::atomic::Ordering::Relaxed))
             {
@@ -282,8 +260,8 @@ impl TransferLocal2Oss {
                                                 &self.target.bucket,
                                                 target_path.as_str(),
                                                 &m.path,
-                                                self.task_attributes.large_file_size,
-                                                self.task_attributes.multi_part_chunk,
+                                                self.attributes.large_file_size,
+                                                self.attributes.multi_part_chunk,
                                             )
                                             .await
                                         {
@@ -298,12 +276,13 @@ impl TransferLocal2Oss {
                                                 option: Opt::PUT,
                                             };
                                             recorddesc.handle_error(
-                                                e,
+                                                // e,
                                                 &err_counter,
                                                 &offset_map,
                                                 &mut error_file,
                                                 offset_key.as_str(),
                                             );
+                                            log::error!("{}", e);
                                         }
                                     }
                                     ModifyType::Delete => {
@@ -325,12 +304,13 @@ impl TransferLocal2Oss {
                                                 option: Opt::REMOVE,
                                             };
                                             recorddesc.handle_error(
-                                                anyhow!("{}", e),
+                                                // anyhow!("{}", e),
                                                 &err_counter,
                                                 &offset_map,
                                                 &mut error_file,
                                                 offset_key.as_str(),
                                             );
+                                            log::error!("{}", e);
                                         }
                                     }
 
@@ -387,8 +367,8 @@ impl TransferLocal2Oss {
                             &self.target.bucket,
                             target_path.as_str(),
                             &modified.path,
-                            self.task_attributes.large_file_size,
-                            self.task_attributes.multi_part_chunk,
+                            self.attributes.large_file_size,
+                            self.attributes.multi_part_chunk,
                         )
                         .await
                 }
@@ -512,12 +492,13 @@ impl UpLoadExecutor {
                     option: Opt::PUT,
                 };
                 record_desc.handle_error(
-                    e,
+                    // e,
                     &self.err_counter,
                     &self.offset_map,
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                log::error!("{}", e);
             }
 
             self.offset_map.insert(
@@ -628,13 +609,13 @@ impl UpLoadExecutor {
                     }
                     Err(e) => {
                         record.handle_error(
-                            e,
+                            // e,
                             &self.err_counter,
                             &self.offset_map,
                             &mut error_file,
                             offset_key.as_str(),
                         );
-
+                        log::error!("{}", e);
                         continue;
                     }
                 }
@@ -651,12 +632,13 @@ impl UpLoadExecutor {
                 .await
             {
                 record.handle_error(
-                    e,
+                    // e,
                     &self.err_counter,
                     &self.offset_map,
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                log::error!("{}", e);
                 continue;
             }
 

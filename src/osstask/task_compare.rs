@@ -1,10 +1,4 @@
-use crate::{
-    checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
-    s3::{aws_s3::OssClient, OSSDescription},
-};
-use anyhow::anyhow;
 use anyhow::Result;
-use aws_sdk_s3::{error::GetObjectErrorKind, output::GetObjectOutput};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::{

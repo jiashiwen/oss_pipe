@@ -67,13 +67,13 @@ impl FromStr for RecordDescription {
 impl RecordDescription {
     pub fn handle_error(
         &self,
-        e: Error,
+        // e: Error,
         err_counter: &Arc<AtomicUsize>,
         offset_map: &Arc<DashMap<String, FilePosition>>,
         save_to: &mut File,
         file_position_key: &str,
     ) {
-        log::error!("{}", e);
+        // log::error!("{}", e);
         offset_map.insert(
             file_position_key.to_string(),
             self.list_file_position.clone(),
