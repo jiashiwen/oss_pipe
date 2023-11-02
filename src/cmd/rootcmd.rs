@@ -11,8 +11,8 @@ use crate::configure::{generate_default_config, set_config_file_path};
 use crate::configure::{get_config_file_path, get_current_config_yml, set_config};
 use crate::interact;
 use crate::osstask::{
-    task_id_generator, DownloadTask, Task, TaskDescription, TaskLocal2Local, TaskLocalToLocal,
-    TaskOssCompare, TaskTransfer, TaskTruncateBucket, TaskType, UploadTask,
+    task_id_generator, DownloadTask, Task, TaskDescription, TaskLocal2Local, TaskOssCompare,
+    TaskTransfer, TaskTruncateBucket, TaskType, UploadTask,
 };
 use crate::s3::oss::OSSDescription;
 use crate::s3::oss::OssProvider;
