@@ -61,7 +61,6 @@ impl TransferTaskActions for TransferLocal2Local {
 
     async fn generate_object_list(
         &self,
-        // rt: &Runtime,
         _last_modify_timestamp: i64,
         object_list_file: &str,
     ) -> Result<usize> {
@@ -71,8 +70,6 @@ impl TransferTaskActions for TransferLocal2Local {
         // 遍历目录并生成文件列表
         // let total_rs = scan_folder_files_to_file(self.source.as_str(), &object_list_file)?;
         scan_folder_files_to_file(self.source.as_str(), &object_list_file)
-
-        // Ok(total_lines)
     }
 }
 

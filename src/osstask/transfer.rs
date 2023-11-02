@@ -335,32 +335,15 @@ impl TransferRecordsExecutor {
                 return Ok(());
             }
         }
-        let content_len = usize::try_from(resp.content_length())?;
 
-        let expr = match resp.expires() {
-            Some(datetime) => Some(*datetime),
-            None => None,
-        };
-
-        // 大文件走 multi part upload 分支
-        match content_len > self.large_file_size {
-            true => {
-                target_oss
-                    .multipart_upload_byte_stream(
-                        self.target.bucket.as_str(),
-                        target_key,
-                        expr,
-                        content_len,
-                        self.multi_part_chunk,
-                        resp.body,
-                    )
-                    .await
-            }
-            false => {
-                target_oss
-                    .upload_object_bytes(self.target.bucket.as_str(), target_key, expr, resp.body)
-                    .await
-            }
-        }
+        target_oss
+            .transfer_object(
+                self.target.bucket.as_str(),
+                target_key,
+                self.large_file_size,
+                self.multi_part_chunk,
+                resp,
+            )
+            .await
     }
 }

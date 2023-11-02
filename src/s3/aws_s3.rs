@@ -308,27 +308,32 @@ impl OssClient {
         &self,
         bucket: &str,
         key: &str,
-        expires: Option<aws_smithy_types::DateTime>,
         splite_size: usize,
         chunk_size: usize,
         object: GetObjectOutput,
     ) -> Result<()> {
         let content_len_usize: usize = object.content_length().try_into()?;
-        // match content_len_usize.le(&splite_size){
-        //     true => {todo!()},
-        //     false => {
-        //         self.multipart_upload_byte_stream(
-        //             bucket,
-        //             key,
-        //             expires:object.expires(),
-        //             body_len: content_len_usize,
-        //             chunk_size,
-        //             body: object.body,
-        //         ).aw
-        //     },
-        // }
-
-        Ok(())
+        let expr = match object.expires() {
+            Some(d) => Some(*d),
+            None => None,
+        };
+        return match content_len_usize.le(&splite_size) {
+            true => {
+                self.upload_object_bytes(bucket, key, expr, object.body)
+                    .await
+            }
+            false => {
+                self.multipart_upload_byte_stream(
+                    bucket,
+                    key,
+                    expr,
+                    content_len_usize,
+                    chunk_size,
+                    object.body,
+                )
+                .await
+            }
+        };
     }
 
     pub async fn multipart_upload_byte_stream(

@@ -1472,7 +1472,6 @@ where
                     let stop_mark = Arc::new(AtomicBool::new(false));
                     let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
                     // 执行过程中错误数统计
-                    // let err_conter = Arc::clone(&error_conter);
                     let increment_file_size = Arc::clone(&notify_file_size);
 
                     let task_status_saver = TaskStatusSaver {
@@ -1519,6 +1518,7 @@ where
     T: TransferTaskActions,
 {
     // 检查配置参数
+
     // 存量传输
     // 增量传输
     Ok(())
