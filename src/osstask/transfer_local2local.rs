@@ -1,8 +1,8 @@
 use super::task_actions::TransferTaskActions;
 use super::{gen_file_path, TransferTaskAttributes, ERROR_RECORD_PREFIX, OFFSET_PREFIX};
+use crate::checkpoint::ListedRecord;
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::commons::{copy_file, scan_folder_files_to_file};
-use crate::{checkpoint::ListedRecord, commons::multi_parts_copy_file};
 use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -22,7 +22,7 @@ use tokio::task::JoinSet;
 pub struct TransferLocal2Local {
     pub source: String,
     pub target: String,
-    pub task_attributes: TransferTaskAttributes,
+    pub attributes: TransferTaskAttributes,
 }
 
 #[async_trait]
@@ -43,10 +43,10 @@ impl TransferTaskActions for TransferLocal2Local {
             target: self.target.clone(),
             err_counter,
             offset_map,
-            meta_dir: self.task_attributes.meta_dir.clone(),
+            meta_dir: self.attributes.meta_dir.clone(),
             target_exist_skip: false,
-            large_file_size: self.task_attributes.large_file_size,
-            multi_part_chunk: self.task_attributes.multi_part_chunk,
+            large_file_size: self.attributes.large_file_size,
+            multi_part_chunk: self.attributes.multi_part_chunk,
             list_file_path: list_file,
         };
 
@@ -59,32 +59,20 @@ impl TransferTaskActions for TransferLocal2Local {
         });
     }
 
-    fn generate_object_list(
+    async fn generate_object_list(
         &self,
-        rt: &Runtime,
+        // rt: &Runtime,
         _last_modify_timestamp: i64,
         object_list_file: &str,
     ) -> Result<usize> {
-        let mut interrupted = false;
-        let mut total_lines = 0;
+        // let mut interrupted = false;
+        // let mut total_lines = 0;
 
-        rt.block_on(async {
-            // 遍历目录并生成文件列表
-            let total_rs = scan_folder_files_to_file(self.source.as_str(), &object_list_file);
-            match total_rs {
-                Ok(size) => total_lines = size,
-                Err(e) => {
-                    log::error!("{}", e);
-                    interrupted = true;
-                    return;
-                }
-            }
-        });
+        // 遍历目录并生成文件列表
+        // let total_rs = scan_folder_files_to_file(self.source.as_str(), &object_list_file)?;
+        scan_folder_files_to_file(self.source.as_str(), &object_list_file)
 
-        if interrupted {
-            return Err(anyhow!("get object list error"));
-        }
-        Ok(total_lines)
+        // Ok(total_lines)
     }
 }
 
@@ -150,12 +138,13 @@ impl Local2LocalExecutor {
                     option: Opt::PUT,
                 };
                 recorddesc.handle_error(
-                    anyhow!("{}", e),
+                    // anyhow!("{}", e),
                     &self.err_counter,
                     &self.offset_map,
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                log::error!("{}", e);
             };
 
             self.offset_map.insert(
@@ -220,29 +209,15 @@ impl Local2LocalExecutor {
             }
         }
 
-        let s_file = OpenOptions::new().read(true).open(source_file)?;
-        let mut t_file = OpenOptions::new()
-            .truncate(true)
-            .create(true)
-            .write(true)
-            .open(target_file)?;
-
-        let s_file_len = s_file.metadata()?.len();
-        let len: usize = TryInto::try_into(s_file_len)?;
-
-        // 大文件走 multi part upload 分支
-        match len > self.large_file_size {
-            true => multi_parts_copy_file(source_file, target_file, self.multi_part_chunk),
-            false => {
-                let data = fs::read(source_file)?;
-                t_file.write_all(&data)?;
-                t_file.flush()?;
-                Ok(())
-            }
-        }
+        copy_file(
+            source_file,
+            target_file,
+            self.large_file_size,
+            self.multi_part_chunk,
+        )
     }
 
-    pub async fn exec_recorddescriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
+    pub async fn exec_record_descriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
         let subffix = records[0].list_file_position.offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
@@ -257,12 +232,13 @@ impl Local2LocalExecutor {
         for record in records {
             if let Err(e) = self.record_description_handler(&record).await {
                 record.handle_error(
-                    anyhow!("{}", e),
+                    // anyhow!("{}", e),
                     &self.err_counter,
                     &self.offset_map,
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                log::error!("{}", e);
             }
         }
 

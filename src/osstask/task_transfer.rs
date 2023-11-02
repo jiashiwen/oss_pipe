@@ -38,7 +38,7 @@ impl Default for ObjectStorage {
 pub struct TransferTask {
     pub source: ObjectStorage,
     pub target: ObjectStorage,
-    pub task_attributes: TransferTaskAttributes,
+    pub attributes: TransferTaskAttributes,
 }
 
 impl TransferTask {
@@ -49,7 +49,7 @@ impl TransferTask {
                     let t = TransferLocal2Local {
                         source: path_s.to_string(),
                         target: path_t.to_string(),
-                        task_attributes: self.task_attributes.clone(),
+                        attributes: self.attributes.clone(),
                     };
                     Box::new(t)
                 }
@@ -57,7 +57,7 @@ impl TransferTask {
                     let t = TransferLocal2Oss {
                         source: path_s.to_string(),
                         target: oss_t.clone(),
-                        task_attributes: self.task_attributes.clone(),
+                        attributes: self.attributes.clone(),
                     };
                     Box::new(t)
                 }
@@ -67,7 +67,7 @@ impl TransferTask {
                     let t = TransferOss2Local {
                         source: oss_s.clone(),
                         target: path_t.to_string(),
-                        task_attributes: self.task_attributes.clone(),
+                        attributes: self.attributes.clone(),
                     };
                     Box::new(t)
                 }
@@ -75,7 +75,7 @@ impl TransferTask {
                     let t = TransferOss2Oss {
                         source: oss_s.clone(),
                         target: oss_t.clone(),
-                        task_attributes: self.task_attributes.clone(),
+                        task_attributes: self.attributes.clone(),
                     };
                     Box::new(t)
                 }
@@ -196,66 +196,111 @@ impl TransferTaskActions for TransferOss2Oss {
     }
 
     // 生成对象列表
-    fn generate_object_list(
+    async fn generate_object_list(
         &self,
-        rt: &Runtime,
+        // rt: &Runtime,
         last_modify_timestamp: i64,
         object_list_file: &str,
     ) -> Result<usize> {
         let mut interrupted = false;
         let mut total_lines = 0;
 
-        rt.block_on(async {
-            let client_source = match self.source.gen_oss_client() {
-                Result::Ok(c) => c,
-                Err(e) => {
-                    log::error!("{}", e);
-                    interrupted = true;
-                    return;
-                }
-            };
+        let client_source = self.source.gen_oss_client()?;
 
-            // 若为持续同步模式，且 last_modify_timestamp 大于 0，则将 last_modify 属性大于last_modify_timestamp变量的对象加入执行列表
-            let total_rs = match last_modify_timestamp > 0 {
-                true => {
-                    client_source
-                        .append_last_modify_greater_object_to_file(
-                            self.source.bucket.clone(),
-                            self.source.prefix.clone(),
-                            self.task_attributes.bach_size,
-                            object_list_file.to_string(),
-                            last_modify_timestamp,
-                        )
-                        .await
-                }
-                false => {
-                    client_source
-                        .append_all_object_list_to_file(
-                            self.source.bucket.clone(),
-                            self.source.prefix.clone(),
-                            self.task_attributes.bach_size,
-                            object_list_file.to_string(),
-                        )
-                        .await
-                }
-            };
-
-            match total_rs {
-                Ok(size) => total_lines = size,
-                Err(e) => {
-                    log::error!("{}", e);
-                    interrupted = true;
-                    return;
-                }
+        // 若为持续同步模式，且 last_modify_timestamp 大于 0，则将 last_modify 属性大于last_modify_timestamp变量的对象加入执行列表
+        let total_rs = match last_modify_timestamp > 0 {
+            true => {
+                client_source
+                    .append_last_modify_greater_object_to_file(
+                        self.source.bucket.clone(),
+                        self.source.prefix.clone(),
+                        self.task_attributes.bach_size,
+                        object_list_file.to_string(),
+                        last_modify_timestamp,
+                    )
+                    .await
             }
-        });
+            false => {
+                client_source
+                    .append_all_object_list_to_file(
+                        self.source.bucket.clone(),
+                        self.source.prefix.clone(),
+                        self.task_attributes.bach_size,
+                        object_list_file.to_string(),
+                    )
+                    .await
+            }
+        }?;
 
-        if interrupted {
-            return Err(anyhow!("get object list error"));
-        }
+        // match total_rs {
+        //     Ok(size) => total_lines = size,
+        //     Err(e) => {
+        //         log::error!("{}", e);
+        //         interrupted = true;
+        //         return;
+        //     }
+        // }
+
+        // if interrupted {
+        //     return Err(anyhow!("get object list error"));
+        // }
 
         Ok(total_lines)
     }
+    //     let mut interrupted = false;
+    //     let mut total_lines = 0;
+
+    //     rt.block_on(async {
+    //         let client_source = match self.source.gen_oss_client() {
+    //             Result::Ok(c) => c,
+    //             Err(e) => {
+    //                 log::error!("{}", e);
+    //                 interrupted = true;
+    //                 return;
+    //             }
+    //         };
+
+    //         // 若为持续同步模式，且 last_modify_timestamp 大于 0，则将 last_modify 属性大于last_modify_timestamp变量的对象加入执行列表
+    //         let total_rs = match last_modify_timestamp > 0 {
+    //             true => {
+    //                 client_source
+    //                     .append_last_modify_greater_object_to_file(
+    //                         self.source.bucket.clone(),
+    //                         self.source.prefix.clone(),
+    //                         self.task_attributes.bach_size,
+    //                         object_list_file.to_string(),
+    //                         last_modify_timestamp,
+    //                     )
+    //                     .await
+    //             }
+    //             false => {
+    //                 client_source
+    //                     .append_all_object_list_to_file(
+    //                         self.source.bucket.clone(),
+    //                         self.source.prefix.clone(),
+    //                         self.task_attributes.bach_size,
+    //                         object_list_file.to_string(),
+    //                     )
+    //                     .await
+    //             }
+    //         };
+
+    //         match total_rs {
+    //             Ok(size) => total_lines = size,
+    //             Err(e) => {
+    //                 log::error!("{}", e);
+    //                 interrupted = true;
+    //                 return;
+    //             }
+    //         }
+    //     });
+
+    //     if interrupted {
+    //         return Err(anyhow!("get object list error"));
+    //     }
+
+    //     Ok(total_lines)
+    // }
 }
 
 #[derive(Debug, Clone)]
@@ -317,12 +362,13 @@ impl TransferWithMultiStorageRecordsExecutor {
                     option: Opt::PUT,
                 };
                 recorddesc.handle_error(
-                    anyhow!("{}", e),
+                    // anyhow!("{}", e),
                     &self.err_counter,
                     &self.offset_map,
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                log::error!("{}", e);
             }
 
             // 插入文件offset记录
@@ -439,7 +485,7 @@ mod test {
         let task = TransferTask {
             source: ObjectStorage::OSS(OSSDescription::default()),
             target: ObjectStorage::Local("/tmp".to_string()),
-            task_attributes: TransferTaskAttributes::default(),
+            attributes: TransferTaskAttributes::default(),
         };
 
         let t = task.gen_transfer_actions();

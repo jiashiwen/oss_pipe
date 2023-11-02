@@ -80,12 +80,13 @@ impl CompareTaskActions for CompareOss2Oss {
                         option: Opt::PUT,
                     };
                     recorddesc.handle_error(
-                        anyhow!("{}", e),
+                        // anyhow!("{}", e),
                         &self.err_conter,
                         &self.offset_map,
                         &mut error_file,
                         offset_key.as_str(),
                     );
+                    log::error!("{}", e);
                 }
             }
 

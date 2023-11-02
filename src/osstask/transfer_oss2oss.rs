@@ -25,7 +25,7 @@ use walkdir::WalkDir;
 pub struct TransferOss2Oss {
     pub source: OSSDescription,
     pub target: OSSDescription,
-    pub task_attributes: TransferTaskAttributes,
+    pub attributes: TransferTaskAttributes,
 }
 
 impl Default for TransferOss2Oss {
@@ -33,7 +33,7 @@ impl Default for TransferOss2Oss {
         Self {
             source: OSSDescription::default(),
             target: OSSDescription::default(),
-            task_attributes: TransferTaskAttributes::default(),
+            attributes: TransferTaskAttributes::default(),
         }
     }
 }
@@ -43,7 +43,7 @@ impl TransferTaskActions for TransferOss2Oss {
     // 错误记录重试
     fn error_record_retry(&self) -> Result<()> {
         // 遍历错误记录
-        for entry in WalkDir::new(self.task_attributes.meta_dir.as_str())
+        for entry in WalkDir::new(self.attributes.meta_dir.as_str())
             .into_iter()
             .filter_map(Result::ok)
             .filter(|e| !e.file_type().is_dir() && e.file_name().to_str().is_some())
@@ -82,10 +82,10 @@ impl TransferTaskActions for TransferOss2Oss {
                             source: self.source.clone(),
                             target: self.target.clone(),
                             err_counter: Arc::new(AtomicUsize::new(0)),
-                            meta_dir: self.task_attributes.meta_dir.clone(),
-                            target_exist_skip: self.task_attributes.target_exists_skip,
-                            large_file_size: self.task_attributes.large_file_size,
-                            multi_part_chunk: self.task_attributes.multi_part_chunk,
+                            meta_dir: self.attributes.meta_dir.clone(),
+                            target_exist_skip: self.attributes.target_exists_skip,
+                            large_file_size: self.attributes.large_file_size,
+                            multi_part_chunk: self.attributes.multi_part_chunk,
                             offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
                             list_file_path: p.to_string(),
                         };
@@ -113,10 +113,10 @@ impl TransferTaskActions for TransferOss2Oss {
             target: self.target.clone(),
             err_counter,
             offset_map,
-            meta_dir: self.task_attributes.meta_dir.clone(),
+            meta_dir: self.attributes.meta_dir.clone(),
             target_exist_skip: false,
-            large_file_size: self.task_attributes.large_file_size,
-            multi_part_chunk: self.task_attributes.multi_part_chunk,
+            large_file_size: self.attributes.large_file_size,
+            multi_part_chunk: self.attributes.multi_part_chunk,
             list_file_path: list_file,
         };
 
@@ -131,65 +131,38 @@ impl TransferTaskActions for TransferOss2Oss {
     }
 
     // 生成对象列表
-    fn generate_object_list(
+    async fn generate_object_list(
         &self,
-        rt: &Runtime,
+
         last_modify_timestamp: i64,
         object_list_file: &str,
     ) -> Result<usize> {
-        let mut interrupted = false;
-        let mut total_lines = 0;
+        let client_source = self.source.gen_oss_client()?;
 
-        rt.block_on(async {
-            let client_source = match self.source.gen_oss_client() {
-                Result::Ok(c) => c,
-                Err(e) => {
-                    log::error!("{}", e);
-                    interrupted = true;
-                    return;
-                }
-            };
-
-            // 若为持续同步模式，且 last_modify_timestamp 大于 0，则将 last_modify 属性大于last_modify_timestamp变量的对象加入执行列表
-            let total_rs = match last_modify_timestamp > 0 {
-                true => {
-                    client_source
-                        .append_last_modify_greater_object_to_file(
-                            self.source.bucket.clone(),
-                            self.source.prefix.clone(),
-                            self.task_attributes.bach_size,
-                            object_list_file.to_string(),
-                            last_modify_timestamp,
-                        )
-                        .await
-                }
-                false => {
-                    client_source
-                        .append_all_object_list_to_file(
-                            self.source.bucket.clone(),
-                            self.source.prefix.clone(),
-                            self.task_attributes.bach_size,
-                            object_list_file.to_string(),
-                        )
-                        .await
-                }
-            };
-
-            match total_rs {
-                Ok(size) => total_lines = size,
-                Err(e) => {
-                    log::error!("{}", e);
-                    interrupted = true;
-                    return;
-                }
+        // 若为持续同步模式，且 last_modify_timestamp 大于 0，则将 last_modify 属性大于last_modify_timestamp变量的对象加入执行列表
+        match last_modify_timestamp > 0 {
+            true => {
+                client_source
+                    .append_last_modify_greater_object_to_file(
+                        self.source.bucket.clone(),
+                        self.source.prefix.clone(),
+                        self.attributes.bach_size,
+                        object_list_file.to_string(),
+                        last_modify_timestamp,
+                    )
+                    .await
             }
-        });
-
-        if interrupted {
-            return Err(anyhow!("get object list error"));
+            false => {
+                client_source
+                    .append_all_object_list_to_file(
+                        self.source.bucket.clone(),
+                        self.source.prefix.clone(),
+                        self.attributes.bach_size,
+                        object_list_file.to_string(),
+                    )
+                    .await
+            }
         }
-
-        Ok(total_lines)
     }
 }
 
@@ -252,12 +225,12 @@ impl TransferRecordsExecutor {
                     option: Opt::PUT,
                 };
                 recorddesc.handle_error(
-                    anyhow!("{}", e),
                     &self.err_counter,
                     &self.offset_map,
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                log::error!("{}", e);
             }
 
             // 插入文件offset记录
@@ -357,5 +330,7 @@ impl TransferRecordsExecutor {
                     .await
             }
         }
+
+        // target_oss.upload_from_local(&self.target.bucket, target_key, path, file_max_size, chuck_size)
     }
 }

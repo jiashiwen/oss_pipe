@@ -14,8 +14,7 @@ use tokio::{runtime::Runtime, task::JoinSet};
 
 use crate::{
     checkpoint::{FilePosition, ListedRecord},
-    commons::{Modified, NotifyWatcher},
-    s3::aws_s3::OssClient,
+    commons::NotifyWatcher,
 };
 
 use super::TaskType;
@@ -35,9 +34,8 @@ pub trait TransferTaskActions {
     );
 
     // 生成对象列表
-    fn generate_object_list(
+    async fn generate_object_list(
         &self,
-        rt: &Runtime,
         _last_modify_timestamp: i64,
         object_list_file: &str,
     ) -> Result<usize>;

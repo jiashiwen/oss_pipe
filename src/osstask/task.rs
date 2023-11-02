@@ -1,14 +1,13 @@
 use super::{
     osscompare::OssCompare,
-    task_actions::{TaskActionsFromLocal, TaskActionsFromOss},
-    DownloadTask, TaskStatusSaver, TaskTransfer, UploadTask,
+    task_actions::{TaskActionsFromLocal, TaskActionsFromOss, TransferTaskActions},
+    DownloadTask, LocalToLocal, TaskLocal2Local, TaskStatusSaver, TaskTransfer, UploadTask,
 };
 use crate::{
     checkpoint::{get_task_checkpoint, CheckPoint, FilePosition, ListedRecord},
     commons::{
         exec_processbar, json_to_struct, read_lines, read_yaml_file, scan_folder_files_to_file,
     },
-    osstask::LocalToLocal,
     s3::OSSDescription,
 };
 use anyhow::{anyhow, Result};
@@ -64,7 +63,8 @@ pub enum TaskDescription {
     Download(DownloadTask),
     Upload(UploadTask),
     Transfer(TaskTransfer),
-    LocalToLocal(TaskLocalToLocal),
+    // LocalToLocal(TaskLocalToLocal),
+    LocalToLocal(TaskLocal2Local),
     OssCompare(TaskOssCompare),
     TruncateBucket(TaskTruncateBucket),
 }
@@ -84,13 +84,13 @@ impl TaskDescription {
                 execute_task_from_oss_multi_threads(true, transfer, &transfer.task_attributes)
             }
             TaskDescription::LocalToLocal(local_to_local) => {
-                local_to_local.exec_multi_threads()
+                // local_to_local.exec_multi_threads()
 
-                // execute_task_from_local_multi_threads(
-                //     true,
-                //     local_to_local,
-                //     &local_to_local.task_attributes,
-                // )
+                execute_task_from_local_multi_threads(
+                    true,
+                    local_to_local,
+                    &local_to_local.task_attributes,
+                )
             }
             TaskDescription::TruncateBucket(truncate) => truncate.exec_multi_threads(),
             TaskDescription::OssCompare(oss_compare) => oss_compare.exec_multi_threads(),
@@ -107,10 +107,6 @@ impl TaskDefaultParameters {
 
     pub fn name_default() -> String {
         "default_name".to_string()
-    }
-
-    pub fn error_counter() -> Arc<AtomicUsize> {
-        Arc::new(AtomicUsize::new(0))
     }
 
     pub fn batch_size_default() -> i32 {
@@ -360,9 +356,9 @@ impl TaskLocalToLocal {
                     let vk = vec_keys.clone();
 
                     let localtolocal = LocalToLocal {
-                        source_path: self.source_path.clone(),
-                        target_path: self.target_path.clone(),
-                        error_conter: Arc::clone(&error_times),
+                        source: self.source_path.clone(),
+                        target: self.target_path.clone(),
+                        err_counter: Arc::clone(&error_times),
                         meta_dir: self.meta_dir.clone(),
                         target_exist_skip: self.target_exists_skip,
                         large_file_size: self.large_file_size,
@@ -372,9 +368,9 @@ impl TaskLocalToLocal {
                     };
 
                     set.spawn(async move {
-                        if let Err(e) = localtolocal.exec(vk).await {
+                        if let Err(e) = localtolocal.exec_listed_records(vk).await {
                             localtolocal
-                                .error_conter
+                                .err_counter
                                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                             log::error!("{}", e);
                         };
@@ -395,9 +391,9 @@ impl TaskLocalToLocal {
                 let vk = vec_keys.clone();
 
                 let localtolocal = LocalToLocal {
-                    source_path: self.source_path.clone(),
-                    target_path: self.target_path.clone(),
-                    error_conter: Arc::clone(&error_times),
+                    source: self.source_path.clone(),
+                    target: self.target_path.clone(),
+                    err_counter: Arc::clone(&error_times),
                     meta_dir: self.meta_dir.clone(),
                     target_exist_skip: false,
                     large_file_size: self.large_file_size,
@@ -407,9 +403,9 @@ impl TaskLocalToLocal {
                 };
 
                 set.spawn(async move {
-                    if let Err(e) = localtolocal.exec(vk).await {
+                    if let Err(e) = localtolocal.exec_listed_records(vk).await {
                         localtolocal
-                            .error_conter
+                            .err_counter
                             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         log::error!("{}", e);
                     };
@@ -476,9 +472,9 @@ impl TaskLocalToLocal {
 
                     if record_vec.len() > 0 {
                         let copy = LocalToLocal {
-                            source_path: self.source_path.clone(),
-                            target_path: self.target_path.clone(),
-                            error_conter: Arc::new(AtomicUsize::new(0)),
+                            source: self.source_path.clone(),
+                            target: self.target_path.clone(),
+                            err_counter: Arc::new(AtomicUsize::new(0)),
                             meta_dir: self.meta_dir.clone(),
                             target_exist_skip: self.target_exists_skip,
                             large_file_size: self.large_file_size,
@@ -486,7 +482,7 @@ impl TaskLocalToLocal {
                             offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
                             list_file_path: p.to_string(),
                         };
-                        let _ = copy.exec(record_vec);
+                        let _ = copy.exec_listed_records(record_vec);
                     }
                 }
 
@@ -1227,7 +1223,6 @@ where
         // 预清理meta目录,任务首次运行清理meta目录,并遍历本地目录生成 object list
         if init {
             let _ = fs::remove_dir_all(task_attributes.meta_dir.as_str());
-
             let pb = ProgressBar::new_spinner();
             pb.enable_steady_tick(Duration::from_millis(120));
             pb.set_style(
@@ -1283,10 +1278,6 @@ where
                 }
             };
 
-            // let checkpoint = match get_task_checkpoint(
-            //     check_point_file.as_str(),
-            //     task_attributes.meta_dir.as_str(),
-            // ) {
             let checkpoint = match get_task_checkpoint(check_point_file.as_str()) {
                 Ok(c) => c,
                 Err(e) => {
@@ -1332,7 +1323,7 @@ where
                 }
             };
             let watched_file_size = Arc::clone(&notify_file_size);
-            // sys_set.spawn(async move {
+
             task::spawn(async move {
                 let file_for_notify = match OpenOptions::new()
                     .create(true)
@@ -1518,5 +1509,17 @@ where
         }
     });
 
+    Ok(())
+}
+
+// 执行传输任务
+// 重点抽象不同数据源统一执行模式
+pub fn execute_transfer_task<T>(task: &T, task_attributes: &TransferTaskAttributes) -> Result<()>
+where
+    T: TransferTaskActions,
+{
+    // 检查配置参数
+    // 存量传输
+    // 增量传输
     Ok(())
 }

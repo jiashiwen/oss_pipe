@@ -19,10 +19,10 @@ where
 pub fn copy_file(
     source: &str,
     target: &str,
-    multi_parts_size: usize,
+    file_splite_size: usize,
     chunk_size: usize,
 ) -> Result<()> {
-    let mut f_source = OpenOptions::new().read(true).open(source)?;
+    let f_source = OpenOptions::new().read(true).open(source)?;
     let mut f_target = OpenOptions::new()
         .create(true)
         .write(true)
@@ -30,18 +30,19 @@ pub fn copy_file(
         .open(target)?;
     let len = f_source.metadata()?.len();
     let len_usize = TryInto::<usize>::try_into(len)?;
-    match len_usize.gt(&multi_parts_size) {
+    match len_usize.gt(&file_splite_size) {
         true => {
-            loop {
-                let mut buffer = vec![0; chunk_size];
-                let read_count = f_source.read(&mut buffer)?;
-                let buf = &buffer[..read_count];
-                f_target.write_all(&buf)?;
-                if read_count != chunk_size {
-                    break;
-                }
-            }
-            f_target.flush()?;
+            multi_parts_copy_file(source, target, chunk_size)?;
+            // loop {
+            //     let mut buffer = vec![0; chunk_size];
+            //     let read_count = f_source.read(&mut buffer)?;
+            //     let buf = &buffer[..read_count];
+            //     f_target.write_all(&buf)?;
+            //     if read_count != chunk_size {
+            //         break;
+            //     }
+            // }
+            // f_target.flush()?;
         }
         false => {
             let data = fs::read(source)?;

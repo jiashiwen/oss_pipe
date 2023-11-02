@@ -11,8 +11,8 @@ use crate::configure::{generate_default_config, set_config_file_path};
 use crate::configure::{get_config_file_path, get_current_config_yml, set_config};
 use crate::interact;
 use crate::osstask::{
-    task_id_generator, DownloadTask, Task, TaskDescription, TaskLocalToLocal, TaskOssCompare,
-    TaskTransfer, TaskTruncateBucket, TaskType, UploadTask,
+    task_id_generator, DownloadTask, Task, TaskDescription, TaskLocal2Local, TaskLocalToLocal,
+    TaskOssCompare, TaskTransfer, TaskTruncateBucket, TaskType, UploadTask,
 };
 use crate::s3::oss::OSSDescription;
 use crate::s3::oss::OssProvider;
@@ -296,11 +296,16 @@ fn cmd_match(matches: &ArgMatches) {
         if let Some(localtolocal) = template.subcommand_matches("localtolocal") {
             let file = localtolocal.get_one::<String>("file");
 
-            let task_localtolocal = TaskLocalToLocal::default();
+            // let task_localtolocal = TaskLocalToLocal::default();
             // let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
             // let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
             // task_localtolocal.exclude = Some(exclude_vec);
             // task_localtolocal.include = Some(include_vec);
+            let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
+            let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
+            let mut task_localtolocal = TaskLocal2Local::default();
+            task_localtolocal.task_attributes.exclude = Some(exclude_vec);
+            task_localtolocal.task_attributes.include = Some(include_vec);
             let task = Task {
                 task_id: task_id.to_string(),
                 name: "local to local task".to_string(),

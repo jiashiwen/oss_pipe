@@ -2,7 +2,7 @@ use crate::{
     checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
     commons::{json_to_struct, read_lines},
     s3::{
-        aws_s3::{byte_stream_multi_partes_to_file, byte_stream_to_file, OssClient},
+        aws_s3::{oss_download_to_file, OssClient},
         OSSDescription,
     },
 };
@@ -94,7 +94,7 @@ impl TaskActionsFromOss for DownloadTask {
 
                     if record_vec.len() > 0 {
                         let download = DownLoadRecordsExecutor {
-                            local_path: self.local_path.clone(),
+                            target: self.local_path.clone(),
                             source: self.source.clone(),
                             err_counter: Arc::new(AtomicUsize::new(0)),
                             offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
@@ -183,7 +183,7 @@ impl TaskActionsFromOss for DownloadTask {
         list_file: String,
     ) {
         let download = DownLoadRecordsExecutor {
-            local_path: self.local_path.clone(),
+            target: self.local_path.clone(),
             source: self.source.clone(),
             err_counter,
             offset_map,
@@ -207,7 +207,7 @@ impl TaskActionsFromOss for DownloadTask {
 
 #[derive(Debug, Clone)]
 pub struct DownLoadRecordsExecutor {
-    pub local_path: String,
+    pub target: String,
     pub source: OSSDescription,
     pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
@@ -241,7 +241,7 @@ impl DownLoadRecordsExecutor {
 
         let c_s = self.source.gen_oss_client()?;
         for record in records {
-            let t_file_name = gen_file_path(self.local_path.as_str(), &record.key.as_str(), "");
+            let t_file_name = gen_file_path(self.target.as_str(), &record.key.as_str(), "");
             if let Err(e) = self
                 .record_handler(offset_key.as_str(), &record, &c_s, t_file_name.as_str())
                 .await
@@ -257,12 +257,12 @@ impl DownLoadRecordsExecutor {
                     option: Opt::PUT,
                 };
                 record_desc.handle_error(
-                    anyhow!("{}", e),
                     &self.err_counter,
                     &self.offset_map,
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                log::error!("{}", e);
             }
             self.offset_map.insert(
                 offset_key.clone(),
@@ -337,14 +337,12 @@ impl DownLoadRecordsExecutor {
             .write(true)
             .open(target_file)?;
 
-        let s_len: usize = resp.content_length().try_into()?;
-
-        // 大文件走 multi part download 分支
-        match s_len > self.large_file_size {
-            true => {
-                byte_stream_multi_partes_to_file(resp, &mut t_file, self.multi_part_chunk).await
-            }
-            false => byte_stream_to_file(resp.body, &mut t_file).await,
-        }
+        oss_download_to_file(
+            resp,
+            &mut t_file,
+            self.large_file_size,
+            self.multi_part_chunk,
+        )
+        .await
     }
 }
