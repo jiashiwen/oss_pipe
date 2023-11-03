@@ -1510,16 +1510,3 @@ where
 
     Ok(())
 }
-
-// 执行传输任务
-// 重点抽象不同数据源统一执行模式
-pub fn execute_transfer_task<T>(task: &T, task_attributes: &TransferTaskAttributes) -> Result<()>
-where
-    T: TransferTaskActions,
-{
-    // 检查配置参数
-
-    // 存量传输
-    // 增量传输
-    Ok(())
-}

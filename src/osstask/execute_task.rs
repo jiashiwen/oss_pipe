@@ -1,5 +1,18 @@
+use super::{
+    gen_file_path, task_actions::TransferTaskActions, TaskRunningStatus, TaskStatusSaver,
+    TransferTaskAttributes, CHECK_POINT_FILE_NAME, NOTIFY_FILE_PREFIX, OBJECT_LIST_FILE_PREFIX,
+    OFFSET_PREFIX,
+};
+use crate::{
+    checkpoint::{get_task_checkpoint, CheckPoint, FilePosition, ListedRecord},
+    commons::exec_processbar,
+};
+use anyhow::{anyhow, Result};
+use dashmap::DashMap;
+use indicatif::{ProgressBar, ProgressStyle};
+use regex::RegexSet;
 use std::{
-    fs::{self, File, OpenOptions},
+    fs::{self, File},
     io::{self, BufRead, Seek, SeekFrom},
     sync::{
         atomic::{AtomicBool, AtomicU64, AtomicUsize},
@@ -7,26 +20,7 @@ use std::{
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-
-use crate::{
-    checkpoint::{get_task_checkpoint, CheckPoint, FilePosition, ListedRecord},
-    commons::{exec_processbar, NotifyWatcher},
-    logger,
-};
-
-use super::{
-    gen_file_path, task_actions::TransferTaskActions, TaskRunningStatus, TaskStatusSaver,
-    TransferTaskAttributes, CHECK_POINT_FILE_NAME, NOTIFY_FILE_PREFIX, OBJECT_LIST_FILE_PREFIX,
-    OFFSET_PREFIX,
-};
-use anyhow::{anyhow, Result};
-use dashmap::DashMap;
-use indicatif::{ProgressBar, ProgressStyle};
-use regex::RegexSet;
-use tokio::{
-    runtime,
-    task::{self, JoinSet},
-};
+use tokio::{runtime, task::JoinSet};
 
 #[derive(Debug, Clone)]
 pub struct IncrementAssistant {

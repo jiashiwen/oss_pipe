@@ -9,7 +9,7 @@ use std::{
     path::Path,
     sync::{
         atomic::{AtomicU64, Ordering},
-        mpsc::{Receiver, Sender},
+        mpsc::Receiver,
         Arc,
     },
 };
