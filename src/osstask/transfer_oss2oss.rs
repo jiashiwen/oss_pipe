@@ -108,8 +108,7 @@ impl TransferTaskActions for TransferOss2Oss {
     }
     async fn execute_increment(
         &self,
-        // _notify_file: &str,
-        // _notify_file_size: Arc<AtomicU64>,
+
         assistant: &IncrementAssistant,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,

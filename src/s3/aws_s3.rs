@@ -620,10 +620,8 @@ pub async fn oss_download_to_file(
 
 #[cfg(test)]
 mod test {
-    use std::{fs::OpenOptions, io::Write};
 
     use aws_sdk_s3::types::ByteStream;
-    use tokio::io::{AsyncBufReadExt, BufReader};
 
     use crate::{commons::rand_string, s3::OSSDescription};
 

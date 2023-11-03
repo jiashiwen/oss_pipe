@@ -26,7 +26,6 @@ use std::{
     path::Path,
     sync::{atomic::AtomicUsize, Arc},
 };
-use tokio::runtime::Runtime;
 use tokio::task::JoinSet;
 use walkdir::WalkDir;
 
