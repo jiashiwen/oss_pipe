@@ -1,20 +1,30 @@
 use super::task_actions::TransferTaskActions;
-use super::{gen_file_path, TransferTaskAttributes, ERROR_RECORD_PREFIX, OFFSET_PREFIX};
+use super::{
+    gen_file_path, IncrementAssistant, LocalNotify, TransferTaskAttributes, ERROR_RECORD_PREFIX,
+    NOTIFY_FILE_PREFIX, OFFSET_PREFIX,
+};
 use crate::checkpoint::ListedRecord;
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
-use crate::commons::{copy_file, scan_folder_files_to_file};
+use crate::commons::{
+    copy_file, scan_folder_files_to_file, Modified, ModifyType, NotifyWatcher, PathType,
+};
 use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
+use serde_json::from_str;
+use std::fs::File;
+use std::io::{BufRead, BufReader, Seek, SeekFrom};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::Path,
     sync::{atomic::AtomicUsize, Arc},
 };
-use tokio::runtime::Runtime;
+
 use tokio::task::JoinSet;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -64,12 +74,232 @@ impl TransferTaskActions for TransferLocal2Local {
         _last_modify_timestamp: i64,
         object_list_file: &str,
     ) -> Result<usize> {
-        // let mut interrupted = false;
-        // let mut total_lines = 0;
-
-        // 遍历目录并生成文件列表
-        // let total_rs = scan_folder_files_to_file(self.source.as_str(), &object_list_file)?;
         scan_folder_files_to_file(self.source.as_str(), &object_list_file)
+    }
+
+    async fn increment_prelude(&self, assistant: &mut IncrementAssistant) -> Result<()> {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        let notify_file_path = gen_file_path(
+            self.attributes.meta_dir.as_str(),
+            NOTIFY_FILE_PREFIX,
+            now.as_secs().to_string().as_str(),
+        );
+
+        let watcher = NotifyWatcher::new(&self.source)?;
+        let notify_file_size = Arc::new(AtomicU64::new(0));
+
+        let file_for_notify = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(notify_file_path.as_str())?;
+
+        watcher
+            .watch_to_file(file_for_notify, Arc::clone(&notify_file_size))
+            .await;
+
+        let local_notify = LocalNotify {
+            notify_file_path,
+            notify_file_size: Arc::clone(&notify_file_size),
+        };
+        assistant.local_notify = Some(local_notify);
+
+        Ok(())
+    }
+
+    async fn execute_increment(
+        &self,
+        assistant: &IncrementAssistant,
+        err_counter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, FilePosition>>,
+        snapshot_stop_mark: Arc<AtomicBool>,
+    ) {
+        let mut offset = 0;
+        let mut line_num = 0;
+
+        let subffix = offset.to_string();
+        let mut offset_key = OFFSET_PREFIX.to_string();
+        offset_key.push_str(&subffix);
+
+        let error_file_name =
+            gen_file_path(&self.attributes.meta_dir, ERROR_RECORD_PREFIX, &subffix);
+
+        let local_notify = match assistant.local_notify.clone() {
+            Some(n) => n,
+            None => return,
+        };
+
+        loop {
+            if local_notify
+                .notify_file_size
+                .load(Ordering::SeqCst)
+                .le(&offset)
+            {
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                continue;
+            }
+            if self
+                .attributes
+                .max_errors
+                .le(&err_counter.load(std::sync::atomic::Ordering::Relaxed))
+            {
+                snapshot_stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+                return;
+            }
+
+            let mut file = match File::open(&local_notify.notify_file_path) {
+                Ok(f) => f,
+                Err(e) => {
+                    log::error!("{}", e);
+                    return;
+                }
+            };
+
+            if let Err(e) = file.seek(SeekFrom::Start(offset)) {
+                log::error!("{}", e);
+                continue;
+            };
+
+            let mut error_file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(error_file_name.as_str())
+                .unwrap();
+
+            let lines = BufReader::new(file).lines();
+            let mut offset_usize: usize = TryInto::<usize>::try_into(offset).unwrap();
+            let mut records = vec![];
+            for line in lines {
+                line_num += 1;
+                if let Result::Ok(key) = line {
+                    // Modifed 解析
+                    offset_usize += key.len();
+                    match self
+                        .modified_str_to_record_description(
+                            &key,
+                            &local_notify.notify_file_path,
+                            offset_usize,
+                            line_num,
+                        )
+                        .await
+                    {
+                        Ok(r) => records.push(r),
+                        Err(e) => {
+                            let r = RecordDescription {
+                                source_key: "".to_string(),
+                                target_key: "".to_string(),
+                                list_file_path: local_notify.notify_file_path.clone(),
+                                list_file_position: FilePosition {
+                                    offset: offset_usize,
+                                    line_num,
+                                },
+                                option: Opt::UNKOWN,
+                            };
+                            r.handle_error(
+                                &err_counter,
+                                &offset_map,
+                                &mut error_file,
+                                offset_key.as_str(),
+                            );
+                            log::error!("{}", e);
+                        }
+                    }
+                }
+            }
+
+            let copy = Local2LocalExecutor {
+                source: self.source.clone(),
+                target: self.target.clone(),
+                err_counter: Arc::clone(&err_counter),
+                offset_map: Arc::clone(&offset_map),
+                meta_dir: self.attributes.meta_dir.clone(),
+                target_exist_skip: false,
+                large_file_size: self.attributes.large_file_size,
+                multi_part_chunk: self.attributes.multi_part_chunk,
+                list_file_path: local_notify.notify_file_path.clone(),
+            };
+
+            if records.len() > 0 {
+                copy.exec_record_descriptions(records).await;
+            }
+
+            let _ = error_file.flush();
+            match error_file.metadata() {
+                Ok(meta) => {
+                    if meta.len() == 0 {
+                        let _ = fs::remove_file(error_file_name.as_str());
+                    }
+                }
+                Err(_) => {}
+            };
+            offset = local_notify.notify_file_size.load(Ordering::SeqCst);
+            let offset_usize = TryInto::<usize>::try_into(offset).unwrap();
+            let position = FilePosition {
+                offset: offset_usize,
+                line_num,
+            };
+
+            offset_map.remove(&offset_key);
+            offset_key = OFFSET_PREFIX.to_string();
+            offset_key.push_str(&offset.to_string());
+            offset_map.insert(offset_key.clone(), position);
+        }
+    }
+}
+
+impl TransferLocal2Local {
+    async fn modified_str_to_record_description(
+        &self,
+        modified_str: &str,
+        list_file_path: &str,
+        offset: usize,
+        line_num: usize,
+    ) -> Result<RecordDescription> {
+        let modified = from_str::<Modified>(modified_str)?;
+        let mut target_path = modified.path.clone();
+        match self.source.ends_with("/") {
+            true => target_path.drain(..self.source.len()),
+            false => target_path.drain(..self.source.len() + 1),
+        };
+
+        match self.target.ends_with("/") {
+            true => {
+                target_path.insert_str(0, &self.target);
+            }
+            false => {
+                let target_prefix = self.target.clone() + "/";
+                target_path.insert_str(0, &target_prefix);
+            }
+        }
+
+        if PathType::File.eq(&modified.path_type) {
+            match modified.modify_type {
+                ModifyType::Create | ModifyType::Modify => {
+                    let record = RecordDescription {
+                        source_key: modified.path.clone(),
+                        target_key: target_path,
+                        list_file_path: list_file_path.to_string(),
+                        list_file_position: FilePosition { offset, line_num },
+                        option: Opt::PUT,
+                    };
+                    return Ok(record);
+                }
+                ModifyType::Delete => {
+                    let record = RecordDescription {
+                        source_key: modified.path.clone(),
+                        target_key: target_path,
+                        list_file_path: list_file_path.to_string(),
+                        list_file_position: FilePosition { offset, line_num },
+                        option: Opt::REMOVE,
+                    };
+                    return Ok(record);
+                }
+                ModifyType::Unkown => Err(anyhow!("Unkown modify type")),
+            }
+        } else {
+            return Err(anyhow!("Unkown modify type"));
+        }
     }
 }
 

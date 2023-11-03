@@ -1,4 +1,5 @@
 use super::task_actions::TransferTaskActions;
+use super::IncrementAssistant;
 use super::TransferTaskAttributes;
 use super::OFFSET_PREFIX;
 use super::{gen_file_path, ERROR_RECORD_PREFIX};
@@ -152,6 +153,20 @@ impl TransferTaskActions for TransferLocal2Oss {
     ) -> Result<usize> {
         // 遍历目录并生成文件列表
         scan_folder_files_to_file(self.source.as_str(), &object_list_file)
+    }
+
+    async fn increment_prelude(&self, assistant: &mut IncrementAssistant) -> Result<()> {
+        Ok(())
+    }
+    async fn execute_increment(
+        &self,
+        // _notify_file: &str,
+        // _notify_file_size: Arc<AtomicU64>,
+        assistant: &IncrementAssistant,
+        err_counter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, FilePosition>>,
+        snapshot_stop_mark: Arc<AtomicBool>,
+    ) {
     }
 }
 

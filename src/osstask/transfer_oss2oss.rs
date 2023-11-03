@@ -1,13 +1,13 @@
 use super::{
-    gen_file_path, task_actions::TransferTaskActions, TransferTaskAttributes, ERROR_RECORD_PREFIX,
-    OFFSET_PREFIX,
+    gen_file_path, task_actions::TransferTaskActions, IncrementAssistant, TransferTaskAttributes,
+    ERROR_RECORD_PREFIX, OFFSET_PREFIX,
 };
 use crate::{
     checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
     commons::{json_to_struct, read_lines},
     s3::{aws_s3::OssClient, OSSDescription},
 };
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use aws_sdk_s3::error::GetObjectErrorKind;
 use dashmap::DashMap;
@@ -15,9 +15,12 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, OpenOptions},
     io::Write,
-    sync::{atomic::AtomicUsize, Arc},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, AtomicUsize},
+        Arc,
+    },
 };
-use tokio::{runtime::Runtime, task::JoinSet};
+use tokio::task::JoinSet;
 use walkdir::WalkDir;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -99,35 +102,19 @@ impl TransferTaskActions for TransferOss2Oss {
 
         Ok(())
     }
-    // 记录执行器
-    async fn records_excutor(
+
+    async fn increment_prelude(&self, assistant: &mut IncrementAssistant) -> Result<()> {
+        Ok(())
+    }
+    async fn execute_increment(
         &self,
-        joinset: &mut JoinSet<()>,
-        records: Vec<ListedRecord>,
+        // _notify_file: &str,
+        // _notify_file_size: Arc<AtomicU64>,
+        assistant: &IncrementAssistant,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
-        list_file: String,
+        snapshot_stop_mark: Arc<AtomicBool>,
     ) {
-        let transfer = TransferRecordsExecutor {
-            source: self.source.clone(),
-            target: self.target.clone(),
-            err_counter,
-            offset_map,
-            meta_dir: self.attributes.meta_dir.clone(),
-            target_exist_skip: false,
-            large_file_size: self.attributes.large_file_size,
-            multi_part_chunk: self.attributes.multi_part_chunk,
-            list_file_path: list_file,
-        };
-
-        joinset.spawn(async move {
-            if let Err(e) = transfer.exec_listed_records(records).await {
-                transfer
-                    .err_counter
-                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{}", e);
-            };
-        });
     }
 
     // 生成对象列表
@@ -163,6 +150,36 @@ impl TransferTaskActions for TransferOss2Oss {
                     .await
             }
         }
+    }
+    // 记录执行器
+    async fn records_excutor(
+        &self,
+        joinset: &mut JoinSet<()>,
+        records: Vec<ListedRecord>,
+        err_counter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, FilePosition>>,
+        list_file: String,
+    ) {
+        let transfer = TransferRecordsExecutor {
+            source: self.source.clone(),
+            target: self.target.clone(),
+            err_counter,
+            offset_map,
+            meta_dir: self.attributes.meta_dir.clone(),
+            target_exist_skip: false,
+            large_file_size: self.attributes.large_file_size,
+            multi_part_chunk: self.attributes.multi_part_chunk,
+            list_file_path: list_file,
+        };
+
+        joinset.spawn(async move {
+            if let Err(e) = transfer.exec_listed_records(records).await {
+                transfer
+                    .err_counter
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                log::error!("{}", e);
+            };
+        });
     }
 }
 
