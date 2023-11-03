@@ -1,3 +1,12 @@
+use super::{IncrementAssistant, TaskType};
+use crate::{
+    checkpoint::{FilePosition, ListedRecord},
+    commons::NotifyWatcher,
+};
+use anyhow::Result;
+use async_trait::async_trait;
+use dashmap::DashMap;
+use notify;
 use std::{
     fs::File,
     sync::{
@@ -5,20 +14,12 @@ use std::{
         Arc,
     },
 };
-
-use anyhow::Result;
-use async_trait::async_trait;
-use dashmap::DashMap;
-use notify;
 use tokio::{runtime::Runtime, task::JoinSet};
 
-use crate::{
-    checkpoint::{FilePosition, ListedRecord},
-    commons::NotifyWatcher,
-};
-
-use super::TaskType;
-
+// Todo
+// 需新增objectlistfile executor，用于承载对象列表对象执行逻辑
+// 新增increment_prelude 用于执行增量启动前的notify记录以及记录oss 的 lastmodify
+// 设计 incrementparameter struct 用于统一存储 lastmodif notify file 以及 notify file size 等原子数据
 #[async_trait]
 pub trait TransferTaskActions {
     // 错误记录重试
@@ -39,6 +40,19 @@ pub trait TransferTaskActions {
         _last_modify_timestamp: i64,
         object_list_file: &str,
     ) -> Result<usize>;
+
+    async fn increment_prelude(&self, assistant: &mut IncrementAssistant) -> Result<()>;
+
+    // 执行增量任务
+    async fn execute_increment(
+        &self,
+        // _notify_file: &str,
+        // _notify_file_size: Arc<AtomicU64>,
+        assistant: &IncrementAssistant,
+        err_counter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, FilePosition>>,
+        snapshot_stop_mark: Arc<AtomicBool>,
+    );
 }
 
 #[async_trait]

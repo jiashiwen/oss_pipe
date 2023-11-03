@@ -9,7 +9,7 @@ use std::{
     path::Path,
     sync::{
         atomic::{AtomicU64, Ordering},
-        mpsc::Receiver,
+        mpsc::{Receiver, Sender},
         Arc,
     },
 };
@@ -53,9 +53,12 @@ impl Modified {
 pub struct NotifyWatcher {
     pub watcher: RecommendedWatcher,
     reciver: Receiver<Result<Event, Error>>,
+    writing_file_status: bool,
     pub watched_dir: String,
 }
 
+// Todo
+// 新增write_stop用来替换notify 文件
 impl NotifyWatcher {
     pub fn new<P: AsRef<Path>>(watched_dir: P) -> notify::Result<Self> {
         let (tx, rx) = std::sync::mpsc::channel();
@@ -66,13 +69,18 @@ impl NotifyWatcher {
             watcher,
             watched_dir: watched_dir.as_ref().to_str().unwrap().to_string(),
             reciver: rx,
+            writing_file_status: false,
         })
     }
 
-    pub async fn watch_to_file(self, file: File, file_size: Arc<AtomicU64>) {
+    pub async fn watch_to_file(mut self, file: File, file_size: Arc<AtomicU64>) {
         let mut linewiter = LineWriter::new(&file);
         let mut tmp_modified = Modified::new();
+        self.writing_file_status = true;
         for res in self.reciver {
+            if !self.writing_file_status {
+                return;
+            }
             let mut modified = Modified::new();
             match res {
                 Ok(event) => {
@@ -148,6 +156,14 @@ impl NotifyWatcher {
 
             yield_now().await;
         }
+    }
+
+    pub fn stop_write_file(&mut self) {
+        self.writing_file_status = false;
+    }
+
+    pub fn writing_file_status(&self) -> bool {
+        self.writing_file_status
     }
 }
 

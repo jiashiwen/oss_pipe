@@ -15,14 +15,17 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::Path,
-    sync::{atomic::AtomicUsize, Arc},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, AtomicUsize},
+        Arc,
+    },
 };
 use tokio::{runtime::Runtime, task::JoinSet};
 use walkdir::WalkDir;
 
 use super::{
-    gen_file_path, task_actions::TransferTaskActions, TransferTaskAttributes, ERROR_RECORD_PREFIX,
-    OFFSET_PREFIX,
+    gen_file_path, task_actions::TransferTaskActions, IncrementAssistant, TransferTaskAttributes,
+    ERROR_RECORD_PREFIX, OFFSET_PREFIX,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -173,6 +176,20 @@ impl TransferTaskActions for TransferOss2Local {
                 log::error!("{}", e);
             };
         });
+    }
+
+    async fn increment_prelude(&self, assistant: &mut IncrementAssistant) -> Result<()> {
+        Ok(())
+    }
+    async fn execute_increment(
+        &self,
+        // _notify_file: &str,
+        // _notify_file_size: Arc<AtomicU64>,
+        assistant: &IncrementAssistant,
+        err_counter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, FilePosition>>,
+        snapshot_stop_mark: Arc<AtomicBool>,
+    ) {
     }
 }
 

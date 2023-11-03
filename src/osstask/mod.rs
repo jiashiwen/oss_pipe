@@ -1,5 +1,6 @@
 mod compare_oss2oss;
 mod download;
+mod execute_task;
 mod localtolocal;
 mod osscompare;
 mod task;
@@ -16,6 +17,7 @@ mod upload;
 
 pub use compare_oss2oss::*;
 pub use download::*;
+pub use execute_task::*;
 pub use localtolocal::*;
 pub use osscompare::*;
 pub use task::*;
