@@ -16,7 +16,7 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     sync::{
-        atomic::{AtomicBool, AtomicU64, AtomicUsize},
+        atomic::{AtomicBool, AtomicUsize},
         Arc,
     },
 };
@@ -103,53 +103,6 @@ impl TransferTaskActions for TransferOss2Oss {
         Ok(())
     }
 
-    async fn increment_prelude(&self, assistant: &mut IncrementAssistant) -> Result<()> {
-        Ok(())
-    }
-    async fn execute_increment(
-        &self,
-
-        assistant: &IncrementAssistant,
-        err_counter: Arc<AtomicUsize>,
-        offset_map: Arc<DashMap<String, FilePosition>>,
-        snapshot_stop_mark: Arc<AtomicBool>,
-    ) {
-    }
-
-    // 生成对象列表
-    async fn generate_object_list(
-        &self,
-
-        last_modify_timestamp: i64,
-        object_list_file: &str,
-    ) -> Result<usize> {
-        let client_source = self.source.gen_oss_client()?;
-
-        // 若为持续同步模式，且 last_modify_timestamp 大于 0，则将 last_modify 属性大于last_modify_timestamp变量的对象加入执行列表
-        match last_modify_timestamp > 0 {
-            true => {
-                client_source
-                    .append_last_modify_greater_object_to_file(
-                        self.source.bucket.clone(),
-                        self.source.prefix.clone(),
-                        self.attributes.bach_size,
-                        object_list_file.to_string(),
-                        last_modify_timestamp,
-                    )
-                    .await
-            }
-            false => {
-                client_source
-                    .append_all_object_list_to_file(
-                        self.source.bucket.clone(),
-                        self.source.prefix.clone(),
-                        self.attributes.bach_size,
-                        object_list_file.to_string(),
-                    )
-                    .await
-            }
-        }
-    }
     // 记录执行器
     async fn records_excutor(
         &self,
@@ -180,6 +133,63 @@ impl TransferTaskActions for TransferOss2Oss {
             };
         });
     }
+    // 生成对象列表
+    async fn generate_object_list(
+        &self,
+        last_modify_timestamp: i64,
+        object_list_file: &str,
+    ) -> Result<usize> {
+        let client_source = self.source.gen_oss_client()?;
+
+        // 若为持续同步模式，且 last_modify_timestamp 大于 0，则将 last_modify 属性大于last_modify_timestamp变量的对象加入执行列表
+        match last_modify_timestamp > 0 {
+            true => {
+                client_source
+                    .append_last_modify_greater_object_to_file(
+                        self.source.bucket.clone(),
+                        self.source.prefix.clone(),
+                        self.attributes.bach_size,
+                        object_list_file.to_string(),
+                        last_modify_timestamp,
+                    )
+                    .await
+            }
+            false => {
+                client_source
+                    .append_all_object_list_to_file(
+                        self.source.bucket.clone(),
+                        self.source.prefix.clone(),
+                        self.attributes.bach_size,
+                        object_list_file.to_string(),
+                    )
+                    .await
+            }
+        }
+    }
+
+    async fn increment_prelude(&self, assistant: &mut IncrementAssistant) -> Result<()> {
+        Ok(())
+    }
+
+    async fn execute_increment(
+        &self,
+        assistant: &IncrementAssistant,
+        err_counter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, FilePosition>>,
+        snapshot_stop_mark: Arc<AtomicBool>,
+        start_file_position: FilePosition,
+    ) {
+    }
+
+    // async fn execute_increment_from_checkpoint(
+    //     &self,
+    //     assistant: &IncrementAssistant,
+    //     err_counter: Arc<AtomicUsize>,
+    //     offset_map: Arc<DashMap<String, FilePosition>>,
+    //     snapshot_stop_mark: Arc<AtomicBool>,
+    // ) {
+    //     todo!()
+    // }
 }
 
 #[derive(Debug, Clone)]
