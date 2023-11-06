@@ -1,31 +1,32 @@
-use super::{TaskRunningStatus, OFFSET_PREFIX};
+use super::{TaskStage, OFFSET_PREFIX};
 use crate::checkpoint::{CheckPoint, FilePosition};
 use dashmap::DashMap;
 use std::sync::{atomic::AtomicBool, Arc};
 use tokio::task::yield_now;
 
 pub struct TaskStatusSaver {
-    pub save_to: String,
+    pub check_point_path: String,
     pub execute_file_path: String,
     pub stop_mark: Arc<AtomicBool>,
     pub list_file_positon_map: Arc<DashMap<String, FilePosition>>,
     pub file_for_notify: Option<String>,
-    pub task_running_status: TaskRunningStatus,
+    pub task_stage: TaskStage,
     pub interval: u64,
 }
 
 impl TaskStatusSaver {
     pub async fn snapshot_to_file(&self) {
-        let checkpoint = CheckPoint {
+        let mut checkpoint = CheckPoint {
             execute_file_path: self.execute_file_path.clone(),
             execute_file_position: FilePosition {
                 offset: 0,
                 line_num: 0,
             },
             file_for_notify: self.file_for_notify.clone(),
-            task_running_satus: self.task_running_status,
+            task_stage: self.task_stage,
+            timestampe: 0,
         };
-        let _ = checkpoint.save_to(&self.save_to);
+        let _ = checkpoint.save_to(&self.check_point_path);
 
         while !self.stop_mark.load(std::sync::atomic::Ordering::Relaxed) {
             let notify = self.file_for_notify.clone();
@@ -54,14 +55,15 @@ impl TaskStatusSaver {
                 }
             };
 
-            let checkpoint = CheckPoint {
+            let mut checkpoint = CheckPoint {
                 execute_file_path: self.execute_file_path.clone(),
                 execute_file_position: file_position.value().clone(),
                 file_for_notify: notify,
-                task_running_satus: self.task_running_status,
+                task_stage: self.task_stage,
+                timestampe: 0,
             };
 
-            if let Err(e) = checkpoint.save_to(&self.save_to) {
+            if let Err(e) = checkpoint.save_to(&self.check_point_path) {
                 log::error!("{}", e);
             };
 

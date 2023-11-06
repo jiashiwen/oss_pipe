@@ -46,13 +46,21 @@ pub trait TransferTaskActions {
     // 执行增量任务
     async fn execute_increment(
         &self,
-        // _notify_file: &str,
-        // _notify_file_size: Arc<AtomicU64>,
         assistant: &IncrementAssistant,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         snapshot_stop_mark: Arc<AtomicBool>,
+        start_file_position: FilePosition,
     );
+
+    // 执行增量任务
+    // async fn execute_increment_from_checkpoint(
+    //     &self,
+    //     assistant: &IncrementAssistant,
+    //     err_counter: Arc<AtomicUsize>,
+    //     offset_map: Arc<DashMap<String, FilePosition>>,
+    //     snapshot_stop_mark: Arc<AtomicBool>,
+    // );
 }
 
 #[async_trait]

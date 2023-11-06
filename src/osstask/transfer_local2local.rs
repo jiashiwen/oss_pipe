@@ -1,7 +1,7 @@
 use super::task_actions::TransferTaskActions;
 use super::{
-    gen_file_path, IncrementAssistant, LocalNotify, TransferTaskAttributes, ERROR_RECORD_PREFIX,
-    NOTIFY_FILE_PREFIX, OFFSET_PREFIX,
+    gen_file_path, IncrementAssistant, LocalNotify, TaskStage, TaskStatusSaver,
+    TransferTaskAttributes, ERROR_RECORD_PREFIX, NOTIFY_FILE_PREFIX, OFFSET_PREFIX,
 };
 use crate::checkpoint::ListedRecord;
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
@@ -25,7 +25,7 @@ use std::{
     sync::{atomic::AtomicUsize, Arc},
 };
 
-use tokio::task::JoinSet;
+use tokio::task::{self, JoinSet};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
@@ -113,21 +113,36 @@ impl TransferTaskActions for TransferLocal2Local {
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         snapshot_stop_mark: Arc<AtomicBool>,
+        start_file_position: FilePosition,
     ) {
-        let mut offset = 0;
-        let mut line_num = 0;
+        let local_notify = match assistant.local_notify.clone() {
+            Some(n) => n,
+            None => return,
+        };
+
+        let mut offset = TryInto::<u64>::try_into(start_file_position.offset).unwrap();
+        let mut line_num = start_file_position.line_num;
 
         let subffix = offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
 
+        let task_status_saver = TaskStatusSaver {
+            check_point_path: assistant.check_point_path.clone(),
+            execute_file_path: local_notify.notify_file_path.clone(),
+            stop_mark: Arc::clone(&snapshot_stop_mark),
+            list_file_positon_map: Arc::clone(&offset_map),
+            file_for_notify: Some(local_notify.notify_file_path.clone()),
+            task_stage: TaskStage::Increment,
+            interval: 3,
+        };
+
+        task::spawn(async move {
+            task_status_saver.snapshot_to_file().await;
+        });
+
         let error_file_name =
             gen_file_path(&self.attributes.meta_dir, ERROR_RECORD_PREFIX, &subffix);
-
-        let local_notify = match assistant.local_notify.clone() {
-            Some(n) => n,
-            None => return,
-        };
 
         loop {
             if local_notify
@@ -208,20 +223,19 @@ impl TransferTaskActions for TransferLocal2Local {
                 }
             }
 
-            let copy = Local2LocalExecutor {
-                source: self.source.clone(),
-                target: self.target.clone(),
-                err_counter: Arc::clone(&err_counter),
-                offset_map: Arc::clone(&offset_map),
-                meta_dir: self.attributes.meta_dir.clone(),
-                target_exist_skip: false,
-                large_file_size: self.attributes.large_file_size,
-                multi_part_chunk: self.attributes.multi_part_chunk,
-                list_file_path: local_notify.notify_file_path.clone(),
-            };
-
             if records.len() > 0 {
-                copy.exec_record_descriptions(records).await;
+                let copy = Local2LocalExecutor {
+                    source: self.source.clone(),
+                    target: self.target.clone(),
+                    err_counter: Arc::clone(&err_counter),
+                    offset_map: Arc::clone(&offset_map),
+                    meta_dir: self.attributes.meta_dir.clone(),
+                    target_exist_skip: false,
+                    large_file_size: self.attributes.large_file_size,
+                    multi_part_chunk: self.attributes.multi_part_chunk,
+                    list_file_path: local_notify.notify_file_path.clone(),
+                };
+                let _ = copy.exec_record_descriptions(records).await;
             }
 
             let _ = error_file.flush();
@@ -246,6 +260,16 @@ impl TransferTaskActions for TransferLocal2Local {
             offset_map.insert(offset_key.clone(), position);
         }
     }
+
+    // async fn execute_increment_from_checkpoint(
+    //     &self,
+    //     assistant: &IncrementAssistant,
+    //     err_counter: Arc<AtomicUsize>,
+    //     offset_map: Arc<DashMap<String, FilePosition>>,
+    //     snapshot_stop_mark: Arc<AtomicBool>,
+    // ) {
+    //     todo!()
+    // }
 }
 
 impl TransferLocal2Local {
@@ -459,7 +483,6 @@ impl Local2LocalExecutor {
         for record in records {
             if let Err(e) = self.record_description_handler(&record).await {
                 record.handle_error(
-                    // anyhow!("{}", e),
                     &self.err_counter,
                     &self.offset_map,
                     &mut error_file,

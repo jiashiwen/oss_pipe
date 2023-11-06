@@ -282,7 +282,7 @@ impl TaskActionsFromLocal for TaskLocal2Local {
             };
 
             if records.len() > 0 {
-                copy.exec_record_descriptions(records).await;
+                let _ = copy.exec_record_descriptions(records).await;
             }
 
             let _ = error_file.flush();

@@ -1,9 +1,13 @@
 use super::task_actions::TransferTaskActions;
 use super::IncrementAssistant;
+use super::TaskStage;
+use super::TaskStatusSaver;
 use super::TransferTaskAttributes;
 use super::OFFSET_PREFIX;
 use super::{gen_file_path, ERROR_RECORD_PREFIX};
+use crate::checkpoint::CheckPoint;
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
+use crate::commons::read_yaml_file;
 use crate::commons::{
     json_to_struct, read_lines, scan_folder_files_to_file, Modified, ModifyType, NotifyWatcher,
     PathType,
@@ -18,7 +22,9 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::from_str;
 use std::fs::File;
+use std::io::BufReader;
 use std::io::{self, BufRead, Seek, SeekFrom};
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::{
     fs::{self, OpenOptions},
@@ -26,6 +32,7 @@ use std::{
     path::Path,
     sync::{atomic::AtomicUsize, Arc},
 };
+use tokio::task;
 use tokio::task::JoinSet;
 use walkdir::WalkDir;
 
@@ -92,8 +99,8 @@ impl TransferTaskActions for TransferLocal2Oss {
                     }
 
                     if record_vec.len() > 0 {
-                        let upload = UpLoadExecutor {
-                            local_path: self.source.clone(),
+                        let upload = Local2OssExecuter {
+                            source: self.source.clone(),
                             target: self.target.clone(),
                             err_counter: Arc::new(AtomicUsize::new(0)),
                             offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
@@ -121,8 +128,8 @@ impl TransferTaskActions for TransferLocal2Oss {
         offset_map: Arc<DashMap<std::string::String, FilePosition>>,
         list_file: String,
     ) {
-        let upload = UpLoadExecutor {
-            local_path: self.source.clone(),
+        let upload = Local2OssExecuter {
+            source: self.source.clone(),
             target: self.target.clone(),
             err_counter,
             offset_map,
@@ -146,7 +153,6 @@ impl TransferTaskActions for TransferLocal2Oss {
     // 生成对象列表
     async fn generate_object_list(
         &self,
-        // rt: &Runtime,
         _last_modify_timestamp: i64,
         object_list_file: &str,
     ) -> Result<usize> {
@@ -159,37 +165,15 @@ impl TransferTaskActions for TransferLocal2Oss {
     }
     async fn execute_increment(
         &self,
-        // _notify_file: &str,
-        // _notify_file_size: Arc<AtomicU64>,
         assistant: &IncrementAssistant,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         snapshot_stop_mark: Arc<AtomicBool>,
+        start_file_position: FilePosition,
     ) {
-    }
-}
-
-impl TransferLocal2Oss {
-    fn gen_watcher(&self) -> notify::Result<NotifyWatcher> {
-        let watcher = NotifyWatcher::new(self.source.as_str())?;
-        Ok(watcher)
-    }
-
-    // Todo
-    async fn execute_increment(
-        &self,
-        notify_file: &str,
-        notify_file_size: Arc<AtomicU64>,
-        err_counter: Arc<AtomicUsize>,
-        offset_map: Arc<DashMap<String, FilePosition>>,
-        snapshot_stop_mark: Arc<AtomicBool>,
-    ) {
-        let client = match self.target.gen_oss_client() {
-            Ok(c) => c,
-            Err(e) => {
-                log::error!("{}", e);
-                return;
-            }
+        let local_notify = match assistant.local_notify.clone() {
+            Some(n) => n,
+            None => return,
         };
 
         let mut offset = 0;
@@ -198,13 +182,30 @@ impl TransferLocal2Oss {
         let subffix = offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
+
+        let task_status_saver = TaskStatusSaver {
+            check_point_path: assistant.check_point_path.clone(),
+            execute_file_path: local_notify.notify_file_path.clone(),
+            stop_mark: Arc::clone(&snapshot_stop_mark),
+            list_file_positon_map: Arc::clone(&offset_map),
+            file_for_notify: Some(local_notify.notify_file_path.clone()),
+            task_stage: TaskStage::Increment,
+            interval: 3,
+        };
+
+        task::spawn(async move {
+            task_status_saver.snapshot_to_file().await;
+        });
+
         let error_file_name =
             gen_file_path(&self.attributes.meta_dir, ERROR_RECORD_PREFIX, &subffix);
 
-        // Todo
-        // 重构，抽象modify handler函数
         loop {
-            if notify_file_size.load(Ordering::SeqCst).le(&offset) {
+            if local_notify
+                .notify_file_size
+                .load(Ordering::SeqCst)
+                .le(&offset)
+            {
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                 continue;
             }
@@ -217,7 +218,7 @@ impl TransferLocal2Oss {
                 return;
             }
 
-            let mut file = match File::open(notify_file) {
+            let mut file = match File::open(&local_notify.notify_file_path) {
                 Ok(f) => f,
                 Err(e) => {
                     log::error!("{}", e);
@@ -237,107 +238,61 @@ impl TransferLocal2Oss {
                 .open(error_file_name.as_str())
                 .unwrap();
 
-            let lines = io::BufReader::new(file).lines();
-            let mut offset_usize = TryInto::<usize>::try_into(offset).unwrap();
+            let lines = BufReader::new(file).lines();
+            let mut offset_usize: usize = TryInto::<usize>::try_into(offset).unwrap();
+            let mut records = vec![];
             for line in lines {
                 line_num += 1;
                 if let Result::Ok(key) = line {
                     // Modifed 解析
                     offset_usize += key.len();
-                    match from_str::<Modified>(key.as_str()) {
-                        Ok(m) => {
-                            let mut target_path = m.path.clone();
-                            match self.source.ends_with("/") {
-                                true => target_path.drain(..self.source.len()),
-                                false => target_path.drain(..self.source.len() + 1),
-                            };
-                            if let Some(prefix) = self.target.prefix.clone() {
-                                target_path.insert_str(0, &prefix);
-                            }
-
-                            let mut target_path = m.path.clone();
-
-                            match self.source.ends_with("/") {
-                                true => target_path.drain(..self.source.len()),
-                                false => target_path.drain(..self.source.len() + 1),
-                            };
-
-                            if let Some(prefix) = self.target.prefix.clone() {
-                                target_path.insert_str(0, &prefix);
-                            }
-
-                            if PathType::File.eq(&m.path_type) {
-                                match m.modify_type {
-                                    ModifyType::Create | ModifyType::Modify => {
-                                        if let Err(e) = client
-                                            .upload_from_local(
-                                                &self.target.bucket,
-                                                target_path.as_str(),
-                                                &m.path,
-                                                self.attributes.large_file_size,
-                                                self.attributes.multi_part_chunk,
-                                            )
-                                            .await
-                                        {
-                                            let recorddesc = RecordDescription {
-                                                source_key: m.path.clone(),
-                                                target_key: target_path.clone(),
-                                                list_file_path: notify_file.to_string(),
-                                                list_file_position: FilePosition {
-                                                    offset: offset_usize,
-                                                    line_num,
-                                                },
-                                                option: Opt::PUT,
-                                            };
-                                            recorddesc.handle_error(
-                                                // e,
-                                                &err_counter,
-                                                &offset_map,
-                                                &mut error_file,
-                                                offset_key.as_str(),
-                                            );
-                                            log::error!("{}", e);
-                                        }
-                                    }
-                                    ModifyType::Delete => {
-                                        if let Err(e) = client
-                                            .remove_object(
-                                                &self.target.bucket,
-                                                target_path.as_str(),
-                                            )
-                                            .await
-                                        {
-                                            let recorddesc = RecordDescription {
-                                                source_key: m.path.clone(),
-                                                target_key: target_path.clone(),
-                                                list_file_path: notify_file.to_string(),
-                                                list_file_position: FilePosition {
-                                                    offset: offset_usize,
-                                                    line_num,
-                                                },
-                                                option: Opt::REMOVE,
-                                            };
-                                            recorddesc.handle_error(
-                                                // anyhow!("{}", e),
-                                                &err_counter,
-                                                &offset_map,
-                                                &mut error_file,
-                                                offset_key.as_str(),
-                                            );
-                                            log::error!("{}", e);
-                                        }
-                                    }
-
-                                    ModifyType::Unkown => {}
-                                };
-                            };
-                        }
+                    match self
+                        .modified_str_to_record_description(
+                            &key,
+                            &local_notify.notify_file_path,
+                            offset_usize,
+                            line_num,
+                        )
+                        .await
+                    {
+                        Ok(r) => records.push(r),
                         Err(e) => {
+                            let r = RecordDescription {
+                                source_key: "".to_string(),
+                                target_key: "".to_string(),
+                                list_file_path: local_notify.notify_file_path.clone(),
+                                list_file_position: FilePosition {
+                                    offset: offset_usize,
+                                    line_num,
+                                },
+                                option: Opt::UNKOWN,
+                            };
+                            r.handle_error(
+                                &err_counter,
+                                &offset_map,
+                                &mut error_file,
+                                offset_key.as_str(),
+                            );
                             log::error!("{}", e);
-                            continue;
                         }
-                    };
+                    }
                 }
+            }
+
+            let local_2_oss = Local2OssExecuter {
+                source: self.source.clone(),
+                target: self.target.clone(),
+                err_counter: Arc::clone(&err_counter),
+                offset_map: Arc::clone(&offset_map),
+                meta_dir: self.attributes.meta_dir.clone(),
+                target_exist_skip: false,
+                large_file_size: self.attributes.large_file_size,
+                multi_part_chunk: self.attributes.multi_part_chunk,
+                list_file_path: local_notify.notify_file_path.clone(),
+            };
+
+            if records.len() > 0 {
+                local_2_oss.exec_record_descriptions(records).await;
             }
 
             let _ = error_file.flush();
@@ -349,102 +304,97 @@ impl TransferLocal2Oss {
                 }
                 Err(_) => {}
             };
-            offset = notify_file_size.load(Ordering::SeqCst);
+            offset = local_notify.notify_file_size.load(Ordering::SeqCst);
             let offset_usize = TryInto::<usize>::try_into(offset).unwrap();
             let position = FilePosition {
                 offset: offset_usize,
                 line_num,
             };
+
+            offset_map.remove(&offset_key);
+            offset_key = OFFSET_PREFIX.to_string();
+            offset_key.push_str(&offset.to_string());
             offset_map.insert(offset_key.clone(), position);
-
-            println!("{}", offset);
         }
     }
 
-    async fn modified_handler(&self, modified: Modified, client: &OssClient) -> Result<()> {
-        let mut target_path = modified.path.clone();
+    // async fn execute_increment_from_checkpoint(
+    //     &self,
+    //     assistant: &IncrementAssistant,
+    //     err_counter: Arc<AtomicUsize>,
+    //     offset_map: Arc<DashMap<String, FilePosition>>,
+    //     snapshot_stop_mark: Arc<AtomicBool>,
+    // ) {
+    //     let checkpoint = read_yaml_file::<CheckPoint>(&assistant.check_point_path).unwrap();
+    // }
+}
 
-        match self.source.ends_with("/") {
-            true => target_path.drain(..self.source.len()),
-            false => target_path.drain(..self.source.len() + 1),
-        };
-
-        if let Some(prefix) = self.target.prefix.clone() {
-            target_path.insert_str(0, &prefix);
-        }
-
-        if PathType::File.eq(&modified.path_type) {
-            let r = match modified.modify_type {
-                ModifyType::Create | ModifyType::Modify => {
-                    client
-                        .upload_from_local(
-                            &self.target.bucket,
-                            target_path.as_str(),
-                            &modified.path,
-                            self.attributes.large_file_size,
-                            self.attributes.multi_part_chunk,
-                        )
-                        .await
-                }
-                ModifyType::Delete => {
-                    match client
-                        .remove_object(&self.target.bucket, target_path.as_str())
-                        .await
-                    {
-                        Ok(_) => Ok(()),
-                        Err(e) => Err(anyhow!("{}", e.to_string())),
-                    }
-                }
-
-                ModifyType::Unkown => Ok(()),
-            };
-            return r;
-        };
-        Ok(())
+impl TransferLocal2Oss {
+    fn gen_watcher(&self) -> notify::Result<NotifyWatcher> {
+        let watcher = NotifyWatcher::new(self.source.as_str())?;
+        Ok(watcher)
     }
 
-    async fn modified_to_recorddescription(
+    async fn modified_str_to_record_description(
         &self,
-        modified: Modified,
+        modified_str: &str,
         list_file_path: &str,
         offset: usize,
         line_num: usize,
-    ) -> Option<RecordDescription> {
+    ) -> Result<RecordDescription> {
+        let modified = from_str::<Modified>(modified_str)?;
         let mut target_path = modified.path.clone();
+
+        // 截取 target key 相对路径
         match self.source.ends_with("/") {
             true => target_path.drain(..self.source.len()),
             false => target_path.drain(..self.source.len() + 1),
         };
-        if let Some(prefix) = self.target.prefix.clone() {
-            target_path.insert_str(0, &prefix);
+
+        // 不全prefix
+        if let Some(mut oss_path) = self.target.prefix.clone() {
+            match oss_path.ends_with("/") {
+                true => target_path.insert_str(0, &oss_path),
+                false => {
+                    oss_path.push('/');
+                    target_path.insert_str(0, &oss_path);
+                }
+            }
         }
-        let mut recordnew = None;
+
         if PathType::File.eq(&modified.path_type) {
-            recordnew = match modified.modify_type {
-                ModifyType::Create | ModifyType::Modify => Some(RecordDescription {
-                    source_key: modified.path.clone(),
-                    target_key: target_path,
-                    list_file_path: list_file_path.to_string(),
-                    list_file_position: FilePosition { offset, line_num },
-                    option: Opt::PUT,
-                }),
-                ModifyType::Delete => Some(RecordDescription {
-                    source_key: modified.path.clone(),
-                    target_key: target_path,
-                    list_file_path: list_file_path.to_string(),
-                    list_file_position: FilePosition { offset, line_num },
-                    option: Opt::REMOVE,
-                }),
-                ModifyType::Unkown => None,
-            };
-        };
-        recordnew
+            match modified.modify_type {
+                ModifyType::Create | ModifyType::Modify => {
+                    let record = RecordDescription {
+                        source_key: modified.path.clone(),
+                        target_key: target_path,
+                        list_file_path: list_file_path.to_string(),
+                        list_file_position: FilePosition { offset, line_num },
+                        option: Opt::PUT,
+                    };
+                    return Ok(record);
+                }
+                ModifyType::Delete => {
+                    let record = RecordDescription {
+                        source_key: modified.path.clone(),
+                        target_key: target_path,
+                        list_file_path: list_file_path.to_string(),
+                        list_file_position: FilePosition { offset, line_num },
+                        option: Opt::REMOVE,
+                    };
+                    return Ok(record);
+                }
+                ModifyType::Unkown => Err(anyhow!("Unkown modify type")),
+            }
+        } else {
+            return Err(anyhow!("Unkown modify type"));
+        }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct UpLoadExecutor {
-    pub local_path: String,
+pub struct Local2OssExecuter {
+    pub source: String,
     pub target: OSSDescription,
     pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
@@ -455,7 +405,7 @@ pub struct UpLoadExecutor {
     pub list_file_path: String,
 }
 
-impl UpLoadExecutor {
+impl Local2OssExecuter {
     pub async fn exec_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
@@ -477,8 +427,7 @@ impl UpLoadExecutor {
 
         let target_oss_client = self.target.gen_oss_client()?;
         for record in records {
-            let source_file_path =
-                gen_file_path(self.local_path.as_str(), &record.key.as_str(), "");
+            let source_file_path = gen_file_path(self.source.as_str(), &record.key.as_str(), "");
             let mut target_key = "".to_string();
             if let Some(s) = self.target.prefix.clone() {
                 target_key.push_str(&s);
@@ -581,7 +530,7 @@ impl UpLoadExecutor {
 
     //Todo
     // 重构
-    pub async fn exec_recorddescriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
+    pub async fn exec_record_descriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
         let subffix = records[0].list_file_position.offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
@@ -646,7 +595,6 @@ impl UpLoadExecutor {
                 .await
             {
                 record.handle_error(
-                    // e,
                     &self.err_counter,
                     &self.offset_map,
                     &mut error_file,
@@ -675,9 +623,9 @@ impl UpLoadExecutor {
 
     async fn modified_handler(&self, modified: Modified, client: &OssClient) {
         let mut target_path = modified.path.clone();
-        match self.local_path.ends_with("/") {
-            true => target_path.drain(..self.local_path.len()),
-            false => target_path.drain(..self.local_path.len() + 1),
+        match self.source.ends_with("/") {
+            true => target_path.drain(..self.source.len()),
+            false => target_path.drain(..self.source.len() + 1),
         };
         if let Some(prefix) = self.target.prefix.clone() {
             target_path.insert_str(0, &prefix);

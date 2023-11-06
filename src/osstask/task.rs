@@ -1,6 +1,6 @@
 use super::{
     osscompare::OssCompare,
-    task_actions::{TaskActionsFromLocal, TaskActionsFromOss, TransferTaskActions},
+    task_actions::{TaskActionsFromLocal, TaskActionsFromOss},
     DownloadTask, LocalToLocal, TaskLocal2Local, TaskStatusSaver, TaskTransfer, UploadTask,
 };
 use crate::{
@@ -40,9 +40,9 @@ pub const OFFSET_PREFIX: &'static str = "offset_";
 pub const COMPARE_OBJECT_DIFF_PREFIX: &'static str = "diff_object_";
 pub const NOTIFY_FILE_PREFIX: &'static str = "notify_file_";
 
-/// 任务类型，包括存量曾量全量
+/// 任务阶段，包括存量曾量全量
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
-pub enum TaskRunningStatus {
+pub enum TaskStage {
     Stock,
     Increment,
 }
@@ -298,12 +298,12 @@ impl TaskLocalToLocal {
         rt.block_on(async {
             let mut vec_keys: Vec<ListedRecord> = vec![];
             let status_saver = TaskStatusSaver {
-                save_to: check_point_file.clone(),
+                check_point_path: check_point_file.clone(),
                 execute_file_path: object_list_file.clone(),
                 stop_mark: Arc::clone(&snapshot_stop_mark),
                 list_file_positon_map: Arc::clone(&offset_map),
                 file_for_notify: None,
-                task_running_status: TaskRunningStatus::Stock,
+                task_stage: TaskStage::Stock,
                 interval: 3,
             };
             task::spawn(async move {
@@ -418,14 +418,15 @@ impl TaskLocalToLocal {
             snapshot_stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
             // 记录checkpoint
             let list_file = object_list_file.as_str();
-            let checkpoint = CheckPoint {
+            let mut checkpoint = CheckPoint {
                 execute_file_path: list_file.to_string(),
                 execute_file_position: FilePosition {
                     offset: file_position,
                     line_num,
                 },
                 file_for_notify: None,
-                task_running_satus: TaskRunningStatus::Stock,
+                task_stage: TaskStage::Stock,
+                timestampe: 0,
             };
             if let Err(e) = checkpoint.save_to(list_file) {
                 log::error!("{}", e);
@@ -761,12 +762,12 @@ impl TaskOssCompare {
 
             // 启动checkpoint记录线程
             let status_saver = TaskStatusSaver {
-                save_to: check_point_file.clone(),
+                check_point_path: check_point_file.clone(),
                 execute_file_path: object_list_file.clone(),
                 stop_mark: Arc::clone(&snapshot_stop_mark),
                 list_file_positon_map: Arc::clone(&offset_map),
                 file_for_notify: None,
-                task_running_status: TaskRunningStatus::Stock,
+                task_stage: TaskStage::Stock,
                 interval: 3,
             };
             task::spawn(async move {
@@ -860,14 +861,15 @@ impl TaskOssCompare {
             // 配置停止 offset save 标识为 true
             snapshot_stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
             // 记录checkpoint
-            let checkpoint = CheckPoint {
+            let mut checkpoint = CheckPoint {
                 execute_file_path: object_list_file.clone(),
                 file_for_notify: None,
-                task_running_satus: TaskRunningStatus::Stock,
+                task_stage: TaskStage::Stock,
                 execute_file_position: FilePosition {
                     offset: file_position,
                     line_num,
                 },
+                timestampe: 0,
             };
             if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
                 log::error!("{}", e);
@@ -945,8 +947,8 @@ where
         .build()?;
 
     let task_running_status = match init {
-        true => TaskRunningStatus::Stock,
-        false => TaskRunningStatus::Increment,
+        true => TaskStage::Stock,
+        false => TaskStage::Increment,
     };
 
     // 若不从checkpoint开始，重新生成文件清单
@@ -1031,12 +1033,12 @@ where
 
         // 启动checkpoint记录线程
         let status_saver = TaskStatusSaver {
-            save_to: check_point_file.clone(),
+            check_point_path: check_point_file.clone(),
             execute_file_path: object_list_file.clone(),
             stop_mark: Arc::clone(&snapshot_stop_mark),
             list_file_positon_map: Arc::clone(&offset_map),
             file_for_notify: None,
-            task_running_status: TaskRunningStatus::Stock,
+            task_stage: TaskStage::Stock,
             interval: 3,
         };
         sys_set.spawn(async move {
@@ -1141,14 +1143,15 @@ where
         snapshot_stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
         // 记录checkpoint
         // let position: u64 = file_position.try_into().unwrap();
-        let checkpoint = CheckPoint {
+        let mut checkpoint = CheckPoint {
             execute_file_path: object_list_file.clone(),
             execute_file_position: FilePosition {
                 offset: file_position,
                 line_num,
             },
             file_for_notify: None,
-            task_running_satus: task_running_status,
+            task_stage: task_running_status,
+            timestampe: 0,
         };
         if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
             log::error!("{}", e);
@@ -1301,12 +1304,12 @@ where
 
         // 启动checkpoint记录线程
         let status_saver = TaskStatusSaver {
-            save_to: check_point_file.clone(),
+            check_point_path: check_point_file.clone(),
             execute_file_path: object_list_file.clone(),
             stop_mark: Arc::clone(&snapshot_stop_mark),
             list_file_positon_map: Arc::clone(&offset_map),
             file_for_notify: notify_file.clone(),
-            task_running_status: TaskRunningStatus::Stock,
+            task_stage: TaskStage::Stock,
             interval: 3,
         };
         sys_set.spawn(async move {
@@ -1441,14 +1444,15 @@ where
         // 配置停止 offset save 标识为 true
         snapshot_stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
         // 记录checkpoint
-        let checkpoint = CheckPoint {
+        let mut checkpoint = CheckPoint {
             execute_file_path: object_list_file.clone(),
             execute_file_position: FilePosition {
                 offset: file_position,
                 line_num,
             },
             file_for_notify: notify_file.clone(),
-            task_running_satus: TaskRunningStatus::Stock,
+            task_stage: TaskStage::Stock,
+            timestampe: 0,
         };
         if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
             log::error!("{}", e);
@@ -1475,12 +1479,12 @@ where
                     let increment_file_size = Arc::clone(&notify_file_size);
 
                     let task_status_saver = TaskStatusSaver {
-                        save_to: check_point_file.clone(),
+                        check_point_path: check_point_file.clone(),
                         execute_file_path: notify_file.clone().unwrap(),
                         stop_mark: Arc::clone(&stop_mark),
                         list_file_positon_map: Arc::clone(&offset_map),
                         file_for_notify: notify_file.clone(),
-                        task_running_status: TaskRunningStatus::Increment,
+                        task_stage: TaskStage::Increment,
                         interval: 3,
                     };
                     sys_set.spawn(async move {

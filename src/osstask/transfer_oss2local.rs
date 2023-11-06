@@ -189,8 +189,19 @@ impl TransferTaskActions for TransferOss2Local {
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         snapshot_stop_mark: Arc<AtomicBool>,
+        start_file_position: FilePosition,
     ) {
     }
+
+    // async fn execute_increment_from_checkpoint(
+    //     &self,
+    //     assistant: &IncrementAssistant,
+    //     err_counter: Arc<AtomicUsize>,
+    //     offset_map: Arc<DashMap<String, FilePosition>>,
+    //     snapshot_stop_mark: Arc<AtomicBool>,
+    // ) {
+    //     todo!()
+    // }
 }
 
 #[derive(Debug, Clone)]

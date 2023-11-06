@@ -187,13 +187,13 @@ impl TaskActionsFromLocal for UploadTask {
         offset_map: Arc<DashMap<String, FilePosition>>,
         snapshot_stop_mark: Arc<AtomicBool>,
     ) {
-        let client = match self.target.gen_oss_client() {
-            Ok(c) => c,
-            Err(e) => {
-                log::error!("{}", e);
-                return;
-            }
-        };
+        // let client = match self.target.gen_oss_client() {
+        //     Ok(c) => c,
+        //     Err(e) => {
+        //         log::error!("{}", e);
+        //         return;
+        //     }
+        // };
 
         let mut offset = 0;
         let mut line_num = 0;
