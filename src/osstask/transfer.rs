@@ -40,9 +40,9 @@ impl Default for TaskTransfer {
 
 #[async_trait]
 impl TaskActionsFromOss for TaskTransfer {
-    fn task_type(&self) -> TaskType {
-        TaskType::Transfer
-    }
+    // fn task_type(&self) -> TaskType {
+    //     TaskType::Transfer
+    // }
 
     // 错误记录重试
     fn error_record_retry(&self) -> Result<()> {

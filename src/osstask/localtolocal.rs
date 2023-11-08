@@ -1,5 +1,5 @@
 use super::task_actions::TaskActionsFromLocal;
-use super::{gen_file_path, TaskType, TransferTaskAttributes, ERROR_RECORD_PREFIX, OFFSET_PREFIX};
+use super::{gen_file_path, TransferTaskAttributes, ERROR_RECORD_PREFIX, OFFSET_PREFIX};
 use crate::checkpoint::ListedRecord;
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::commons::{
@@ -45,9 +45,9 @@ impl Default for TaskLocal2Local {
 
 #[async_trait]
 impl TaskActionsFromLocal for TaskLocal2Local {
-    fn task_type(&self) -> TaskType {
-        TaskType::Upload
-    }
+    // fn task_type(&self) -> TaskType {
+    //     TaskType::Upload
+    // }
     // 错误记录重试
     fn error_record_retry(&self) -> Result<()> {
         // 遍历错误记录
