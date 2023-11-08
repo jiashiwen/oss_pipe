@@ -50,9 +50,9 @@ impl Default for UploadTask {
 
 #[async_trait]
 impl TaskActionsFromLocal for UploadTask {
-    fn task_type(&self) -> TaskType {
-        TaskType::Upload
-    }
+    // fn task_type(&self) -> TaskType {
+    //     TaskType::Upload
+    // }
     // 错误记录重试
     fn error_record_retry(&self) -> Result<()> {
         // 遍历错误记录

@@ -11,8 +11,8 @@ use crate::configure::{generate_default_config, set_config_file_path};
 use crate::configure::{get_config_file_path, get_current_config_yml, set_config};
 use crate::interact;
 use crate::osstask::{
-    task_id_generator, DownloadTask, Task, TaskDescription, TaskLocal2Local, TaskOssCompare,
-    TaskTransfer, TaskTruncateBucket, TaskType, UploadTask,
+    task_id_generator, ObjectStorage, Task, TaskDescription, TaskOssCompare, TaskTruncateBucket,
+    TaskType, TransferTask,
 };
 use crate::s3::oss::OSSDescription;
 use crate::s3::oss::OssProvider;
@@ -23,7 +23,6 @@ use lazy_static::lazy_static;
 use crate::interact::INTERACT_STATUS;
 
 pub const APP_NAME: &'static str = "oss_pipe";
-// pub const INTERACT_STATUS: &'static bool = &false;
 
 lazy_static! {
     static ref CLIAPP: Clap_Command = Clap_Command::new(APP_NAME)
@@ -187,150 +186,259 @@ fn cmd_match(matches: &ArgMatches) {
     }
     if let Some(template) = matches.subcommand_matches("template") {
         let task_id = task_id_generator();
-        if let Some(download) = template.subcommand_matches("download") {
-            let file = download.get_one::<String>("file");
-
-            let mut download_task = DownloadTask::default();
-            let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
-            let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
-
-            download_task.task_attributes.exclude = Some(exclude_vec);
-            download_task.task_attributes.include = Some(include_vec);
-
-            let task = Task {
-                task_id: task_id.to_string(),
-                name: "download task".to_string(),
-                task_desc: TaskDescription::Download(download_task),
-            };
-            match file {
-                Some(f) => {
-                    match struct_to_yml_file(&task, f) {
-                        Ok(_) => {
-                            println!("Generate {} succeed", f)
-                        }
-                        Err(e) => {
-                            log::error!("{}", e);
-                        }
-                    };
-                }
-                None => {
-                    let yml = struct_to_yaml_string(&task);
-                    match yml {
-                        Ok(str) => println!("{}", str),
-                        Err(e) => log::error!("{}", e),
-                    }
-                }
-            };
-        }
 
         if let Some(transfer) = template.subcommand_matches("transfer") {
-            let file = transfer.get_one::<String>("file");
-            let task_id = task_id_generator();
-            // let mut task_transfer = TaskTransfer::default();
-            let mut task_transfer = TaskTransfer::default();
-            let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
-            let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
-            task_transfer.task_attributes.exclude = Some(exclude_vec);
-            task_transfer.task_attributes.include = Some(include_vec);
-            task_transfer.source.provider = OssProvider::ALI;
-            task_transfer.source.endpoint = "http://oss-cn-beijing.aliyuncs.com".to_string();
-            let task = Task {
-                task_id: task_id.to_string(),
-                name: "transfer task".to_string(),
-                task_desc: TaskDescription::Transfer(task_transfer),
-            };
-            match file {
-                Some(f) => {
-                    match struct_to_yml_file(&task, f) {
-                        Ok(_) => {
-                            println!("Generate {} succeed", f)
-                        }
-                        Err(e) => {
-                            log::error!("{}", e);
-                        }
-                    };
-                }
-                None => {
-                    let yml = struct_to_yaml_string(&task);
-                    match yml {
-                        Ok(str) => println!("{}", str),
-                        Err(e) => log::error!("{}", e),
+            if let Some(oss2oss) = transfer.subcommand_matches("oss2oss") {
+                let file = oss2oss.get_one::<String>("file");
+                let mut transfer_oss2oss = TransferTask::default();
+                let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
+                let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
+                transfer_oss2oss.attributes.exclude = Some(exclude_vec);
+                transfer_oss2oss.attributes.include = Some(include_vec);
+                let mut oss_desc = OSSDescription::default();
+                oss_desc.provider = OssProvider::ALI;
+                oss_desc.endpoint = "http://oss-cn-beijing.aliyuncs.com".to_string();
+                transfer_oss2oss.source = ObjectStorage::OSS(oss_desc);
+
+                let task = Task {
+                    task_id: task_id.to_string(),
+                    name: "transfer oss to oss".to_string(),
+                    task_desc: TaskDescription::Transfer(transfer_oss2oss),
+                };
+
+                match file {
+                    Some(f) => {
+                        match struct_to_yml_file(&task, f) {
+                            Ok(_) => {
+                                println!("Generate {} succeed", f)
+                            }
+                            Err(e) => {
+                                log::error!("{}", e);
+                            }
+                        };
                     }
-                }
-            };
-        }
-
-        if let Some(upload) = template.subcommand_matches("upload") {
-            let file = upload.get_one::<String>("file");
-            let mut task_upload = UploadTask::default();
-            let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
-            let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
-            task_upload.task_attributes.include = Some(include_vec);
-            task_upload.task_attributes.exclude = Some(exclude_vec);
-            let task = Task {
-                task_id: task_id.to_string(),
-                name: "upload task".to_string(),
-                task_desc: TaskDescription::Upload(task_upload),
-            };
-            match file {
-                Some(f) => {
-                    match struct_to_yml_file(&task, f) {
-                        Ok(_) => {
-                            println!("Generate {} succeed", f)
+                    None => {
+                        let yml = struct_to_yaml_string(&task);
+                        match yml {
+                            Ok(str) => println!("{}", str),
+                            Err(e) => log::error!("{}", e),
                         }
-                        Err(e) => {
-                            log::error!("{}", e);
-                        }
-                    };
-                }
-                None => {
-                    let yml = struct_to_yaml_string(&task);
-                    match yml {
-                        Ok(str) => println!("{}", str),
-                        Err(e) => log::error!("{}", e),
                     }
-                }
-            };
-        }
+                };
+            }
+            if let Some(oss2local) = transfer.subcommand_matches("oss2local") {
+                let file = oss2local.get_one::<String>("file");
+                let mut transfer_oss2local = TransferTask::default();
+                let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
+                let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
+                transfer_oss2local.attributes.exclude = Some(exclude_vec);
+                transfer_oss2local.attributes.include = Some(include_vec);
+                let target: &str = "/tmp";
+                transfer_oss2local.target = ObjectStorage::Local(target.to_string());
 
-        if let Some(localtolocal) = template.subcommand_matches("localtolocal") {
-            let file = localtolocal.get_one::<String>("file");
+                let task = Task {
+                    task_id: task_id.to_string(),
+                    name: "transfer oss to local".to_string(),
+                    task_desc: TaskDescription::Transfer(transfer_oss2local),
+                };
 
-            // let task_localtolocal = TaskLocalToLocal::default();
+                match file {
+                    Some(f) => {
+                        match struct_to_yml_file(&task, f) {
+                            Ok(_) => {
+                                println!("Generate {} succeed", f)
+                            }
+                            Err(e) => {
+                                log::error!("{}", e);
+                            }
+                        };
+                    }
+                    None => {
+                        let yml = struct_to_yaml_string(&task);
+                        match yml {
+                            Ok(str) => println!("{}", str),
+                            Err(e) => log::error!("{}", e),
+                        }
+                    }
+                };
+            }
+            if let Some(local2oss) = transfer.subcommand_matches("local2oss") {
+                let file = local2oss.get_one::<String>("file");
+                let mut transfer_local2oss = TransferTask::default();
+                let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
+                let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
+                transfer_local2oss.attributes.exclude = Some(exclude_vec);
+                transfer_local2oss.attributes.include = Some(include_vec);
+                let source: &str = "/tmp";
+                transfer_local2oss.source = ObjectStorage::Local(source.to_string());
+
+                let task = Task {
+                    task_id: task_id.to_string(),
+                    name: "transfer local to oss".to_string(),
+                    task_desc: TaskDescription::Transfer(transfer_local2oss),
+                };
+
+                match file {
+                    Some(f) => {
+                        match struct_to_yml_file(&task, f) {
+                            Ok(_) => {
+                                println!("Generate {} succeed", f)
+                            }
+                            Err(e) => {
+                                log::error!("{}", e);
+                            }
+                        };
+                    }
+                    None => {
+                        let yml = struct_to_yaml_string(&task);
+                        match yml {
+                            Ok(str) => println!("{}", str),
+                            Err(e) => log::error!("{}", e),
+                        }
+                    }
+                };
+            }
+            if let Some(local2local) = transfer.subcommand_matches("local2local") {
+                let file = local2local.get_one::<String>("file");
+                let mut transfer_local2local = TransferTask::default();
+                let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
+                let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
+                transfer_local2local.attributes.exclude = Some(exclude_vec);
+                transfer_local2local.attributes.include = Some(include_vec);
+                let source: &str = "/tmp/source";
+                let target: &str = "/tmp/target";
+                transfer_local2local.source = ObjectStorage::Local(source.to_string());
+                transfer_local2local.source = ObjectStorage::Local(target.to_string());
+
+                let task = Task {
+                    task_id: task_id.to_string(),
+                    name: "transfer local to local".to_string(),
+                    task_desc: TaskDescription::Transfer(transfer_local2local),
+                };
+
+                match file {
+                    Some(f) => {
+                        match struct_to_yml_file(&task, f) {
+                            Ok(_) => {
+                                println!("Generate {} succeed", f)
+                            }
+                            Err(e) => {
+                                log::error!("{}", e);
+                            }
+                        };
+                    }
+                    None => {
+                        let yml = struct_to_yaml_string(&task);
+                        match yml {
+                            Ok(str) => println!("{}", str),
+                            Err(e) => log::error!("{}", e),
+                        }
+                    }
+                };
+            }
+            // let file = transfer.get_one::<String>("file");
+            // let task_id = task_id_generator();
+
+            // // let mut task_transfer = TaskTransfer::default();
+            // let mut transfer = TransferTask::default();
             // let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
             // let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
-            // task_localtolocal.exclude = Some(exclude_vec);
-            // task_localtolocal.include = Some(include_vec);
-            let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
-            let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
-            let mut task_localtolocal = TaskLocal2Local::default();
-            task_localtolocal.task_attributes.exclude = Some(exclude_vec);
-            task_localtolocal.task_attributes.include = Some(include_vec);
-            let task = Task {
-                task_id: task_id.to_string(),
-                name: "local to local task".to_string(),
-                task_desc: TaskDescription::LocalToLocal(task_localtolocal),
-            };
-            match file {
-                Some(f) => {
-                    match struct_to_yml_file(&task, f) {
-                        Ok(_) => {
-                            println!("Generate {} succeed", f)
-                        }
-                        Err(e) => {
-                            log::error!("{}", e);
-                        }
-                    };
-                }
-                None => {
-                    let yml = struct_to_yaml_string(&task);
-                    match yml {
-                        Ok(str) => println!("{}", str),
-                        Err(e) => log::error!("{}", e),
-                    }
-                }
-            };
+            // task_transfer.task_attributes.exclude = Some(exclude_vec);
+            // task_transfer.task_attributes.include = Some(include_vec);
+            // task_transfer.source.provider = OssProvider::ALI;
+            // task_transfer.source.endpoint = "http://oss-cn-beijing.aliyuncs.com".to_string();
+            // let task = Task {
+            //     task_id: task_id.to_string(),
+            //     name: "transfer task".to_string(),
+            //     task_desc: TaskDescription::Transfer(task_transfer),
+            // };
+            // match file {
+            //     Some(f) => {
+            //         match struct_to_yml_file(&task, f) {
+            //             Ok(_) => {
+            //                 println!("Generate {} succeed", f)
+            //             }
+            //             Err(e) => {
+            //                 log::error!("{}", e);
+            //             }
+            //         };
+            //     }
+            //     None => {
+            //         let yml = struct_to_yaml_string(&task);
+            //         match yml {
+            //             Ok(str) => println!("{}", str),
+            //             Err(e) => log::error!("{}", e),
+            //         }
+            //     }
+            // };
         }
+
+        // if let Some(upload) = template.subcommand_matches("upload") {
+        //     let file = upload.get_one::<String>("file");
+        //     let mut task_upload = UploadTask::default();
+        //     let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
+        //     let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
+        //     task_upload.task_attributes.include = Some(include_vec);
+        //     task_upload.task_attributes.exclude = Some(exclude_vec);
+        //     let task = Task {
+        //         task_id: task_id.to_string(),
+        //         name: "upload task".to_string(),
+        //         task_desc: TaskDescription::Upload(task_upload),
+        //     };
+        //     match file {
+        //         Some(f) => {
+        //             match struct_to_yml_file(&task, f) {
+        //                 Ok(_) => {
+        //                     println!("Generate {} succeed", f)
+        //                 }
+        //                 Err(e) => {
+        //                     log::error!("{}", e);
+        //                 }
+        //             };
+        //         }
+        //         None => {
+        //             let yml = struct_to_yaml_string(&task);
+        //             match yml {
+        //                 Ok(str) => println!("{}", str),
+        //                 Err(e) => log::error!("{}", e),
+        //             }
+        //         }
+        //     };
+        // }
+
+        // if let Some(localtolocal) = template.subcommand_matches("localtolocal") {
+        //     let file = localtolocal.get_one::<String>("file");
+
+        //     let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
+        //     let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
+        //     let mut task_localtolocal = TaskLocal2Local::default();
+        //     task_localtolocal.task_attributes.exclude = Some(exclude_vec);
+        //     task_localtolocal.task_attributes.include = Some(include_vec);
+        //     let task = Task {
+        //         task_id: task_id.to_string(),
+        //         name: "local to local task".to_string(),
+        //         task_desc: TaskDescription::LocalToLocal(task_localtolocal),
+        //     };
+        //     match file {
+        //         Some(f) => {
+        //             match struct_to_yml_file(&task, f) {
+        //                 Ok(_) => {
+        //                     println!("Generate {} succeed", f)
+        //                 }
+        //                 Err(e) => {
+        //                     log::error!("{}", e);
+        //                 }
+        //             };
+        //         }
+        //         None => {
+        //             let yml = struct_to_yaml_string(&task);
+        //             match yml {
+        //                 Ok(str) => println!("{}", str),
+        //                 Err(e) => log::error!("{}", e),
+        //             }
+        //         }
+        //     };
+        // }
 
         if let Some(truncate_bucket) = template.subcommand_matches("truncate_bucket") {
             let file = truncate_bucket.get_one::<String>("file");
@@ -403,11 +511,8 @@ fn cmd_match(matches: &ArgMatches) {
         }
 
         if let Some(_) = parameters.subcommand_matches("task_type") {
-            println!("{:?}", TaskType::Download);
-            println!("{:?}", TaskType::LocalToLocal);
             println!("{:?}", TaskType::Transfer);
             println!("{:?}", TaskType::TruncateBucket);
-            println!("{:?}", TaskType::Upload);
         }
     }
 

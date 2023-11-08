@@ -75,7 +75,7 @@ impl NotifyWatcher {
 
     pub async fn watch_to_file(mut self, file: File, file_size: Arc<AtomicU64>) {
         let mut linewiter = LineWriter::new(&file);
-        let mut tmp_modified = Modified::new();
+        // let mut tmp_modified = Modified::new();
         self.writing_file_status = true;
         for res in self.reciver {
             if !self.writing_file_status {
@@ -103,7 +103,10 @@ impl NotifyWatcher {
                                 modified.modify_type = ModifyType::Modify;
                                 modified.path_type = PathType::File;
                             }
-                            _ => {}
+                            notify::event::ModifyKind::Any => {}
+                            notify::event::ModifyKind::Metadata(_) => {}
+                            notify::event::ModifyKind::Name(_) => {}
+                            notify::event::ModifyKind::Other => {}
                         },
                         EventKind::Remove(r) => match r {
                             notify::event::RemoveKind::File => {
@@ -114,22 +117,13 @@ impl NotifyWatcher {
                                 modified.modify_type = ModifyType::Delete;
                                 modified.path_type = PathType::Folder;
                             }
-                            _ => {}
+                            notify::event::RemoveKind::Any => {}
+                            notify::event::RemoveKind::Other => {}
                         },
                         _ => {}
                     }
                 }
                 Err(error) => println!("{}", error),
-            }
-
-            // 避免在 echo 时 重复put文件，只保留创建事件
-            if tmp_modified.path.eq(&modified.path)
-                && tmp_modified.path_type.eq(&modified.path_type)
-                && matches!(tmp_modified.modify_type, ModifyType::Create)
-                && matches!(modified.modify_type, ModifyType::Modify)
-            {
-                tmp_modified = modified;
-                continue;
             }
 
             match modified.modify_type {
@@ -140,7 +134,9 @@ impl NotifyWatcher {
                             let _ = linewiter.write_all(json.as_bytes());
                             let _ = linewiter.write_all("\n".as_bytes());
                         }
-                        Err(_) => {}
+                        Err(e) => {
+                            log::error!("{}", e)
+                        }
                     };
                 }
             }
@@ -152,7 +148,7 @@ impl NotifyWatcher {
                 Err(_) => {}
             };
 
-            tmp_modified = modified;
+            // tmp_modified = modified;
 
             yield_now().await;
         }

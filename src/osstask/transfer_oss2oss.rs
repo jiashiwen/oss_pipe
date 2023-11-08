@@ -20,7 +20,7 @@ use std::{
         Arc,
     },
 };
-use tokio::task::JoinSet;
+use tokio::{sync::Mutex, task::JoinSet};
 use walkdir::WalkDir;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -81,7 +81,7 @@ impl TransferTaskActions for TransferOss2Oss {
                     }
 
                     if record_vec.len() > 0 {
-                        let copy = TransferRecordsExecutor {
+                        let transfer = TransferRecordsExecutor {
                             source: self.source.clone(),
                             target: self.target.clone(),
                             err_counter: Arc::new(AtomicUsize::new(0)),
@@ -92,7 +92,7 @@ impl TransferTaskActions for TransferOss2Oss {
                             offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
                             list_file_path: p.to_string(),
                         };
-                        let _ = copy.exec_listed_records(record_vec);
+                        let _ = transfer.exec_listed_records(record_vec);
                     }
                 }
 
@@ -136,25 +136,25 @@ impl TransferTaskActions for TransferOss2Oss {
     // 生成对象列表
     async fn generate_object_list(
         &self,
-        last_modify_timestamp: i64,
+        last_modify_timestamp: Option<i64>,
         object_list_file: &str,
     ) -> Result<usize> {
         let client_source = self.source.gen_oss_client()?;
 
         // 若为持续同步模式，且 last_modify_timestamp 大于 0，则将 last_modify 属性大于last_modify_timestamp变量的对象加入执行列表
-        match last_modify_timestamp > 0 {
-            true => {
+        match last_modify_timestamp {
+            Some(t) => {
                 client_source
                     .append_last_modify_greater_object_to_file(
                         self.source.bucket.clone(),
                         self.source.prefix.clone(),
                         self.attributes.bach_size,
                         object_list_file.to_string(),
-                        last_modify_timestamp,
+                        t,
                     )
                     .await
             }
-            false => {
+            None => {
                 client_source
                     .append_all_object_list_to_file(
                         self.source.bucket.clone(),
@@ -167,13 +167,13 @@ impl TransferTaskActions for TransferOss2Oss {
         }
     }
 
-    async fn increment_prelude(&self, assistant: &mut IncrementAssistant) -> Result<()> {
+    async fn increment_prelude(&self, assistant: Arc<Mutex<IncrementAssistant>>) -> Result<()> {
         Ok(())
     }
 
     async fn execute_increment(
         &self,
-        assistant: &IncrementAssistant,
+        assistant: Arc<Mutex<IncrementAssistant>>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         snapshot_stop_mark: Arc<AtomicBool>,
@@ -212,15 +212,6 @@ impl TransferRecordsExecutor {
         offset_key.push_str(&subffix);
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
 
-        // 先写首行日志，避免错误漏记
-        self.offset_map.insert(
-            offset_key.clone(),
-            FilePosition {
-                offset: records[0].offset,
-                line_num: records[0].line_num,
-            },
-        );
-
         let mut error_file = OpenOptions::new()
             .create(true)
             .write(true)
@@ -230,6 +221,15 @@ impl TransferRecordsExecutor {
         let c_s = self.source.gen_oss_client()?;
         let c_t = self.target.gen_oss_client()?;
         for record in records {
+            // 插入文件offset记录
+            self.offset_map.insert(
+                offset_key.clone(),
+                FilePosition {
+                    offset: record.offset,
+                    line_num: record.line_num,
+                },
+            );
+
             let mut target_key = match self.target.prefix.clone() {
                 Some(s) => s,
                 None => "".to_string(),
@@ -237,7 +237,7 @@ impl TransferRecordsExecutor {
             target_key.push_str(&record.key);
 
             if let Err(e) = self
-                .listed_record_handler(&offset_key, &record, &c_s, &c_t, &target_key)
+                .listed_record_handler(&record, &c_s, &c_t, &target_key)
                 .await
             {
                 let recorddesc = RecordDescription {
@@ -258,16 +258,8 @@ impl TransferRecordsExecutor {
                 );
                 log::error!("{}", e);
             }
-
-            // 插入文件offset记录
-            self.offset_map.insert(
-                offset_key.clone(),
-                FilePosition {
-                    offset: record.offset,
-                    line_num: record.line_num,
-                },
-            );
         }
+
         self.offset_map.remove(&offset_key);
         let _ = error_file.flush();
         match error_file.metadata() {
@@ -284,7 +276,6 @@ impl TransferRecordsExecutor {
 
     async fn listed_record_handler(
         &self,
-        offset_key: &str,
         record: &ListedRecord,
         source_oss: &OssClient,
         target_oss: &OssClient,
@@ -300,13 +291,6 @@ impl TransferRecordsExecutor {
                 let service_err = e.into_service_error();
                 match service_err.kind {
                     GetObjectErrorKind::NoSuchKey(_) => {
-                        self.offset_map.insert(
-                            offset_key.to_string(),
-                            FilePosition {
-                                offset: record.offset,
-                                line_num: record.line_num,
-                            },
-                        );
                         return Ok(());
                     }
                     _ => {

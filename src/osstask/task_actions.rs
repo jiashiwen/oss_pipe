@@ -14,7 +14,7 @@ use std::{
         Arc,
     },
 };
-use tokio::{runtime::Runtime, task::JoinSet};
+use tokio::{runtime::Runtime, sync::Mutex, task::JoinSet};
 
 // Todo
 // 需新增objectlistfile executor，用于承载对象列表对象执行逻辑
@@ -37,16 +37,16 @@ pub trait TransferTaskActions {
     // 生成对象列表
     async fn generate_object_list(
         &self,
-        _last_modify_timestamp: i64,
+        last_modify_timestamp: Option<i64>,
         object_list_file: &str,
     ) -> Result<usize>;
 
-    async fn increment_prelude(&self, assistant: &mut IncrementAssistant) -> Result<()>;
+    async fn increment_prelude(&self, assistant: Arc<Mutex<IncrementAssistant>>) -> Result<()>;
 
     // 执行增量任务
     async fn execute_increment(
         &self,
-        assistant: &IncrementAssistant,
+        assistant: Arc<Mutex<IncrementAssistant>>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         snapshot_stop_mark: Arc<AtomicBool>,
@@ -91,7 +91,7 @@ pub trait CompareTaskActions {
 pub trait TaskActionsFromOss {
     // type Item;
     // 返回任务类型
-    fn task_type(&self) -> TaskType;
+    // fn task_type(&self) -> TaskType;
     // 执行任务
     // fn exec_task(&self, init: bool) -> Result<()>;
     // 错误记录重试
@@ -119,7 +119,7 @@ pub trait TaskActionsFromOss {
 pub trait TaskActionsFromLocal {
     // type Item;
     // 返回任务类型
-    fn task_type(&self) -> TaskType;
+    // fn task_type(&self) -> TaskType;
     // 错误记录重试
     fn error_record_retry(&self) -> Result<()>;
     // 记录执行器

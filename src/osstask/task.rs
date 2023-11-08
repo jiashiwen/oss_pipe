@@ -1,7 +1,9 @@
 use super::{
+    execute_transfer_task,
     osscompare::OssCompare,
     task_actions::{TaskActionsFromLocal, TaskActionsFromOss},
-    DownloadTask, LocalToLocal, TaskLocal2Local, TaskStatusSaver, TaskTransfer, UploadTask,
+    DownloadTask, LocalToLocal, TaskLocal2Local, TaskStatusSaver, TaskTransfer, TransferTask,
+    UploadTask,
 };
 use crate::{
     checkpoint::{get_task_checkpoint, CheckPoint, FilePosition, ListedRecord},
@@ -50,21 +52,23 @@ pub enum TaskStage {
 /// 任务类别，根据传输方式划分
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub enum TaskType {
-    Download,
-    Upload,
+    // Download,
+    // Upload,
     Transfer,
-    LocalToLocal,
+    // LocalToLocal,
     TruncateBucket,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 // #[serde(untagged)]
+#[serde(rename_all = "lowercase")]
+#[serde(tag = "type")]
 pub enum TaskDescription {
-    Download(DownloadTask),
-    Upload(UploadTask),
-    Transfer(TaskTransfer),
-    // LocalToLocal(TaskLocalToLocal),
-    LocalToLocal(TaskLocal2Local),
+    // Download(DownloadTask),
+    // Upload(UploadTask),
+    // Transfer(TaskTransfer),
+    Transfer(TransferTask),
+    // LocalToLocal(TaskLocal2Local),
     OssCompare(TaskOssCompare),
     TruncateBucket(TaskTruncateBucket),
 }
@@ -74,24 +78,25 @@ pub enum TaskDescription {
 impl TaskDescription {
     pub fn exec_multi_threads(&self) -> Result<()> {
         match self {
-            TaskDescription::Download(download) => {
-                execute_task_from_oss_multi_threads(true, download, &download.task_attributes)
-            }
-            TaskDescription::Upload(upload) => {
-                execute_task_from_local_multi_threads(true, upload, &upload.task_attributes)
-            }
+            // TaskDescription::Download(download) => {
+            //     execute_task_from_oss_multi_threads(true, download, &download.task_attributes)
+            // }
+            // TaskDescription::Upload(upload) => {
+            //     execute_task_from_local_multi_threads(true, upload, &upload.task_attributes)
+            // }
             TaskDescription::Transfer(transfer) => {
-                execute_task_from_oss_multi_threads(true, transfer, &transfer.task_attributes)
+                // execute_task_from_oss_multi_threads(true, transfer, &transfer.task_attributes)
+                execute_transfer_task(transfer.clone(), &transfer.attributes)
             }
-            TaskDescription::LocalToLocal(local_to_local) => {
-                // local_to_local.exec_multi_threads()
+            // TaskDescription::LocalToLocal(local_to_local) => {
+            //     // local_to_local.exec_multi_threads()
 
-                execute_task_from_local_multi_threads(
-                    true,
-                    local_to_local,
-                    &local_to_local.task_attributes,
-                )
-            }
+            //     execute_task_from_local_multi_threads(
+            //         true,
+            //         local_to_local,
+            //         &local_to_local.task_attributes,
+            //     )
+            // }
             TaskDescription::TruncateBucket(truncate) => truncate.exec_multi_threads(),
             TaskDescription::OssCompare(oss_compare) => oss_compare.exec_multi_threads(),
         }
@@ -154,6 +159,8 @@ impl TaskDefaultParameters {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "lowercase")]
+// #[serde(tag = "type")]
 pub struct Task {
     #[serde(default = "TaskDefaultParameters::id_default")]
     pub task_id: String,

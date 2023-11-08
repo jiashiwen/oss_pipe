@@ -6,7 +6,8 @@ use super::{
 use crate::checkpoint::ListedRecord;
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::commons::{
-    copy_file, scan_folder_files_to_file, Modified, ModifyType, NotifyWatcher, PathType,
+    copy_file, scan_folder_files_last_modify_greater_then_to_file, scan_folder_files_to_file,
+    Modified, ModifyType, NotifyWatcher, PathType,
 };
 use anyhow::anyhow;
 use anyhow::Result;
@@ -24,7 +25,7 @@ use std::{
     path::Path,
     sync::{atomic::AtomicUsize, Arc},
 };
-
+use tokio::sync::Mutex;
 use tokio::task::{self, JoinSet};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -71,13 +72,23 @@ impl TransferTaskActions for TransferLocal2Local {
 
     async fn generate_object_list(
         &self,
-        _last_modify_timestamp: i64,
+        last_modify_timestamp: Option<i64>,
         object_list_file: &str,
     ) -> Result<usize> {
-        scan_folder_files_to_file(self.source.as_str(), &object_list_file)
+        match last_modify_timestamp {
+            Some(t) => {
+                let timestamp = TryInto::<u64>::try_into(t)?;
+                scan_folder_files_last_modify_greater_then_to_file(
+                    self.source.as_str(),
+                    &object_list_file,
+                    timestamp,
+                )
+            }
+            None => scan_folder_files_to_file(self.source.as_str(), &object_list_file),
+        }
     }
 
-    async fn increment_prelude(&self, assistant: &mut IncrementAssistant) -> Result<()> {
+    async fn increment_prelude(&self, assistant: Arc<Mutex<IncrementAssistant>>) -> Result<()> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let notify_file_path = gen_file_path(
             self.attributes.meta_dir.as_str(),
@@ -102,23 +113,28 @@ impl TransferTaskActions for TransferLocal2Local {
             notify_file_path,
             notify_file_size: Arc::clone(&notify_file_size),
         };
-        assistant.local_notify = Some(local_notify);
+
+        let mut lock = assistant.lock().await;
+        lock.set_local_notify(Some(local_notify));
+        drop(lock);
 
         Ok(())
     }
 
     async fn execute_increment(
         &self,
-        assistant: &IncrementAssistant,
+        assistant: Arc<Mutex<IncrementAssistant>>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         snapshot_stop_mark: Arc<AtomicBool>,
         start_file_position: FilePosition,
     ) {
-        let local_notify = match assistant.local_notify.clone() {
+        let lock = assistant.lock().await;
+        let local_notify = match lock.local_notify.clone() {
             Some(n) => n,
             None => return,
         };
+        drop(lock);
 
         let mut offset = TryInto::<u64>::try_into(start_file_position.offset).unwrap();
         let mut line_num = start_file_position.line_num;
@@ -127,8 +143,9 @@ impl TransferTaskActions for TransferLocal2Local {
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
 
+        // 启动 checkpoint 记录器
         let task_status_saver = TaskStatusSaver {
-            check_point_path: assistant.check_point_path.clone(),
+            check_point_path: assistant.lock().await.check_point_path.clone(),
             execute_file_path: local_notify.notify_file_path.clone(),
             stop_mark: Arc::clone(&snapshot_stop_mark),
             list_file_positon_map: Arc::clone(&offset_map),
@@ -349,15 +366,6 @@ impl Local2LocalExecutor {
         offset_key.push_str(&subffix);
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
 
-        // 先写首行日志，避免错误漏记
-        self.offset_map.insert(
-            offset_key.clone(),
-            FilePosition {
-                offset: records[0].offset,
-                line_num: records[0].line_num,
-            },
-        );
-
         let mut error_file = OpenOptions::new()
             .create(true)
             .write(true)
@@ -365,16 +373,20 @@ impl Local2LocalExecutor {
             .open(error_file_name.as_str())?;
 
         for record in records {
+            // 记录文件执行位置
+            self.offset_map.insert(
+                offset_key.clone(),
+                FilePosition {
+                    offset: record.offset,
+                    line_num: record.line_num,
+                },
+            );
+
             let s_file_name = gen_file_path(self.source.as_str(), record.key.as_str(), "");
             let t_file_name = gen_file_path(self.target.as_str(), record.key.as_str(), "");
 
             if let Err(e) = self
-                .listed_record_handler(
-                    offset_key.as_str(),
-                    &record,
-                    s_file_name.as_str(),
-                    t_file_name.as_str(),
-                )
+                .listed_record_handler(s_file_name.as_str(), t_file_name.as_str())
                 .await
             {
                 // 记录错误记录
@@ -389,7 +401,6 @@ impl Local2LocalExecutor {
                     option: Opt::PUT,
                 };
                 recorddesc.handle_error(
-                    // anyhow!("{}", e),
                     &self.err_counter,
                     &self.offset_map,
                     &mut error_file,
@@ -397,14 +408,6 @@ impl Local2LocalExecutor {
                 );
                 log::error!("{}", e);
             };
-
-            self.offset_map.insert(
-                offset_key.clone(),
-                FilePosition {
-                    offset: record.offset,
-                    line_num: record.line_num,
-                },
-            );
         }
 
         let _ = error_file.flush();
@@ -421,23 +424,10 @@ impl Local2LocalExecutor {
         Ok(())
     }
 
-    async fn listed_record_handler(
-        &self,
-        offset_key: &str,
-        record: &ListedRecord,
-        source_file: &str,
-        target_file: &str,
-    ) -> Result<()> {
+    async fn listed_record_handler(&self, source_file: &str, target_file: &str) -> Result<()> {
         // 判断源文件是否存在，若不存判定为成功传输
         let s_path = Path::new(source_file);
         if !s_path.exists() {
-            self.offset_map.insert(
-                offset_key.to_string(),
-                FilePosition {
-                    offset: record.offset,
-                    line_num: record.line_num,
-                },
-            );
             return Ok(());
         }
 
@@ -449,13 +439,6 @@ impl Local2LocalExecutor {
         // 目标object存在则不推送
         if self.target_exist_skip {
             if t_path.exists() {
-                self.offset_map.insert(
-                    offset_key.to_string(),
-                    FilePosition {
-                        offset: record.offset,
-                        line_num: record.line_num,
-                    },
-                );
                 return Ok(());
             }
         }

@@ -6,6 +6,9 @@ use crate::s3::OSSDescription;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+#[serde(rename_all = "lowercase")]
+// #[serde(tag = "type")]
 pub enum ObjectStorage {
     Local(String),
     OSS(OSSDescription),
@@ -25,8 +28,19 @@ pub struct TransferTask {
     pub attributes: TransferTaskAttributes,
 }
 
+impl Default for TransferTask {
+    fn default() -> Self {
+        Self {
+            source: ObjectStorage::OSS(OSSDescription::default()),
+            target: ObjectStorage::OSS(OSSDescription::default()),
+            attributes: TransferTaskAttributes::default(),
+        }
+    }
+}
+
 impl TransferTask {
-    pub fn gen_transfer_actions(&self) -> Box<dyn TransferTaskActions> {
+    pub fn gen_transfer_actions(&self) -> Box<dyn TransferTaskActions + Send + Sync> {
+        // pub fn gen_transfer_actions(&self) -> Box<dyn TransferTaskActions> {
         match &self.source {
             ObjectStorage::Local(path_s) => match &self.target {
                 ObjectStorage::Local(path_t) => {

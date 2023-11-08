@@ -46,9 +46,9 @@ impl Default for DownloadTask {
 
 #[async_trait]
 impl TaskActionsFromOss for DownloadTask {
-    fn task_type(&self) -> TaskType {
-        TaskType::Download
-    }
+    // fn task_type(&self) -> TaskType {
+    //     TaskType::Download
+    // }
 
     fn error_record_retry(&self) -> Result<()> {
         // 遍历错误记录

@@ -6,7 +6,7 @@ use crate::{
         OSSDescription,
     },
 };
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use aws_sdk_s3::error::GetObjectErrorKind;
 use dashmap::DashMap;
@@ -16,11 +16,11 @@ use std::{
     io::Write,
     path::Path,
     sync::{
-        atomic::{AtomicBool, AtomicU64, AtomicUsize},
+        atomic::{AtomicBool, AtomicUsize},
         Arc,
     },
 };
-use tokio::{runtime::Runtime, task::JoinSet};
+use tokio::{sync::Mutex, task::JoinSet};
 use walkdir::WalkDir;
 
 use super::{
@@ -115,27 +115,25 @@ impl TransferTaskActions for TransferOss2Local {
 
     async fn generate_object_list(
         &self,
-
-        last_modify_timestamp: i64,
+        last_modify_timestamp: Option<i64>,
         object_list_file: &str,
     ) -> Result<usize> {
-        let mut total_lines = 0;
         let client_source = self.source.gen_oss_client()?;
 
         // 若为持续同步模式，且 last_modify_timestamp 大于 0，则将 last_modify 属性大于last_modify_timestamp变量的对象加入执行列表
-        match last_modify_timestamp > 0 {
-            true => {
+        match last_modify_timestamp {
+            Some(t) => {
                 client_source
                     .append_last_modify_greater_object_to_file(
                         self.source.bucket.clone(),
                         self.source.prefix.clone(),
                         self.attributes.bach_size,
                         object_list_file.to_string(),
-                        last_modify_timestamp,
+                        t,
                     )
                     .await
             }
-            false => {
+            None => {
                 client_source
                     .append_all_object_list_to_file(
                         self.source.bucket.clone(),
@@ -178,14 +176,12 @@ impl TransferTaskActions for TransferOss2Local {
         });
     }
 
-    async fn increment_prelude(&self, assistant: &mut IncrementAssistant) -> Result<()> {
+    async fn increment_prelude(&self, assistant: Arc<Mutex<IncrementAssistant>>) -> Result<()> {
         Ok(())
     }
     async fn execute_increment(
         &self,
-        // _notify_file: &str,
-        // _notify_file_size: Arc<AtomicU64>,
-        assistant: &IncrementAssistant,
+        assistant: Arc<Mutex<IncrementAssistant>>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         snapshot_stop_mark: Arc<AtomicBool>,
@@ -223,14 +219,6 @@ impl Oss2LocalListedRecordsExecutor {
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
-        // 先写首行日志，避免错误漏记
-        self.offset_map.insert(
-            offset_key.clone(),
-            FilePosition {
-                offset: records[0].offset,
-                line_num: records[0].line_num,
-            },
-        );
 
         let mut error_file = OpenOptions::new()
             .create(true)
@@ -240,9 +228,18 @@ impl Oss2LocalListedRecordsExecutor {
 
         let c_s = self.source.gen_oss_client()?;
         for record in records {
+            // 文件位置提前记录避免漏记
+            self.offset_map.insert(
+                offset_key.clone(),
+                FilePosition {
+                    offset: record.offset,
+                    line_num: record.line_num,
+                },
+            );
+
             let t_file_name = gen_file_path(self.target.as_str(), &record.key.as_str(), "");
             if let Err(e) = self
-                .record_handler(offset_key.as_str(), &record, &c_s, t_file_name.as_str())
+                .record_handler(&record, &c_s, t_file_name.as_str())
                 .await
             {
                 let record_desc = RecordDescription {
@@ -256,7 +253,6 @@ impl Oss2LocalListedRecordsExecutor {
                     option: Opt::PUT,
                 };
                 record_desc.handle_error(
-                    // anyhow!("{}", e),
                     &self.err_counter,
                     &self.offset_map,
                     &mut error_file,
@@ -264,14 +260,8 @@ impl Oss2LocalListedRecordsExecutor {
                 );
                 log::error!("{}", e);
             }
-            self.offset_map.insert(
-                offset_key.clone(),
-                FilePosition {
-                    offset: record.offset,
-                    line_num: record.line_num,
-                },
-            );
         }
+
         self.offset_map.remove(&offset_key);
         let _ = error_file.flush();
         match error_file.metadata() {
@@ -288,7 +278,6 @@ impl Oss2LocalListedRecordsExecutor {
 
     async fn record_handler(
         &self,
-        offset_key: &str,
         record: &ListedRecord,
         source_oss_client: &OssClient,
         target_file: &str,
@@ -301,13 +290,6 @@ impl Oss2LocalListedRecordsExecutor {
         // 目标object存在则不下载
         if self.target_exist_skip {
             if t_path.exists() {
-                self.offset_map.insert(
-                    offset_key.to_string(),
-                    FilePosition {
-                        offset: record.offset,
-                        line_num: record.line_num,
-                    },
-                );
                 return Ok(());
             }
         }

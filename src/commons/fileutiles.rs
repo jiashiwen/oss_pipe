@@ -19,7 +19,7 @@ where
 pub fn copy_file(
     source: &str,
     target: &str,
-    file_splite_size: usize,
+    multi_parts_size: usize,
     chunk_size: usize,
 ) -> Result<()> {
     let f_source = OpenOptions::new().read(true).open(source)?;
@@ -30,7 +30,7 @@ pub fn copy_file(
         .open(target)?;
     let len = f_source.metadata()?.len();
     let len_usize = TryInto::<usize>::try_into(len)?;
-    match len_usize.gt(&file_splite_size) {
+    match len_usize.gt(&multi_parts_size) {
         true => {
             multi_parts_copy_file(source, target, chunk_size)?;
             // loop {

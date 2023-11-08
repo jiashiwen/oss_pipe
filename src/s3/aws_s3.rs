@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use aws_sdk_s3::{
-    model::{CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier},
+    model::{CompletedMultipartUpload, CompletedPart, Delete, Object, ObjectIdentifier},
     output::{CreateMultipartUploadOutput, GetObjectOutput},
     types::ByteStream,
     Client,
@@ -12,11 +12,15 @@ use std::{
 };
 use tokio::io::AsyncReadExt;
 
-use super::OssObjectsList;
-
 #[derive(Debug, Clone)]
 pub struct OssClient {
     pub client: Client,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct OssObjList {
+    pub object_list: Option<Vec<Object>>,
+    pub next_token: Option<String>,
 }
 
 impl OssClient {
@@ -33,7 +37,7 @@ impl OssClient {
         let resp = self
             .list_objects(bucket.clone(), prefix.clone(), batch, None)
             .await?;
-        let mut token = resp.next_token;
+        let mut token: Option<String> = resp.next_token;
 
         let path = std::path::Path::new(file_path.as_str());
         if let Some(p) = path.parent() {
@@ -50,9 +54,14 @@ impl OssClient {
 
         if let Some(objects) = resp.object_list {
             for item in objects.iter() {
-                let _ = file.write_all(item.as_bytes());
-                let _ = file.write_all("\n".as_bytes());
-                total += 1;
+                match item.key() {
+                    Some(i) => {
+                        let _ = file.write_all(i.as_bytes());
+                        let _ = file.write_all("\n".as_bytes());
+                        total += 1;
+                    }
+                    None => {}
+                }
             }
             file.flush()?;
         }
@@ -63,9 +72,14 @@ impl OssClient {
                 .await?;
             if let Some(objects) = resp.object_list {
                 for item in objects.iter() {
-                    let _ = file.write_all(item.as_bytes());
-                    let _ = file.write_all("\n".as_bytes());
-                    total += 1;
+                    match item.key() {
+                        Some(i) => {
+                            let _ = file.write_all(i.as_bytes());
+                            let _ = file.write_all("\n".as_bytes());
+                            total += 1;
+                        }
+                        None => {}
+                    }
                 }
                 file.flush()?;
             }
@@ -88,33 +102,39 @@ impl OssClient {
         greater: i64,
     ) -> Result<usize> {
         let mut total = 0;
-        let resp = self
-            .list_objects(bucket.clone(), prefix.clone(), batch, None)
-            .await?;
-        let mut token = resp.next_token;
-
         let path = std::path::Path::new(file_path.as_str());
         if let Some(p) = path.parent() {
             std::fs::create_dir_all(p)?;
         };
-
-        //写入文件
+        //准备写入文件
         let file_ref = OpenOptions::new()
             .create(true)
             .write(true)
             .append(true)
             .open(file_path.clone())?;
         let mut file = LineWriter::new(file_ref);
+
+        let resp = self
+            .list_objects(bucket.clone(), prefix.clone(), batch, None)
+            .await?;
+        let mut token = resp.next_token;
+
         if let Some(objects) = resp.object_list {
-            for item in objects.iter() {
-                let obj = self.get_object(&bucket, item).await?;
+            for item in objects.iter().filter(|obj| {
                 if let Some(d) = obj.last_modified() {
-                    if d.secs() > greater {
-                        let _ = file.write_all(item.as_bytes());
+                    d.secs().ge(&greater)
+                } else {
+                    false
+                }
+            }) {
+                match item.key() {
+                    Some(i) => {
+                        let _ = file.write_all(i.as_bytes());
                         let _ = file.write_all("\n".as_bytes());
                         total += 1;
                     }
-                };
+                    None => {}
+                }
             }
             file.flush()?;
         }
@@ -124,15 +144,21 @@ impl OssClient {
                 .list_objects(bucket.clone(), prefix.clone(), batch, token.clone())
                 .await?;
             if let Some(objects) = resp.object_list {
-                for item in objects.iter() {
-                    let obj = self.get_object(&bucket, item).await?;
+                for item in objects.iter().filter(|obj| {
                     if let Some(d) = obj.last_modified() {
-                        if d.secs() > greater {
-                            let _ = file.write_all(item.as_bytes());
+                        d.secs().ge(&greater)
+                    } else {
+                        false
+                    }
+                }) {
+                    match item.key() {
+                        Some(i) => {
+                            let _ = file.write_all(i.as_bytes());
                             let _ = file.write_all("\n".as_bytes());
                             total += 1;
                         }
-                    };
+                        None => {}
+                    }
                 }
                 file.flush()?;
             }
@@ -262,7 +288,7 @@ impl OssClient {
         prefix: Option<String>,
         max_keys: i32,
         token: Option<String>,
-    ) -> Result<super::OssObjectsList> {
+    ) -> Result<OssObjList> {
         let mut obj_list = self
             .client
             .list_objects_v2()
@@ -284,9 +310,7 @@ impl OssClient {
         if let Some(l) = list.contents() {
             let mut vec = vec![];
             for item in l.iter() {
-                if let Some(str) = item.key() {
-                    vec.push(str.to_string());
-                };
+                vec.push(item.clone());
             }
             if vec.len() > 0 {
                 obj_list = Some(vec);
@@ -297,7 +321,7 @@ impl OssClient {
             token = Some(str.to_string());
         };
 
-        let oss_list = OssObjectsList {
+        let oss_list = OssObjList {
             object_list: obj_list,
             next_token: token,
         };
@@ -440,15 +464,15 @@ impl OssClient {
         &self,
         bucket: &str,
         key: &str,
-        path: &str,
+        local_file: &str,
         file_max_size: usize,
         chuck_size: usize,
     ) -> Result<()> {
-        let mut file = File::open(path)?;
+        let mut file = File::open(local_file)?;
         let file_meta = file.metadata()?;
         let file_max_size_u64 = TryInto::<u64>::try_into(file_max_size)?;
         if file_meta.len().le(&file_max_size_u64) {
-            let body = ByteStream::from_path(Path::new(&path)).await?;
+            let body = ByteStream::from_path(Path::new(&local_file)).await?;
             self.client
                 .put_object()
                 .bucket(bucket)
