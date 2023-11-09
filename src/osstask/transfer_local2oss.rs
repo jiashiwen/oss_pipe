@@ -159,7 +159,7 @@ impl TransferTaskActions for TransferLocal2Oss {
         &self,
         last_modify_timestamp: Option<i64>,
         object_list_file: &str,
-    ) -> Result<usize> {
+    ) -> Result<u64> {
         // 遍历目录并生成文件列表
         match last_modify_timestamp {
             Some(t) => {

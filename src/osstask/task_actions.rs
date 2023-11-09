@@ -39,7 +39,7 @@ pub trait TransferTaskActions {
         &self,
         last_modify_timestamp: Option<i64>,
         object_list_file: &str,
-    ) -> Result<usize>;
+    ) -> Result<u64>;
 
     async fn increment_prelude(&self, assistant: Arc<Mutex<IncrementAssistant>>) -> Result<()>;
 

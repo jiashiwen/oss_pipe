@@ -89,7 +89,7 @@ fn remove_dir_contents<P: AsRef<Path>>(path: P) -> io::Result<()> {
     Ok(())
 }
 
-pub fn scan_folder_files_to_file(folder: &str, file_name: &str) -> Result<usize> {
+pub fn scan_folder_files_to_file(folder: &str, file_name: &str) -> Result<u64> {
     let mut total = 0;
     let path = std::path::Path::new(file_name);
     if let Some(p) = path.parent() {
@@ -132,7 +132,7 @@ pub fn scan_folder_files_last_modify_greater_then_to_file(
     folder: &str,
     file_name: &str,
     timestamp: u64,
-) -> Result<usize> {
+) -> Result<u64> {
     let mut total = 0;
     let path = std::path::Path::new(file_name);
     if let Some(p) = path.parent() {
