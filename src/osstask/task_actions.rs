@@ -1,4 +1,4 @@
-use super::{IncrementAssistant, TaskType};
+use super::IncrementAssistant;
 use crate::{
     checkpoint::{FilePosition, ListedRecord},
     commons::NotifyWatcher,
