@@ -47,6 +47,15 @@ pub struct FilePosition {
     pub line_num: usize,
 }
 
+impl Default for FilePosition {
+    fn default() -> Self {
+        Self {
+            offset: 0,
+            line_num: 0,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RecordDescription {
     pub source_key: String,
