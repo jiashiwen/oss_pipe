@@ -192,7 +192,10 @@ pub fn execute_transfer_task(
 
             match checkpoint.task_stage {
                 TaskStage::Stock => match checkpoint.seeked_execute_file() {
-                    Ok(f) => object_list_file = f,
+                    Ok(f) => {
+                        total_lines = 100;
+                        object_list_file = f;
+                    }
                     Err(e) => {
                         log::error!("{}", e);
                         return;
