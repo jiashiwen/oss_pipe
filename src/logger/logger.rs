@@ -50,7 +50,7 @@ pub fn init_log() {
             Root::builder()
                 .appender("stdout")
                 .appender("file_out")
-                .build(LevelFilter::Error),
+                .build(LevelFilter::Warn),
         )
         .unwrap();
 

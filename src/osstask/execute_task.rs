@@ -3,7 +3,7 @@ use super::{
     TransferTaskAttributes, CHECK_POINT_FILE_NAME, OBJECT_LIST_FILE_PREFIX, OFFSET_PREFIX,
 };
 use crate::{
-    checkpoint::{get_task_checkpoint, CheckPoint, FilePosition, ListedRecord},
+    checkpoint::{self, get_task_checkpoint, CheckPoint, FilePosition, ListedRecord},
     commons::exec_processbar,
 };
 use anyhow::{anyhow, Result};
@@ -78,7 +78,7 @@ pub fn execute_transfer_task(
     let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
 
-    let object_list_file_name = gen_file_path(
+    let mut object_list_file_name = gen_file_path(
         task_attributes.meta_dir.as_str(),
         OBJECT_LIST_FILE_PREFIX,
         now.as_secs().to_string().as_str(),
@@ -110,41 +110,49 @@ pub fn execute_transfer_task(
         .max_io_events_per_tick(task_attributes.task_threads)
         .build()?;
 
-    // 若不从checkpoint开始，重新生成文件清单
-    if !task_attributes.start_from_checkpoint {
-        // 预清理meta目录,任务首次运行清理meta目录,并遍历本地目录生成 object list
-        let _ = fs::remove_dir_all(task_attributes.meta_dir.as_str());
-        let pb = ProgressBar::new_spinner();
-        pb.enable_steady_tick(Duration::from_millis(120));
-        pb.set_style(
-            ProgressStyle::with_template("{spinner:.green} {msg}")
-                .unwrap()
-                .tick_strings(&[
-                    "▰▱▱▱▱▱▱",
-                    "▰▰▱▱▱▱▱",
-                    "▰▰▰▱▱▱▱",
-                    "▰▰▰▰▱▱▱",
-                    "▰▰▰▰▰▱▱",
-                    "▰▰▰▰▰▰▱",
-                    "▰▰▰▰▰▰▰",
-                    "▰▱▱▱▱▱▱",
-                ]),
-        );
-        pb.set_message("Generating object list ...");
+    if task_attributes.start_from_checkpoint {
+        // 执行error retry
+        // task.error_record_retry();
+        // 从 checkpoint 获取 文件名 object_list_file_name，更改 存量调整 object list file offset
+        // 增量 生成 object list file 文件lastmodify大于指定时间戳
 
+        // 变更object_list_file_name文件名
+        let checkpoint = get_task_checkpoint(check_point_file.as_str())?;
+        object_list_file_name = checkpoint.execute_file;
+    } else {
+        // 清理 meta 目录
+        // 重新生成object list file
+        let _ = fs::remove_dir_all(task_attributes.meta_dir.as_str());
         rt.block_on(async {
+            let pd_gen_object_list = ProgressBar::new_spinner();
+            pd_gen_object_list.enable_steady_tick(Duration::from_millis(120));
+            pd_gen_object_list.set_style(
+                ProgressStyle::with_template("{spinner:.green} {msg}")
+                    .unwrap()
+                    .tick_strings(&[
+                        "▰▱▱▱▱▱▱",
+                        "▰▰▱▱▱▱▱",
+                        "▰▰▰▱▱▱▱",
+                        "▰▰▰▰▱▱▱",
+                        "▰▰▰▰▰▱▱",
+                        "▰▰▰▰▰▰▱",
+                        "▰▰▰▰▰▰▰",
+                        "▰▱▱▱▱▱▱",
+                    ]),
+            );
+            pd_gen_object_list.set_message("Generating object list ...");
             match task
                 .generate_object_list(None, object_list_file_name.as_str())
                 .await
             {
                 Ok(lines) => {
                     total_lines = lines;
-                    pb.finish_with_message("object list Done");
+                    pd_gen_object_list.finish_with_message("object list Done");
                 }
                 Err(e) => {
                     log::error!("{}", e);
                     interrupt = true;
-                    pb.finish_with_message("object list Fail");
+                    pd_gen_object_list.finish_with_message("object list Fail");
                 }
             }
         });
@@ -191,15 +199,19 @@ pub fn execute_transfer_task(
                     }
                 },
                 TaskStage::Increment => {
-                    task.execute_increment(
-                        Arc::clone(&increment_assistant),
-                        err_counter,
-                        offset_map,
-                        snapshot_stop_mark,
-                        checkpoint.execute_file_position,
-                    )
-                    .await;
-                    return;
+                    // 清理文件重新生成object list 文件需大于指定时间戳
+                    let timestamp = TryInto::<i64>::try_into(checkpoint.timestampe).unwrap();
+                    let _ = fs::remove_file(&object_list_file_name);
+                    match task
+                        .generate_object_list(Some(timestamp), &object_list_file_name)
+                        .await
+                    {
+                        Ok(lines) => total_lines = lines,
+                        Err(e) => {
+                            log::error!("{}", e);
+                            return;
+                        }
+                    };
                 }
             }
         }
@@ -338,7 +350,7 @@ pub fn execute_transfer_task(
         drop(lock);
         // 记录checkpoint
         let mut checkpoint: CheckPoint = CheckPoint {
-            execute_file_path: object_list_file_name.clone(),
+            execute_file: object_list_file_name.clone(),
             execute_file_position: FilePosition {
                 offset: file_position,
                 line_num,
