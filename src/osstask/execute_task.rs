@@ -105,6 +105,8 @@ pub fn execute_transfer_task(
     };
 
     let mut list_file = None;
+    let mut list_file_position = FilePosition::default();
+
     let rt = runtime::Builder::new_multi_thread()
         .worker_threads(num_cpus::get())
         .enable_all()
@@ -152,6 +154,7 @@ pub fn execute_transfer_task(
                     Ok(f) => {
                         total_lines = 100;
                         object_list_file_name = checkpoint.execute_file;
+                        list_file_position = checkpoint.execute_file_position.clone();
                         list_file = Some(f);
                     }
                     Err(e) => {
@@ -228,9 +231,6 @@ pub fn execute_transfer_task(
         None => File::open(object_list_file_name.as_str())?,
     };
     rt.block_on(async {
-        let mut file_position = 0;
-        let mut vec_keys: Vec<ListedRecord> = vec![];
-
         // 持续同步逻辑: 执行增量助理
         let task_increment_prelude = transfer.gen_transfer_actions();
         if task_attributes.continuous {
@@ -266,16 +266,15 @@ pub fn execute_transfer_task(
         // 启动进度条线程
         let map = Arc::clone(&offset_map);
         let stop_mark = Arc::clone(&snapshot_stop_mark);
-        // let total = TryInto::<u64>::try_into(total_lines).unwrap();
         let total = total_lines;
         sys_set.spawn(async move {
             // Todo 调整进度条
             exec_processbar(total, stop_mark, map, OFFSET_PREFIX).await;
         });
         let task_stock = transfer.gen_transfer_actions();
+        let mut vec_keys: Vec<ListedRecord> = vec![];
         // 按列表传输object from source to target
         let lines: io::Lines<io::BufReader<File>> = io::BufReader::new(object_list_file).lines();
-        let mut line_num = 0;
         for line in lines {
             // 若错误达到上限，则停止任务
             if err_counter.load(std::sync::atomic::Ordering::SeqCst) >= task_attributes.max_errors {
@@ -283,13 +282,15 @@ pub fn execute_transfer_task(
             }
             if let Result::Ok(key) = line {
                 let len = key.bytes().len() + "\n".bytes().len();
-                file_position += len;
-                line_num += 1;
+                list_file_position.offset += len;
+                list_file_position.line_num += 1;
+                // offset += len;
+                // line_num += 1;
                 if !key.ends_with("/") {
                     let record = ListedRecord {
                         key,
-                        offset: file_position,
-                        line_num,
+                        offset: list_file_position.offset,
+                        line_num: list_file_position.line_num,
                     };
                     match exclude_regex_set {
                         Some(ref exclude) => {
@@ -364,13 +365,11 @@ pub fn execute_transfer_task(
         let lock = increment_assistant.lock().await;
         let notify = lock.get_notify_file_path();
         drop(lock);
+
         // 记录checkpoint
         let mut checkpoint: CheckPoint = CheckPoint {
             execute_file: object_list_file_name.clone(),
-            execute_file_position: FilePosition {
-                offset: file_position,
-                line_num,
-            },
+            execute_file_position: list_file_position.clone(),
             file_for_notify: notify,
             task_stage: TaskStage::Stock,
             timestampe: 0,
