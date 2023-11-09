@@ -15,9 +15,6 @@ pub struct TaskStatusSaver {
 }
 
 impl TaskStatusSaver {
-    // Todo
-    // debug 全量为何无position数据
-    // 解析问题，需要遍历list_file_positon_map找出最小值对应的对象
     pub async fn snapshot_to_file(&self) {
         let mut checkpoint = CheckPoint {
             execute_file: self.execute_file_path.clone(),
