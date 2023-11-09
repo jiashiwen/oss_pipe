@@ -461,7 +461,12 @@ impl Local2OssExecuter {
 
         // Todo
         // 若第一行出错则整组record写入错误记录，若错误记录文件打开报错则停止任务
-        let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
+        let error_file_name = gen_file_path(
+            &self.meta_dir,
+            ERROR_RECORD_PREFIX,
+            &records[0].offset.to_string(),
+        );
+
         let mut error_file = OpenOptions::new()
             .create(true)
             .write(true)
@@ -469,7 +474,13 @@ impl Local2OssExecuter {
             .open(error_file_name.as_str())?;
 
         let target_oss_client = self.target.gen_oss_client()?;
+
         for record in records {
+            // 生成offset key，保证subfix与 offset一至
+            // let subffix = record.offset.to_string();
+            // let mut offset_key = OFFSET_PREFIX.to_string();
+            // offset_key.push_str(&subffix);
+
             // 文件位置提前记录，避免漏记
             self.offset_map.insert(
                 offset_key.clone(),
@@ -507,9 +518,9 @@ impl Local2OssExecuter {
                 );
                 log::error!("{}", e);
             }
+            self.offset_map.remove(&offset_key);
         }
 
-        self.offset_map.remove(&offset_key);
         let _ = error_file.flush();
         match error_file.metadata() {
             Ok(meta) => {

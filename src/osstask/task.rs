@@ -426,7 +426,7 @@ impl TaskLocalToLocal {
             // 记录checkpoint
             let list_file = object_list_file.as_str();
             let mut checkpoint = CheckPoint {
-                execute_file_path: list_file.to_string(),
+                execute_file: list_file.to_string(),
                 execute_file_position: FilePosition {
                     offset: file_position,
                     line_num,
@@ -869,7 +869,7 @@ impl TaskOssCompare {
             snapshot_stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
             // 记录checkpoint
             let mut checkpoint = CheckPoint {
-                execute_file_path: object_list_file.clone(),
+                execute_file: object_list_file.clone(),
                 file_for_notify: None,
                 task_stage: TaskStage::Stock,
                 execute_file_position: FilePosition {
@@ -919,10 +919,7 @@ where
     if task_attributes.continuous {
         match read_yaml_file::<CheckPoint>(check_point_file.as_str()) {
             Ok(checkpoint) => {
-                let v = checkpoint
-                    .execute_file_path
-                    .split("_")
-                    .collect::<Vec<&str>>();
+                let v = checkpoint.execute_file.split("_").collect::<Vec<&str>>();
 
                 if let Some(s) = v.last() {
                     match s.parse::<i64>() {
@@ -1151,7 +1148,7 @@ where
         // 记录checkpoint
         // let position: u64 = file_position.try_into().unwrap();
         let mut checkpoint = CheckPoint {
-            execute_file_path: object_list_file.clone(),
+            execute_file: object_list_file.clone(),
             execute_file_position: FilePosition {
                 offset: file_position,
                 line_num,
@@ -1452,7 +1449,7 @@ where
         snapshot_stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
         // 记录checkpoint
         let mut checkpoint = CheckPoint {
-            execute_file_path: object_list_file.clone(),
+            execute_file: object_list_file.clone(),
             execute_file_position: FilePosition {
                 offset: file_position,
                 line_num,

@@ -13,9 +13,16 @@ use std::{
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ExecuteFile {
+    pub path: String,
+    pub size: usize,
+    pub total_lines: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckPoint {
     // 对象列表命名规则：OBJECT_LIST_FILE_PREFIX+秒级unix 时间戳 'objeclt_list_unixtimestampe'
-    pub execute_file_path: String,
+    pub execute_file: String,
     // 文件执行位置，既执行到的offset，用于断点续传
     pub execute_file_position: FilePosition,
     pub file_for_notify: Option<String>,
@@ -27,7 +34,7 @@ pub struct CheckPoint {
 impl Default for CheckPoint {
     fn default() -> Self {
         Self {
-            execute_file_path: Default::default(),
+            execute_file: Default::default(),
             execute_file_position: FilePosition {
                 offset: 0,
                 line_num: 0,
@@ -49,7 +56,7 @@ impl FromStr for CheckPoint {
 
 impl CheckPoint {
     pub fn seeked_execute_file(&self) -> Result<File> {
-        let mut file = File::open(&self.execute_file_path)?;
+        let mut file = File::open(&self.execute_file)?;
         let seek_offset = TryInto::<u64>::try_into(self.execute_file_position.offset)?;
         file.seek(SeekFrom::Start(seek_offset))?;
         Ok(file)
@@ -164,7 +171,7 @@ mod test {
                     line_num,
                 };
                 let mut checkpoint = CheckPoint {
-                    execute_file_path: path.to_string(),
+                    execute_file: path.to_string(),
                     execute_file_position: file_position,
                     file_for_notify: None,
                     task_stage: crate::osstask::TaskStage::Stock,
