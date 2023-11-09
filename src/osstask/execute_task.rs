@@ -3,7 +3,7 @@ use super::{
     TransferTaskAttributes, CHECK_POINT_FILE_NAME, OBJECT_LIST_FILE_PREFIX, OFFSET_PREFIX,
 };
 use crate::{
-    checkpoint::{self, get_task_checkpoint, CheckPoint, FilePosition, ListedRecord},
+    checkpoint::{get_task_checkpoint, CheckPoint, FilePosition, ListedRecord},
     commons::exec_processbar,
 };
 use anyhow::{anyhow, Result};
