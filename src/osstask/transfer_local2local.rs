@@ -74,7 +74,7 @@ impl TransferTaskActions for TransferLocal2Local {
         &self,
         last_modify_timestamp: Option<i64>,
         object_list_file: &str,
-    ) -> Result<usize> {
+    ) -> Result<u64> {
         match last_modify_timestamp {
             Some(t) => {
                 let timestamp = TryInto::<u64>::try_into(t)?;

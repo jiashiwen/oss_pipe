@@ -32,7 +32,7 @@ impl OssClient {
         prefix: Option<String>,
         batch: i32,
         file_path: String,
-    ) -> Result<usize> {
+    ) -> Result<u64> {
         let mut total = 0;
         let resp = self
             .list_objects(bucket.clone(), prefix.clone(), batch, None)
@@ -100,7 +100,7 @@ impl OssClient {
         batch: i32,
         file_path: String,
         greater: i64,
-    ) -> Result<usize> {
+    ) -> Result<u64> {
         let mut total = 0;
         let path = std::path::Path::new(file_path.as_str());
         if let Some(p) = path.parent() {
