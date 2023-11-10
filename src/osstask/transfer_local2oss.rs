@@ -19,6 +19,7 @@ use crate::{checkpoint::ListedRecord, s3::OSSDescription};
 use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
+
 use dashmap::DashMap;
 use serde::Deserialize;
 use serde::Serialize;
@@ -372,16 +373,6 @@ impl TransferTaskActions for TransferLocal2Oss {
             offset_map.insert(offset_key.clone(), position);
         }
     }
-
-    // async fn execute_increment_from_checkpoint(
-    //     &self,
-    //     assistant: &IncrementAssistant,
-    //     err_counter: Arc<AtomicUsize>,
-    //     offset_map: Arc<DashMap<String, FilePosition>>,
-    //     snapshot_stop_mark: Arc<AtomicBool>,
-    // ) {
-    //     let checkpoint = read_yaml_file::<CheckPoint>(&assistant.check_point_path).unwrap();
-    // }
 }
 
 impl TransferLocal2Oss {
@@ -483,11 +474,6 @@ impl Local2OssExecuter {
         let target_oss_client = self.target.gen_oss_client()?;
 
         for record in records {
-            // 生成offset key，保证subfix与 offset一至
-            // let subffix = record.offset.to_string();
-            // let mut offset_key = OFFSET_PREFIX.to_string();
-            // offset_key.push_str(&subffix);
-
             // 文件位置提前记录，避免漏记
             self.offset_map.insert(
                 offset_key.clone(),
