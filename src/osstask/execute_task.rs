@@ -63,10 +63,7 @@ pub struct LocalNotify {
 
 // 执行传输任务
 // 重点抽象不同数据源统一执行模式
-pub fn execute_transfer_task(
-    transfer: TransferTask,
-    task_attributes: &TransferTaskAttributes,
-) -> Result<()> {
+pub fn execute_transfer_task(transfer: TransferTask) -> Result<()> {
     let task = transfer.gen_transfer_actions();
     let mut interrupt: bool = false;
     // 执行 object_list 文件中行的总数
@@ -79,13 +76,16 @@ pub fn execute_transfer_task(
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
 
     let mut object_list_file_name = gen_file_path(
-        task_attributes.meta_dir.as_str(),
+        transfer.attributes.meta_dir.as_str(),
         OBJECT_LIST_FILE_PREFIX,
         now.as_secs().to_string().as_str(),
     );
 
-    let check_point_file =
-        gen_file_path(task_attributes.meta_dir.as_str(), CHECK_POINT_FILE_NAME, "");
+    let check_point_file = gen_file_path(
+        transfer.attributes.meta_dir.as_str(),
+        CHECK_POINT_FILE_NAME,
+        "",
+    );
 
     let mut assistant = IncrementAssistant::default();
     assistant.check_point_path = check_point_file.clone();
@@ -94,12 +94,12 @@ pub fn execute_transfer_task(
     let mut exclude_regex_set: Option<RegexSet> = None;
     let mut include_regex_set: Option<RegexSet> = None;
 
-    if let Some(vec_regex_str) = task_attributes.exclude.clone() {
+    if let Some(vec_regex_str) = transfer.attributes.exclude.clone() {
         let set = RegexSet::new(&vec_regex_str)?;
         exclude_regex_set = Some(set);
     };
 
-    if let Some(vec_regex_str) = task_attributes.include.clone() {
+    if let Some(vec_regex_str) = transfer.attributes.include.clone() {
         let set = RegexSet::new(&vec_regex_str)?;
         include_regex_set = Some(set);
     };
@@ -110,12 +110,12 @@ pub fn execute_transfer_task(
     let rt = runtime::Builder::new_multi_thread()
         .worker_threads(num_cpus::get())
         .enable_all()
-        .max_io_events_per_tick(task_attributes.task_threads)
+        .max_io_events_per_tick(transfer.attributes.task_threads)
         .build()?;
 
     // 生成object list 文件
     rt.block_on(async {
-        if task_attributes.start_from_checkpoint {
+        if transfer.attributes.start_from_checkpoint {
             // 执行error retry
             match task.error_record_retry() {
                 Ok(_) => {}
@@ -170,7 +170,7 @@ pub fn execute_transfer_task(
         } else {
             // 清理 meta 目录
             // 重新生成object list file
-            let _ = fs::remove_dir_all(task_attributes.meta_dir.as_str());
+            let _ = fs::remove_dir_all(transfer.attributes.meta_dir.as_str());
 
             let pd_gen_object_list = ProgressBar::new_spinner();
             pd_gen_object_list.enable_steady_tick(Duration::from_millis(120));
@@ -222,7 +222,7 @@ pub fn execute_transfer_task(
         let mut file_for_notify = None;
         // 持续同步逻辑: 执行增量助理
         let task_increment_prelude = transfer.gen_transfer_actions();
-        if task_attributes.continuous {
+        if transfer.attributes.continuous {
             let assistant = Arc::clone(&increment_assistant);
             task::spawn(async move {
                 if let Err(e) = task_increment_prelude.increment_prelude(assistant).await {
@@ -269,7 +269,9 @@ pub fn execute_transfer_task(
         let lines: io::Lines<io::BufReader<File>> = io::BufReader::new(object_list_file).lines();
         for line in lines {
             // 若错误达到上限，则停止任务
-            if err_counter.load(std::sync::atomic::Ordering::SeqCst) >= task_attributes.max_errors {
+            if err_counter.load(std::sync::atomic::Ordering::SeqCst)
+                >= transfer.attributes.max_errors
+            {
                 break;
             }
             if let Result::Ok(key) = line {
@@ -307,9 +309,9 @@ pub fn execute_transfer_task(
             if vec_keys
                 .len()
                 .to_string()
-                .eq(&task_attributes.bach_size.to_string())
+                .eq(&transfer.attributes.bach_size.to_string())
             {
-                while execut_set.len() >= task_attributes.task_threads {
+                while execut_set.len() >= transfer.attributes.task_threads {
                     execut_set.join_next().await;
                 }
                 let vk = vec_keys.clone();
@@ -330,9 +332,10 @@ pub fn execute_transfer_task(
 
         // 处理集合中的剩余数据，若错误达到上限，则不执行后续操作
         if vec_keys.len() > 0
-            && err_counter.load(std::sync::atomic::Ordering::SeqCst) < task_attributes.max_errors
+            && err_counter.load(std::sync::atomic::Ordering::SeqCst)
+                < transfer.attributes.max_errors
         {
-            while execut_set.len() >= task_attributes.task_threads {
+            while execut_set.len() >= transfer.attributes.task_threads {
                 execut_set.join_next().await;
             }
 
@@ -374,7 +377,7 @@ pub fn execute_transfer_task(
         }
 
         // 增量逻辑
-        if task_attributes.continuous {
+        if transfer.attributes.continuous {
             let stop_mark = Arc::new(AtomicBool::new(false));
             let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
 
