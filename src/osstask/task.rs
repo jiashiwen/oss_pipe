@@ -1,30 +1,21 @@
-use super::{
-    execute_transfer_task,
-    osscompare::OssCompare,
-    task_actions::{TaskActionsFromLocal, TaskActionsFromOss},
-    TaskStatusSaver, TransferTask,
-};
+use super::{execute_transfer_task, osscompare::OssCompare, TaskStatusSaver, TransferTask};
 use crate::{
     checkpoint::{get_task_checkpoint, CheckPoint, FilePosition, ListedRecord},
-    commons::{exec_processbar, read_yaml_file},
     s3::OSSDescription,
 };
 use anyhow::{anyhow, Result};
 use aws_sdk_s3::model::ObjectIdentifier;
 use core::result::Result::Ok;
 use dashmap::DashMap;
-use indicatif::{ProgressBar, ProgressStyle};
-use regex::RegexSet;
 use serde::{Deserialize, Serialize};
 use snowflake::SnowflakeIdGenerator;
 use std::{
-    fs::{self, File, OpenOptions},
+    fs::{self, File},
     io::{self, BufRead, Seek, SeekFrom},
     sync::{
-        atomic::{AtomicBool, AtomicU64, AtomicUsize},
+        atomic::{AtomicBool, AtomicUsize},
         Arc,
     },
-    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{
     runtime::{self},
@@ -74,25 +65,7 @@ pub enum TaskDescription {
 impl TaskDescription {
     pub fn exec_multi_threads(&self) -> Result<()> {
         match self {
-            // TaskDescription::Download(download) => {
-            //     execute_task_from_oss_multi_threads(true, download, &download.task_attributes)
-            // }
-            // TaskDescription::Upload(upload) => {
-            //     execute_task_from_local_multi_threads(true, upload, &upload.task_attributes)
-            // }
-            TaskDescription::Transfer(transfer) => {
-                // execute_task_from_oss_multi_threads(true, transfer, &transfer.task_attributes)
-                execute_transfer_task(transfer.clone(), &transfer.attributes)
-            }
-            // TaskDescription::LocalToLocal(local_to_local) => {
-            //     // local_to_local.exec_multi_threads()
-
-            //     execute_task_from_local_multi_threads(
-            //         true,
-            //         local_to_local,
-            //         &local_to_local.task_attributes,
-            //     )
-            // }
+            TaskDescription::Transfer(transfer) => execute_transfer_task(transfer.clone()),
             TaskDescription::TruncateBucket(truncate) => truncate.exec_multi_threads(),
             TaskDescription::OssCompare(oss_compare) => oss_compare.exec_multi_threads(),
         }
