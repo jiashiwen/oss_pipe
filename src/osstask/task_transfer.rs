@@ -24,6 +24,7 @@ use std::{
         atomic::{AtomicBool, AtomicUsize},
         Arc,
     },
+    thread::sleep,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{
@@ -117,13 +118,6 @@ impl TransferTask {
         let snapshot_stop_mark = Arc::new(AtomicBool::new(false));
         let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
-        // 执行 object_list 文件中行的总数
-        // let mut total_lines: u64 = 0;
-        // let mut object_list_file_name = gen_file_path(
-        //     self.attributes.meta_dir.as_str(),
-        //     OBJECT_LIST_FILE_PREFIX,
-        //     now.as_secs().to_string().as_str(),
-        // );
 
         let mut executed_file = ExecutedFile {
             path: gen_file_path(
@@ -166,7 +160,7 @@ impl TransferTask {
 
         // 生成object list 文件
         let pd_gen_object_list = ProgressBar::new_spinner();
-        pd_gen_object_list.enable_steady_tick(Duration::from_millis(20));
+        pd_gen_object_list.enable_steady_tick(Duration::from_millis(120));
         pd_gen_object_list.set_style(
             ProgressStyle::with_template("{spinner:.green} {msg}")
                 .unwrap()
@@ -182,6 +176,7 @@ impl TransferTask {
                 ]),
         );
         pd_gen_object_list.set_message("Generating object list ...");
+
         rt.block_on(async {
             if self.attributes.start_from_checkpoint {
                 // 执行error retry
@@ -203,15 +198,11 @@ impl TransferTask {
                         return;
                     }
                 };
-                // object_list_file_name = checkpoint.execute_file.clone();
-                // object_list_file_name = checkpoint.execute_file.path.clone();
                 executed_file = checkpoint.execute_file.clone();
 
                 match checkpoint.task_stage {
                     TaskStage::Stock => match checkpoint.seeked_execute_file() {
                         Ok(f) => {
-                            // total_lines = 100;
-                            // object_list_file_name = checkpoint.execute_file.path.clone();
                             list_file_position = checkpoint.execute_file_position.clone();
                             list_file = Some(f);
                         }
@@ -224,14 +215,19 @@ impl TransferTask {
                     TaskStage::Increment => {
                         // 清理文件重新生成object list 文件需大于指定时间戳
                         let timestamp = TryInto::<i64>::try_into(checkpoint.timestampe).unwrap();
+                        // Todo
+                        // 增加清理notify file 逻辑
                         let _ = fs::remove_file(&executed_file.path);
                         match task
                             .generate_execute_file(Some(timestamp), &executed_file.path)
                             .await
                         {
-                            Ok(f) => executed_file = f,
+                            Ok(f) => {
+                                executed_file = f;
+                            }
                             Err(e) => {
                                 log::error!("{}", e);
+                                interrupt = true;
                                 return;
                             }
                         };
@@ -244,12 +240,11 @@ impl TransferTask {
                 match task.generate_execute_file(None, &executed_file.path).await {
                     Ok(f) => {
                         executed_file = f;
-                        pd_gen_object_list.finish_with_message("object list Done");
                     }
                     Err(e) => {
                         log::error!("{}", e);
                         interrupt = true;
-                        pd_gen_object_list.finish_with_message("object list Fail");
+                        return;
                     }
                 }
             }
@@ -258,6 +253,9 @@ impl TransferTask {
         if interrupt {
             return Err(anyhow!("get object list error"));
         }
+
+        pd_gen_object_list.finish_with_message("object list generated");
+
         // sys_set 用于执行checkpoint、notify等辅助任务
         let mut sys_set = JoinSet::new();
         // execut_set 用于执行任务

@@ -1,20 +1,13 @@
 use super::IncrementAssistant;
-use crate::{
-    checkpoint::{ExecutedFile, FilePosition, ListedRecord},
-    commons::NotifyWatcher,
-};
+use crate::checkpoint::{ExecutedFile, FilePosition, ListedRecord};
 use anyhow::Result;
 use async_trait::async_trait;
 use dashmap::DashMap;
-use notify;
-use std::{
-    fs::File,
-    sync::{
-        atomic::{AtomicBool, AtomicU64, AtomicUsize},
-        Arc,
-    },
+use std::sync::{
+    atomic::{AtomicBool, AtomicUsize},
+    Arc,
 };
-use tokio::{runtime::Runtime, sync::Mutex, task::JoinSet};
+use tokio::{sync::Mutex, task::JoinSet};
 
 // Todo
 // 需新增objectlistfile executor，用于承载对象列表对象执行逻辑
@@ -35,12 +28,6 @@ pub trait TransferTaskActions {
     );
 
     // 生成对象列表
-    // async fn generate_object_list(
-    //     &self,
-    //     last_modify_timestamp: Option<i64>,
-    //     object_list_file: &str,
-    // ) -> Result<u64>;
-
     async fn generate_execute_file(
         &self,
         last_modify_timestamp: Option<i64>,
@@ -58,15 +45,6 @@ pub trait TransferTaskActions {
         snapshot_stop_mark: Arc<AtomicBool>,
         start_file_position: FilePosition,
     );
-
-    // 执行增量任务
-    // async fn execute_increment_from_checkpoint(
-    //     &self,
-    //     assistant: &IncrementAssistant,
-    //     err_counter: Arc<AtomicUsize>,
-    //     offset_map: Arc<DashMap<String, FilePosition>>,
-    //     snapshot_stop_mark: Arc<AtomicBool>,
-    // );
 }
 
 #[async_trait]
@@ -91,79 +69,4 @@ pub trait CompareTaskActions {
     //     _last_modify_timestamp: i64,
     //     object_list_file: &str,
     // ) -> Result<usize>;
-}
-
-#[async_trait]
-pub trait TaskActionsFromOss {
-    // type Item;
-    // 返回任务类型
-    // fn task_type(&self) -> TaskType;
-    // 执行任务
-    // fn exec_task(&self, init: bool) -> Result<()>;
-    // 错误记录重试
-    fn error_record_retry(&self) -> Result<()>;
-    // 记录执行器
-    async fn records_excutor(
-        &self,
-        joinset: &mut JoinSet<()>,
-        records: Vec<ListedRecord>,
-        err_counter: Arc<AtomicUsize>,
-        offset_map: Arc<DashMap<String, FilePosition>>,
-        list_file: String,
-    );
-
-    // 生成对象列表
-    fn generate_object_list(
-        &self,
-        rt: &Runtime,
-        last_modify_timestamp: i64,
-        object_list_file: &str,
-    ) -> Result<usize>;
-}
-
-#[async_trait]
-pub trait TaskActionsFromLocal {
-    // type Item;
-    // 返回任务类型
-    // fn task_type(&self) -> TaskType;
-    // 错误记录重试
-    fn error_record_retry(&self) -> Result<()>;
-    // 记录执行器
-    async fn records_excutor(
-        &self,
-        joinset: &mut JoinSet<()>,
-        records: Vec<ListedRecord>,
-        err_counter: Arc<AtomicUsize>,
-        offset_map: Arc<DashMap<String, FilePosition>>,
-        list_file: String,
-    );
-
-    // 生成对象列表
-    fn generate_object_list(
-        &self,
-        rt: &Runtime,
-        // last_modify_timestamp: i64,
-        object_list_file: &str,
-    ) -> Result<usize>;
-
-    fn gen_watcher(&self) -> notify::Result<NotifyWatcher>;
-
-    async fn watch_modify_to_file(
-        &self,
-        watcher: NotifyWatcher,
-        file: File,
-        file_size: Arc<AtomicU64>,
-    ) {
-        watcher.watch_to_file(file, file_size).await;
-    }
-
-    async fn execute_increment(
-        &self,
-        notify_file: &str,
-        notify_file_size: Arc<AtomicU64>,
-        err_counter: Arc<AtomicUsize>,
-        offset_map: Arc<DashMap<String, FilePosition>>,
-        snapshot_stop_mark: Arc<AtomicBool>,
-    );
-    // async fn modified_handler(&self, modified: Modified, client: &OssClient) -> Result<()>;
 }
