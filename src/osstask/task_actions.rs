@@ -1,6 +1,6 @@
 use super::IncrementAssistant;
 use crate::{
-    checkpoint::{FilePosition, ListedRecord},
+    checkpoint::{ExecutedFile, FilePosition, ListedRecord},
     commons::NotifyWatcher,
 };
 use anyhow::Result;
@@ -35,11 +35,17 @@ pub trait TransferTaskActions {
     );
 
     // 生成对象列表
-    async fn generate_object_list(
+    // async fn generate_object_list(
+    //     &self,
+    //     last_modify_timestamp: Option<i64>,
+    //     object_list_file: &str,
+    // ) -> Result<u64>;
+
+    async fn generate_execute_file(
         &self,
         last_modify_timestamp: Option<i64>,
         object_list_file: &str,
-    ) -> Result<u64>;
+    ) -> Result<ExecutedFile>;
 
     async fn increment_prelude(&self, assistant: Arc<Mutex<IncrementAssistant>>) -> Result<()>;
 

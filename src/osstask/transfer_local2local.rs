@@ -3,7 +3,7 @@ use super::{
     gen_file_path, IncrementAssistant, LocalNotify, TaskStage, TaskStatusSaver,
     TransferTaskAttributes, ERROR_RECORD_PREFIX, NOTIFY_FILE_PREFIX, OFFSET_PREFIX,
 };
-use crate::checkpoint::ListedRecord;
+use crate::checkpoint::{ExecutedFile, ListedRecord};
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::commons::{
     copy_file, scan_folder_files_last_modify_greater_then_to_file, scan_folder_files_to_file,
@@ -70,11 +70,11 @@ impl TransferTaskActions for TransferLocal2Local {
         });
     }
 
-    async fn generate_object_list(
+    async fn generate_execute_file(
         &self,
         last_modify_timestamp: Option<i64>,
         object_list_file: &str,
-    ) -> Result<u64> {
+    ) -> Result<ExecutedFile> {
         match last_modify_timestamp {
             Some(t) => {
                 let timestamp = TryInto::<u64>::try_into(t)?;
@@ -136,6 +136,12 @@ impl TransferTaskActions for TransferLocal2Local {
         };
         drop(lock);
 
+        let executed_file = ExecutedFile {
+            path: local_notify.notify_file_path.clone(),
+            size: 0,
+            total_lines: 0,
+        };
+
         let mut offset = TryInto::<u64>::try_into(start_file_position.offset).unwrap();
         let mut line_num = start_file_position.line_num;
 
@@ -146,7 +152,7 @@ impl TransferTaskActions for TransferLocal2Local {
         // 启动 checkpoint 记录器
         let task_status_saver = TaskStatusSaver {
             check_point_path: assistant.lock().await.check_point_path.clone(),
-            execute_file_path: local_notify.notify_file_path.clone(),
+            executed_file,
             stop_mark: Arc::clone(&snapshot_stop_mark),
             list_file_positon_map: Arc::clone(&offset_map),
             file_for_notify: Some(local_notify.notify_file_path.clone()),

@@ -3,7 +3,7 @@ use super::{
     ERROR_RECORD_PREFIX, OFFSET_PREFIX,
 };
 use crate::{
-    checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
+    checkpoint::{ExecutedFile, FilePosition, ListedRecord, Opt, RecordDescription},
     commons::{json_to_struct, read_lines},
     s3::{aws_s3::OssClient, OSSDescription},
 };
@@ -134,11 +134,11 @@ impl TransferTaskActions for TransferOss2Oss {
         });
     }
     // 生成对象列表
-    async fn generate_object_list(
+    async fn generate_execute_file(
         &self,
         last_modify_timestamp: Option<i64>,
         object_list_file: &str,
-    ) -> Result<u64> {
+    ) -> Result<ExecutedFile> {
         let client_source = self.source.gen_oss_client()?;
 
         // 若为持续同步模式，且 last_modify_timestamp 大于 0，则将 last_modify 属性大于last_modify_timestamp变量的对象加入执行列表
@@ -149,7 +149,7 @@ impl TransferTaskActions for TransferOss2Oss {
                         self.source.bucket.clone(),
                         self.source.prefix.clone(),
                         self.attributes.bach_size,
-                        object_list_file.to_string(),
+                        object_list_file,
                         t,
                     )
                     .await
@@ -160,7 +160,7 @@ impl TransferTaskActions for TransferOss2Oss {
                         self.source.bucket.clone(),
                         self.source.prefix.clone(),
                         self.attributes.bach_size,
-                        object_list_file.to_string(),
+                        object_list_file,
                     )
                     .await
             }

@@ -13,16 +13,26 @@ use std::{
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ExecuteFile {
+pub struct ExecutedFile {
     pub path: String,
-    pub size: usize,
-    pub total_lines: usize,
+    pub size: u64,
+    pub total_lines: u64,
+}
+
+impl Default for ExecutedFile {
+    fn default() -> Self {
+        Self {
+            path: "".to_string(),
+            size: 0,
+            total_lines: 0,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckPoint {
     // 对象列表命名规则：OBJECT_LIST_FILE_PREFIX+秒级unix 时间戳 'objeclt_list_unixtimestampe'
-    pub execute_file: String,
+    pub execute_file: ExecutedFile,
     // 文件执行位置，既执行到的offset，用于断点续传
     pub execute_file_position: FilePosition,
     pub file_for_notify: Option<String>,
@@ -56,7 +66,7 @@ impl FromStr for CheckPoint {
 
 impl CheckPoint {
     pub fn seeked_execute_file(&self) -> Result<File> {
-        let mut file = File::open(&self.execute_file)?;
+        let mut file = File::open(&self.execute_file.path)?;
         let seek_offset = TryInto::<u64>::try_into(self.execute_file_position.offset)?;
         file.seek(SeekFrom::Start(seek_offset))?;
         Ok(file)
@@ -139,6 +149,7 @@ mod test {
 
     use crate::checkpoint::checkpoint::get_task_checkpoint;
     use crate::checkpoint::checkpoint::CheckPoint;
+    use crate::checkpoint::checkpoint::ExecutedFile;
     use crate::checkpoint::FilePosition;
     use crate::commons::scan_folder_files_to_file;
     //cargo test checkpoint::checkpoint::test::test_get_task_checkpoint -- --nocapture
@@ -171,7 +182,11 @@ mod test {
                     line_num,
                 };
                 let mut checkpoint = CheckPoint {
-                    execute_file: path.to_string(),
+                    execute_file: ExecutedFile {
+                        path: path.to_string(),
+                        size: 0,
+                        total_lines: 0,
+                    },
                     execute_file_position: file_position,
                     file_for_notify: None,
                     task_stage: crate::osstask::TaskStage::Stock,

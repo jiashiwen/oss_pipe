@@ -1,6 +1,6 @@
-use super::{execute_transfer_task, osscompare::OssCompare, TaskStatusSaver, TransferTask};
+use super::{osscompare::OssCompare, TaskStatusSaver, TransferTask};
 use crate::{
-    checkpoint::{get_task_checkpoint, CheckPoint, FilePosition, ListedRecord},
+    checkpoint::{get_task_checkpoint, CheckPoint, ExecutedFile, FilePosition, ListedRecord},
     s3::OSSDescription,
 };
 use anyhow::{anyhow, Result};
@@ -65,7 +65,8 @@ pub enum TaskDescription {
 impl TaskDescription {
     pub fn exec_multi_threads(&self) -> Result<()> {
         match self {
-            TaskDescription::Transfer(transfer) => execute_transfer_task(transfer.clone()),
+            // TaskDescription::Transfer(transfer) => execute_transfer_task(transfer.clone()),
+            TaskDescription::Transfer(transfer) => transfer.execute(),
             TaskDescription::TruncateBucket(truncate) => truncate.exec_multi_threads(),
             TaskDescription::OssCompare(oss_compare) => oss_compare.exec_multi_threads(),
         }
@@ -521,7 +522,7 @@ impl TaskTruncateBucket {
                     self.oss.bucket.clone(),
                     self.oss.prefix.clone(),
                     self.bach_size,
-                    object_list_file.clone(),
+                    &object_list_file,
                 )
                 .await
             {
@@ -660,7 +661,12 @@ impl TaskOssCompare {
         let snapshot_stop_mark = Arc::new(AtomicBool::new(false));
         let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
 
-        let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_PREFIX, "");
+        // let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_PREFIX, "");
+        let mut executed_file = ExecutedFile {
+            path: gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_PREFIX, ""),
+            size: 0,
+            total_lines: 0,
+        };
         let check_point_file = gen_file_path(self.meta_dir.as_str(), CHECK_POINT_FILE_NAME, "");
 
         let rt = runtime::Builder::new_multi_thread()
@@ -685,18 +691,21 @@ impl TaskOssCompare {
                         return;
                     }
                 };
-                if let Err(e) = client_source
+                executed_file = match client_source
                     .append_all_object_list_to_file(
                         self.source.bucket.clone(),
                         self.source.prefix.clone(),
                         self.bach_size,
-                        object_list_file.clone(),
+                        &executed_file.path,
                     )
                     .await
                 {
-                    log::error!("{}", e);
-                    interrupted = true;
-                    return;
+                    Ok(f) => f,
+                    Err(e) => {
+                        log::error!("{}", e);
+                        interrupted = true;
+                        return;
+                    }
                 };
             });
 
@@ -706,7 +715,7 @@ impl TaskOssCompare {
         }
 
         let mut set: JoinSet<()> = JoinSet::new();
-        let mut file = File::open(object_list_file.as_str())?;
+        let mut file = File::open(&executed_file.path)?;
 
         rt.block_on(async {
             let mut file_position = 0;
@@ -739,7 +748,7 @@ impl TaskOssCompare {
             // 启动checkpoint记录线程
             let status_saver = TaskStatusSaver {
                 check_point_path: check_point_file.clone(),
-                execute_file_path: object_list_file.clone(),
+                executed_file: executed_file.clone(),
                 stop_mark: Arc::clone(&snapshot_stop_mark),
                 list_file_positon_map: Arc::clone(&offset_map),
                 file_for_notify: None,
@@ -785,7 +794,7 @@ impl TaskOssCompare {
                         offset_map: Arc::clone(&offset_map),
                         meta_dir: self.meta_dir.clone(),
                         exprirs_diff_scope: self.exprirs_diff_scope,
-                        list_file_path: object_list_file.clone(),
+                        list_file_path: executed_file.path.clone(),
                     };
                     set.spawn(async move {
                         if let Err(e) = compare.compare(vk).await {
@@ -818,7 +827,7 @@ impl TaskOssCompare {
                     offset_map: Arc::clone(&offset_map),
                     meta_dir: self.meta_dir.clone(),
                     exprirs_diff_scope: self.exprirs_diff_scope,
-                    list_file_path: object_list_file.clone(),
+                    list_file_path: executed_file.path.clone(),
                 };
 
                 set.spawn(async move {
@@ -838,7 +847,7 @@ impl TaskOssCompare {
             snapshot_stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
             // 记录checkpoint
             let mut checkpoint = CheckPoint {
-                execute_file: object_list_file.clone(),
+                execute_file: executed_file.clone(),
                 file_for_notify: None,
                 task_stage: TaskStage::Stock,
                 execute_file_position: FilePosition {
