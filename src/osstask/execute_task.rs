@@ -231,6 +231,7 @@ pub fn execute_transfer_task(
         None => File::open(object_list_file_name.as_str())?,
     };
     rt.block_on(async {
+        let mut file_for_notify = None;
         // 持续同步逻辑: 执行增量助理
         let task_increment_prelude = transfer.gen_transfer_actions();
         if task_attributes.continuous {
@@ -240,16 +241,19 @@ pub fn execute_transfer_task(
                     log::error!("{}", e);
                 }
             });
+
+            while file_for_notify.is_none() {
+                let lock = increment_assistant.lock().await;
+                file_for_notify = match lock.get_notify_file_path() {
+                    Some(s) => Some(s),
+                    None => None,
+                };
+                drop(lock);
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            }
         }
 
         // 启动checkpoint记录线程
-        let lock = increment_assistant.lock().await;
-        let file_for_notify = match lock.get_notify_file_path() {
-            Some(s) => Some(s),
-            None => None,
-        };
-        drop(lock);
-
         let stock_status_saver = TaskStatusSaver {
             check_point_path: check_point_file.clone(),
             execute_file_path: object_list_file_name.clone(),
@@ -386,19 +390,6 @@ pub fn execute_transfer_task(
         if task_attributes.continuous {
             let stop_mark = Arc::new(AtomicBool::new(false));
             let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
-
-            // let task_status_saver = TaskStatusSaver {
-            //     check_point_path: check_point_file.clone(),
-            //     execute_file_path: increment_assistant.get_notify_file_path(),
-            //     stop_mark: Arc::clone(&stop_mark),
-            //     list_file_positon_map: Arc::clone(&offset_map),
-            //     file_for_notify: increment_assistant.get_notify_file_path(),
-            //     task_stage: TaskStage::Increment,
-            //     interval: 3,
-            // };
-            // sys_set.spawn(async move {
-            //     task_status_saver.snapshot_to_file().await;
-            // });
 
             let task_increment = transfer.gen_transfer_actions();
             let _ = task_increment
