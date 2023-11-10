@@ -12,6 +12,8 @@ use std::{
 };
 use tokio::io::AsyncReadExt;
 
+use crate::checkpoint::ExecutedFile;
+
 #[derive(Debug, Clone)]
 pub struct OssClient {
     pub client: Client,
@@ -31,39 +33,39 @@ impl OssClient {
         bucket: String,
         prefix: Option<String>,
         batch: i32,
-        file_path: String,
-    ) -> Result<u64> {
-        let mut total = 0;
+        file_path: &str,
+    ) -> Result<ExecutedFile> {
+        let mut total_lines = 0;
         let resp = self
             .list_objects(bucket.clone(), prefix.clone(), batch, None)
             .await?;
         let mut token: Option<String> = resp.next_token;
 
-        let path = std::path::Path::new(file_path.as_str());
+        let path = std::path::Path::new(file_path);
         if let Some(p) = path.parent() {
             std::fs::create_dir_all(p)?;
         };
 
         //写入文件
-        let file_ref = OpenOptions::new()
+        let file = OpenOptions::new()
             .create(true)
             .write(true)
             .append(true)
-            .open(file_path.clone())?;
-        let mut file = LineWriter::new(file_ref);
+            .open(file_path)?;
+        let mut line_writer = LineWriter::new(&file);
 
         if let Some(objects) = resp.object_list {
             for item in objects.iter() {
                 match item.key() {
                     Some(i) => {
-                        let _ = file.write_all(i.as_bytes());
-                        let _ = file.write_all("\n".as_bytes());
-                        total += 1;
+                        let _ = line_writer.write_all(i.as_bytes());
+                        let _ = line_writer.write_all("\n".as_bytes());
+                        total_lines += 1;
                     }
                     None => {}
                 }
             }
-            file.flush()?;
+            line_writer.flush()?;
         }
 
         while token.is_some() {
@@ -74,19 +76,24 @@ impl OssClient {
                 for item in objects.iter() {
                     match item.key() {
                         Some(i) => {
-                            let _ = file.write_all(i.as_bytes());
-                            let _ = file.write_all("\n".as_bytes());
-                            total += 1;
+                            let _ = line_writer.write_all(i.as_bytes());
+                            let _ = line_writer.write_all("\n".as_bytes());
+                            total_lines += 1;
                         }
                         None => {}
                     }
                 }
-                file.flush()?;
+                line_writer.flush()?;
             }
             token = resp.next_token;
         }
-
-        Ok(total)
+        let size = file.metadata()?.len();
+        let exec_file = ExecutedFile {
+            path: file_path.to_string(),
+            size,
+            total_lines,
+        };
+        Ok(exec_file)
     }
 
     // 将last_modify 大于某时间戳的object列表写入文件
@@ -98,21 +105,21 @@ impl OssClient {
         bucket: String,
         prefix: Option<String>,
         batch: i32,
-        file_path: String,
+        file_path: &str,
         greater: i64,
-    ) -> Result<u64> {
-        let mut total = 0;
-        let path = std::path::Path::new(file_path.as_str());
+    ) -> Result<ExecutedFile> {
+        let mut total_lines = 0;
+        let path = std::path::Path::new(file_path);
         if let Some(p) = path.parent() {
             std::fs::create_dir_all(p)?;
         };
         //准备写入文件
-        let file_ref = OpenOptions::new()
+        let file = OpenOptions::new()
             .create(true)
             .write(true)
             .append(true)
-            .open(file_path.clone())?;
-        let mut file = LineWriter::new(file_ref);
+            .open(file_path)?;
+        let mut line_writer = LineWriter::new(&file);
 
         let resp = self
             .list_objects(bucket.clone(), prefix.clone(), batch, None)
@@ -129,14 +136,14 @@ impl OssClient {
             }) {
                 match item.key() {
                     Some(i) => {
-                        let _ = file.write_all(i.as_bytes());
-                        let _ = file.write_all("\n".as_bytes());
-                        total += 1;
+                        let _ = line_writer.write_all(i.as_bytes());
+                        let _ = line_writer.write_all("\n".as_bytes());
+                        total_lines += 1;
                     }
                     None => {}
                 }
             }
-            file.flush()?;
+            line_writer.flush()?;
         }
 
         while token.is_some() {
@@ -153,18 +160,24 @@ impl OssClient {
                 }) {
                     match item.key() {
                         Some(i) => {
-                            let _ = file.write_all(i.as_bytes());
-                            let _ = file.write_all("\n".as_bytes());
-                            total += 1;
+                            let _ = line_writer.write_all(i.as_bytes());
+                            let _ = line_writer.write_all("\n".as_bytes());
+                            total_lines += 1;
                         }
                         None => {}
                     }
                 }
-                file.flush()?;
+                line_writer.flush()?;
             }
             token = resp.next_token;
         }
-        Ok(total)
+        let size = file.metadata()?.len();
+        let execute_file = ExecutedFile {
+            path: file_path.to_string(),
+            size,
+            total_lines,
+        };
+        Ok(execute_file)
     }
 
     pub async fn append_object_list_to_file(
@@ -664,7 +677,7 @@ mod test {
                     "jsw-bucket-1".to_string(),
                     None,
                     100,
-                    "/tmp/objlist".to_string(),
+                    "/tmp/objlist",
                     1689642000,
                 )
                 .await;

@@ -1,3 +1,5 @@
+use crate::checkpoint::ExecutedFile;
+
 use super::rand_util::rand_string;
 use anyhow::Result;
 use std::{
@@ -89,19 +91,19 @@ fn remove_dir_contents<P: AsRef<Path>>(path: P) -> io::Result<()> {
     Ok(())
 }
 
-pub fn scan_folder_files_to_file(folder: &str, file_name: &str) -> Result<u64> {
-    let mut total = 0;
+pub fn scan_folder_files_to_file(folder: &str, file_name: &str) -> Result<ExecutedFile> {
+    let mut total_lines = 0;
     let path = std::path::Path::new(file_name);
     if let Some(p) = path.parent() {
         std::fs::create_dir_all(p)?;
     };
     //写入文件
-    let file_ref = OpenOptions::new()
+    let file = OpenOptions::new()
         .create(true)
         .write(true)
         .append(true)
         .open(file_name)?;
-    let mut file = LineWriter::new(file_ref);
+    let mut line_writer = LineWriter::new(&file);
 
     // 遍历目录并将文件路径写入文件
     for entry in WalkDir::new(folder)
@@ -119,32 +121,38 @@ pub fn scan_folder_files_to_file(folder: &str, file_name: &str) -> Result<u64> {
                 false => &p[folder.len() + 1..],
             };
 
-            let _ = file.write_all(key.as_bytes());
-            let _ = file.write_all("\n".as_bytes());
-            total += 1;
+            let _ = line_writer.write_all(key.as_bytes());
+            let _ = line_writer.write_all("\n".as_bytes());
+            total_lines += 1;
         };
-        file.flush()?;
+        line_writer.flush()?;
     }
-    Ok(total)
+    let size = file.metadata()?.len();
+    let executed_file = ExecutedFile {
+        path: file_name.to_string(),
+        size,
+        total_lines,
+    };
+    Ok(executed_file)
 }
 
 pub fn scan_folder_files_last_modify_greater_then_to_file(
     folder: &str,
     file_name: &str,
     timestamp: u64,
-) -> Result<u64> {
-    let mut total = 0;
+) -> Result<ExecutedFile> {
+    let mut total_lines = 0;
     let path = std::path::Path::new(file_name);
     if let Some(p) = path.parent() {
         std::fs::create_dir_all(p)?;
     };
     //写入文件
-    let file_ref = OpenOptions::new()
+    let file = OpenOptions::new()
         .create(true)
         .write(true)
         .append(true)
         .open(file_name)?;
-    let mut file = LineWriter::new(file_ref);
+    let mut line_writer = LineWriter::new(&file);
 
     // 遍历目录并将文件路径写入文件
     for entry in WalkDir::new(folder)
@@ -169,13 +177,19 @@ pub fn scan_folder_files_last_modify_greater_then_to_file(
                 false => &p[folder.len() + 1..],
             };
 
-            let _ = file.write_all(key.as_bytes());
-            let _ = file.write_all("\n".as_bytes());
-            total += 1;
+            let _ = line_writer.write_all(key.as_bytes());
+            let _ = line_writer.write_all("\n".as_bytes());
+            total_lines += 1;
         };
-        file.flush()?;
+        line_writer.flush()?;
     }
-    Ok(total)
+    let size = file.metadata()?.len();
+    let executed_file = ExecutedFile {
+        path: file_name.to_string(),
+        size,
+        total_lines,
+    };
+    Ok(executed_file)
 }
 
 // 生成指定字节数的文件

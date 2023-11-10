@@ -7,6 +7,7 @@ use super::TransferTaskAttributes;
 use super::NOTIFY_FILE_PREFIX;
 use super::OFFSET_PREFIX;
 use super::{gen_file_path, ERROR_RECORD_PREFIX};
+use crate::checkpoint::ExecutedFile;
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::commons::scan_folder_files_last_modify_greater_then_to_file;
 use crate::commons::{
@@ -155,11 +156,11 @@ impl TransferTaskActions for TransferLocal2Oss {
     }
 
     // 生成对象列表
-    async fn generate_object_list(
+    async fn generate_execute_file(
         &self,
         last_modify_timestamp: Option<i64>,
         object_list_file: &str,
-    ) -> Result<u64> {
+    ) -> Result<ExecutedFile> {
         // 遍历目录并生成文件列表
         match last_modify_timestamp {
             Some(t) => {
@@ -231,9 +232,15 @@ impl TransferTaskActions for TransferLocal2Oss {
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
 
+        let executed_file = ExecutedFile {
+            path: local_notify.notify_file_path.clone(),
+            size: 0,
+            total_lines: 0,
+        };
+
         let task_status_saver = TaskStatusSaver {
             check_point_path: assistant.lock().await.check_point_path.clone(),
-            execute_file_path: local_notify.notify_file_path.clone(),
+            executed_file,
             stop_mark: Arc::clone(&snapshot_stop_mark),
             list_file_positon_map: Arc::clone(&offset_map),
             file_for_notify: Some(local_notify.notify_file_path.clone()),
