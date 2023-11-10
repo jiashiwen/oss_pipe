@@ -125,9 +125,6 @@ pub fn execute_transfer_task(
                     return;
                 }
             };
-            // task.error_record_retry();
-            // 从 checkpoint 获取 文件名 object_list_file_name，更改 存量调整 object list file offset
-            // 增量 生成 object list file 文件lastmodify大于指定时间戳
 
             // 变更object_list_file_name文件名
             let checkpoint = match get_task_checkpoint(check_point_file.as_str()) {
@@ -138,16 +135,7 @@ pub fn execute_transfer_task(
                     return;
                 }
             };
-            object_list_file_name = checkpoint.execute_file;
-
-            let checkpoint = match get_task_checkpoint(check_point_file.as_str()) {
-                Ok(c) => c,
-                Err(e) => {
-                    log::error!("{}", e);
-                    interrupt = true;
-                    return;
-                }
-            };
+            object_list_file_name = checkpoint.execute_file.clone();
 
             match checkpoint.task_stage {
                 TaskStage::Stock => match checkpoint.seeked_execute_file() {
@@ -225,7 +213,7 @@ pub fn execute_transfer_task(
     let mut sys_set = JoinSet::new();
     // execut_set 用于执行任务
     let mut execut_set: JoinSet<()> = JoinSet::new();
-    // let mut object_list_file = File::open(object_list_file_name.as_str())?;
+
     let object_list_file = match list_file {
         Some(f) => f,
         None => File::open(object_list_file_name.as_str())?,
@@ -288,8 +276,7 @@ pub fn execute_transfer_task(
                 let len = key.bytes().len() + "\n".bytes().len();
                 list_file_position.offset += len;
                 list_file_position.line_num += 1;
-                // offset += len;
-                // line_num += 1;
+
                 if !key.ends_with("/") {
                     let record = ListedRecord {
                         key,
