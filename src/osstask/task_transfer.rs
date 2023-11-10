@@ -2,8 +2,9 @@ use super::{
     task_actions::TransferTaskActions, IncrementAssistant, TransferLocal2Local, TransferLocal2Oss,
     TransferOss2Local, TransferOss2Oss, TransferTaskAttributes,
 };
-use crate::{checkpoint::ExecutedFile, s3::OSSDescription};
+use crate::{checkpoint::ExecutedFile, osstask::NOTIFY_FILE_PREFIX, s3::OSSDescription};
 use serde::{Deserialize, Serialize};
+use walkdir::WalkDir;
 
 use super::{
     gen_file_path, TaskStage, TaskStatusSaver, CHECK_POINT_FILE_NAME, OBJECT_LIST_FILE_PREFIX,
@@ -24,7 +25,6 @@ use std::{
         atomic::{AtomicBool, AtomicUsize},
         Arc,
     },
-    thread::sleep,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{
@@ -200,6 +200,20 @@ impl TransferTask {
                 };
                 executed_file = checkpoint.execute_file.clone();
 
+                // 增加清理notify file 逻辑
+                for entry in WalkDir::new(&self.attributes.meta_dir)
+                    .into_iter()
+                    .filter_map(Result::ok)
+                    .filter(|e| !e.file_type().is_dir())
+                {
+                    if let Some(p) = entry.path().to_str() {
+                        if p.contains(NOTIFY_FILE_PREFIX) {
+                            println!("{}", p);
+                            let _ = fs::remove_file(p);
+                        }
+                    };
+                }
+
                 match checkpoint.task_stage {
                     TaskStage::Stock => match checkpoint.seeked_execute_file() {
                         Ok(f) => {
@@ -215,8 +229,7 @@ impl TransferTask {
                     TaskStage::Increment => {
                         // 清理文件重新生成object list 文件需大于指定时间戳
                         let timestamp = TryInto::<i64>::try_into(checkpoint.timestampe).unwrap();
-                        // Todo
-                        // 增加清理notify file 逻辑
+
                         let _ = fs::remove_file(&executed_file.path);
                         match task
                             .generate_execute_file(Some(timestamp), &executed_file.path)
