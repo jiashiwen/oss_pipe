@@ -1,7 +1,7 @@
 use super::FilePosition;
 use crate::{
     commons::{read_yaml_file, struct_to_yaml_string},
-    osstask::TaskStage,
+    tasks::TaskStage,
 };
 use anyhow::{Error, Ok, Result};
 use serde::{Deserialize, Serialize};
@@ -189,7 +189,7 @@ mod test {
                     },
                     execute_file_position: file_position,
                     file_for_notify: None,
-                    task_stage: crate::osstask::TaskStage::Stock,
+                    task_stage: crate::tasks::TaskStage::Stock,
                     timestampe: u128::from(now.as_secs()),
                 };
 

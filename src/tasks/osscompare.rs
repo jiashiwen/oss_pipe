@@ -315,7 +315,7 @@ mod test {
 
     use crate::{
         commons::struct_to_json_string,
-        osstask::osscompare::{DateTime, DiffExpires, ObjectDiff},
+        tasks::osscompare::{DateTime, DiffExpires, ObjectDiff},
         s3::OSSDescription,
     };
 

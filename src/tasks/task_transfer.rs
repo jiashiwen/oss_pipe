@@ -2,7 +2,7 @@ use super::{
     task_actions::TransferTaskActions, IncrementAssistant, TransferLocal2Local, TransferLocal2Oss,
     TransferOss2Local, TransferOss2Oss, TransferTaskAttributes,
 };
-use crate::{checkpoint::ExecutedFile, osstask::NOTIFY_FILE_PREFIX, s3::OSSDescription};
+use crate::{checkpoint::ExecutedFile, s3::OSSDescription, tasks::NOTIFY_FILE_PREFIX};
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
@@ -229,7 +229,6 @@ impl TransferTask {
                     TaskStage::Increment => {
                         // 清理文件重新生成object list 文件需大于指定时间戳
                         let timestamp = TryInto::<i64>::try_into(checkpoint.timestampe).unwrap();
-
                         let _ = fs::remove_file(&executed_file.path);
                         match task
                             .generate_execute_file(Some(timestamp), &executed_file.path)
@@ -280,6 +279,7 @@ impl TransferTask {
         };
         rt.block_on(async {
             let mut file_for_notify = None;
+
             // 持续同步逻辑: 执行增量助理
             let task_increment_prelude = self.gen_transfer_actions();
             if self.attributes.continuous {
@@ -445,6 +445,7 @@ impl TransferTask {
                 let task_increment = self.gen_transfer_actions();
                 let _ = task_increment
                     .execute_increment(
+                        &mut execut_set,
                         Arc::clone(&increment_assistant),
                         Arc::clone(&err_counter),
                         Arc::clone(&offset_map),

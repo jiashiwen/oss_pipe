@@ -173,6 +173,7 @@ impl TransferTaskActions for TransferOss2Oss {
 
     async fn execute_increment(
         &self,
+        execute_set: &mut JoinSet<()>,
         assistant: Arc<Mutex<IncrementAssistant>>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
@@ -180,16 +181,6 @@ impl TransferTaskActions for TransferOss2Oss {
         start_file_position: FilePosition,
     ) {
     }
-
-    // async fn execute_increment_from_checkpoint(
-    //     &self,
-    //     assistant: &IncrementAssistant,
-    //     err_counter: Arc<AtomicUsize>,
-    //     offset_map: Arc<DashMap<String, FilePosition>>,
-    //     snapshot_stop_mark: Arc<AtomicBool>,
-    // ) {
-    //     todo!()
-    // }
 }
 
 #[derive(Debug, Clone)]
