@@ -20,12 +20,15 @@ pub trait TransferTaskActions {
     // 记录执行器
     async fn records_excutor(
         &self,
-        joinset: &mut JoinSet<()>,
+        execute_set: &mut JoinSet<()>,
         records: Vec<ListedRecord>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file: String,
     );
+
+    // 根据执行列表执行传输操作
+    async fn execute_transfer_by_list_file(&self) {}
 
     // 生成对象列表
     async fn generate_execute_file(
@@ -34,11 +37,13 @@ pub trait TransferTaskActions {
         object_list_file: &str,
     ) -> Result<ExecutedFile>;
 
+    // 执行增量前置操作，例如启动notify线程，记录last modify 时间戳等
     async fn increment_prelude(&self, assistant: Arc<Mutex<IncrementAssistant>>) -> Result<()>;
 
     // 执行增量任务
     async fn execute_increment(
         &self,
+        execute_set: &mut JoinSet<()>,
         assistant: Arc<Mutex<IncrementAssistant>>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,

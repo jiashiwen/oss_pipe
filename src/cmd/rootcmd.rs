@@ -10,12 +10,12 @@ use crate::commons::{struct_to_yaml_string, CommandCompleter};
 use crate::configure::{generate_default_config, set_config_file_path};
 use crate::configure::{get_config_file_path, get_current_config_yml, set_config};
 use crate::interact;
-use crate::osstask::{
+use crate::s3::oss::OSSDescription;
+use crate::s3::oss::OssProvider;
+use crate::tasks::{
     task_id_generator, ObjectStorage, Task, TaskDescription, TaskOssCompare, TaskTruncateBucket,
     TaskType, TransferTask,
 };
-use crate::s3::oss::OSSDescription;
-use crate::s3::oss::OssProvider;
 use clap::{Arg, ArgMatches};
 use clap::{ArgAction, Command as Clap_Command};
 use lazy_static::lazy_static;

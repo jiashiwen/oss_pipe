@@ -7,8 +7,8 @@ mod configure;
 
 mod interact;
 mod logger;
-mod osstask;
 mod s3;
+mod tasks;
 
 fn main() {
     // env_logger::init();

@@ -10,22 +10,28 @@ use anyhow::Result;
 use async_trait::async_trait;
 use aws_sdk_s3::error::GetObjectErrorKind;
 use dashmap::DashMap;
+use regex::RegexSet;
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{self, OpenOptions},
-    io::Write,
+    fs::{self, File, OpenOptions},
+    io::{self, BufRead, Write},
     path::Path,
     sync::{
         atomic::{AtomicBool, AtomicUsize},
         Arc,
     },
+    time::{SystemTime, UNIX_EPOCH},
 };
-use tokio::{sync::Mutex, task::JoinSet};
+use tokio::{
+    sync::Mutex,
+    task::{self, JoinSet},
+};
 use walkdir::WalkDir;
 
 use super::{
-    gen_file_path, task_actions::TransferTaskActions, IncrementAssistant, TransferTaskAttributes,
-    ERROR_RECORD_PREFIX, OFFSET_PREFIX,
+    gen_file_path, task_actions::TransferTaskActions, IncrementAssistant, TaskStage,
+    TaskStatusSaver, TransferTaskAttributes, ERROR_RECORD_PREFIX, OBJECT_LIST_FILE_PREFIX,
+    OFFSET_PREFIX,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -177,16 +183,206 @@ impl TransferTaskActions for TransferOss2Local {
     }
 
     async fn increment_prelude(&self, assistant: Arc<Mutex<IncrementAssistant>>) -> Result<()> {
+        // 记录当前时间戳
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        let timestampe = TryInto::<i64>::try_into(now.as_secs())?;
+        assistant.lock().await.last_modify_timestamp = Some(timestampe);
         Ok(())
     }
+
     async fn execute_increment(
         &self,
+        mut execute_set: &mut JoinSet<()>,
         assistant: Arc<Mutex<IncrementAssistant>>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         snapshot_stop_mark: Arc<AtomicBool>,
         start_file_position: FilePosition,
     ) {
+        // 循环执行获取lastmodify 大于checkpoint指定的时间戳的对象
+        let timestampe = match assistant.lock().await.last_modify_timestamp {
+            Some(t) => t,
+            None => {
+                return;
+            }
+        };
+
+        let mut executed_file = ExecutedFile {
+            path: gen_file_path(
+                self.attributes.meta_dir.as_str(),
+                OBJECT_LIST_FILE_PREFIX,
+                timestampe.to_string().as_str(),
+            ),
+            size: 0,
+            total_lines: 0,
+        };
+
+        // 启动checkpoint记录线程
+        let stock_status_saver = Arc::new(Mutex::new(TaskStatusSaver {
+            check_point_path: assistant.lock().await.check_point_path.clone(),
+            executed_file: executed_file.clone(),
+            stop_mark: Arc::clone(&snapshot_stop_mark),
+            list_file_positon_map: Arc::clone(&offset_map),
+            file_for_notify: None,
+            task_stage: TaskStage::Increment,
+            interval: 3,
+        }));
+        let saver = Arc::clone(&stock_status_saver);
+        task::spawn(async move {
+            saver.lock().await.snapshot_to_file().await;
+        });
+        // drop(saver);
+
+        let mut exclude_regex_set: Option<RegexSet> = None;
+        let mut include_regex_set: Option<RegexSet> = None;
+
+        if let Some(vec_regex_str) = self.attributes.exclude.clone() {
+            let set = RegexSet::new(&vec_regex_str).unwrap();
+            exclude_regex_set = Some(set);
+        };
+
+        if let Some(vec_regex_str) = self.attributes.include.clone() {
+            let set = RegexSet::new(&vec_regex_str).unwrap();
+            include_regex_set = Some(set);
+        };
+        // loop {
+        while !snapshot_stop_mark.load(std::sync::atomic::Ordering::SeqCst)
+            && self
+                .attributes
+                .max_errors
+                .le(&err_counter.load(std::sync::atomic::Ordering::SeqCst))
+        {
+            let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
+                Ok(n) => n,
+                Err(e) => {
+                    log::error!("{}", e);
+                    return;
+                }
+            };
+            let obj_list = match self
+                .generate_execute_file(Some(timestampe), &executed_file.path)
+                .await
+            {
+                Ok(list) => list,
+                Err(e) => {
+                    log::error!("{}", e);
+                    err_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    continue;
+                }
+            };
+
+            let mut vec_keys: Vec<ListedRecord> = vec![];
+            let mut list_file_position = FilePosition::default();
+            let object_list_file = match File::open(&executed_file.path) {
+                Ok(f) => f,
+                Err(e) => {
+                    log::error!("{}", e);
+                    err_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    continue;
+                }
+            };
+            // 按列表传输object from source to target
+            let lines: io::Lines<io::BufReader<File>> =
+                io::BufReader::new(object_list_file).lines();
+            for line in lines {
+                // 若错误达到上限，则停止任务
+                if err_counter.load(std::sync::atomic::Ordering::SeqCst)
+                    >= self.attributes.max_errors
+                {
+                    break;
+                }
+                if let Result::Ok(key) = line {
+                    let len = key.bytes().len() + "\n".bytes().len();
+                    list_file_position.offset += len;
+                    list_file_position.line_num += 1;
+
+                    if !key.ends_with("/") {
+                        let record = ListedRecord {
+                            key,
+                            offset: list_file_position.offset,
+                            line_num: list_file_position.line_num,
+                        };
+                        match exclude_regex_set {
+                            Some(ref exclude) => {
+                                if exclude.is_match(&record.key) {
+                                    continue;
+                                }
+                            }
+                            None => {}
+                        }
+                        match include_regex_set {
+                            Some(ref set) => {
+                                if set.is_match(&record.key) {
+                                    vec_keys.push(record);
+                                }
+                            }
+                            None => {
+                                vec_keys.push(record);
+                            }
+                        }
+                    }
+                };
+
+                if vec_keys
+                    .len()
+                    .to_string()
+                    .eq(&self.attributes.bach_size.to_string())
+                {
+                    while execute_set.len() >= self.attributes.task_threads {
+                        execute_set.join_next().await;
+                    }
+                    let vk: Vec<ListedRecord> = vec_keys.clone();
+                    self.records_excutor(
+                        &mut execute_set,
+                        vk,
+                        Arc::clone(&err_counter),
+                        Arc::clone(&offset_map),
+                        executed_file.path.clone(),
+                    )
+                    .await;
+
+                    // 清理临时key vec
+                    vec_keys.clear();
+                }
+            }
+
+            // 处理集合中的剩余数据，若错误达到上限，则不执行后续操作
+            if vec_keys.len() > 0
+                && err_counter.load(std::sync::atomic::Ordering::SeqCst)
+                    < self.attributes.max_errors
+            {
+                while execute_set.len() >= self.attributes.task_threads {
+                    execute_set.join_next().await;
+                }
+
+                let vk = vec_keys.clone();
+                self.records_excutor(
+                    &mut execute_set,
+                    vk,
+                    Arc::clone(&err_counter),
+                    Arc::clone(&offset_map),
+                    executed_file.path.clone(),
+                )
+                .await;
+            }
+
+            while execute_set.len() > 0 {
+                execute_set.join_next().await;
+            }
+
+            executed_file = ExecutedFile {
+                path: gen_file_path(
+                    self.attributes.meta_dir.as_str(),
+                    OBJECT_LIST_FILE_PREFIX,
+                    now.as_secs().to_string().as_str(),
+                ),
+                size: 0,
+                total_lines: 0,
+            };
+            let mut lock = stock_status_saver.lock().await;
+            lock.set_executed_file(executed_file.clone());
+            drop(lock);
+        }
     }
 }
 

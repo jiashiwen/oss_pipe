@@ -29,8 +29,6 @@ impl TaskStatusSaver {
         let _ = checkpoint.save_to(&self.check_point_path);
 
         while !self.stop_mark.load(std::sync::atomic::Ordering::Relaxed) {
-            // let notify = self.file_for_notify.clone();
-
             let mut file_position = FilePosition {
                 offset: 0,
                 line_num: 0,
@@ -47,13 +45,6 @@ impl TaskStatusSaver {
             // log::warn!("execute checkpoint,file positon:{:?}", file_position);
             self.list_file_positon_map.shrink_to_fit();
             checkpoint.execute_file_position = file_position.clone();
-            // let mut checkpoint = CheckPoint {
-            //     execute_file: self.execute_file.clone(),
-            //     execute_file_position: file_position,
-            //     file_for_notify: notify,
-            //     task_stage: self.task_stage,
-            //     timestampe: 0,
-            // };
 
             if let Err(e) = checkpoint.save_to(&self.check_point_path) {
                 log::error!("{},{}", e, self.check_point_path);
@@ -62,5 +53,9 @@ impl TaskStatusSaver {
             tokio::time::sleep(tokio::time::Duration::from_secs(self.interval)).await;
             yield_now().await;
         }
+    }
+
+    pub fn set_executed_file(&mut self, exec_file: ExecutedFile) {
+        self.executed_file = exec_file;
     }
 }
