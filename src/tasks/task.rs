@@ -27,7 +27,9 @@ pub const CHECK_POINT_FILE_NAME: &'static str = "checkpoint.yml";
 pub const ERROR_RECORD_PREFIX: &'static str = "error_record_";
 pub const OFFSET_PREFIX: &'static str = "offset_";
 pub const COMPARE_OBJECT_DIFF_PREFIX: &'static str = "diff_object_";
-pub const NOTIFY_FILE_PREFIX: &'static str = "notify_file_";
+pub const NOTIFY_FILE_PREFIX: &'static str = "notify_";
+pub const REMOVED_PREFIX: &'static str = "removed_";
+pub const MODIFIED_PREFIX: &'static str = "modified_";
 
 /// 任务阶段，包括存量曾量全量
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
@@ -39,10 +41,7 @@ pub enum TaskStage {
 /// 任务类别，根据传输方式划分
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub enum TaskType {
-    // Download,
-    // Upload,
     Transfer,
-    // LocalToLocal,
     TruncateBucket,
 }
 
@@ -51,11 +50,7 @@ pub enum TaskType {
 #[serde(rename_all = "lowercase")]
 #[serde(tag = "type")]
 pub enum TaskDescription {
-    // Download(DownloadTask),
-    // Upload(UploadTask),
-    // Transfer(TaskTransfer),
     Transfer(TransferTask),
-    // LocalToLocal(TaskLocal2Local),
     OssCompare(TaskOssCompare),
     TruncateBucket(TaskTruncateBucket),
 }
@@ -443,7 +438,7 @@ impl TaskOssCompare {
                         }
                     };
                 let seek_offset =
-                    match TryInto::<u64>::try_into(checkpoint.execute_file_position.offset) {
+                    match TryInto::<u64>::try_into(checkpoint.executed_file_position.offset) {
                         Ok(it) => it,
                         Err(e) => {
                             log::error!("{}", e);
@@ -465,6 +460,7 @@ impl TaskOssCompare {
                 file_for_notify: None,
                 task_stage: TaskStage::Stock,
                 interval: 3,
+                current_stock_object_list_file: executed_file.path.clone(),
             };
             task::spawn(async move {
                 status_saver.snapshot_to_file().await;
@@ -558,14 +554,15 @@ impl TaskOssCompare {
             snapshot_stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
             // 记录checkpoint
             let mut checkpoint = CheckPoint {
-                execute_file: executed_file.clone(),
+                executed_file: executed_file.clone(),
                 file_for_notify: None,
                 task_stage: TaskStage::Stock,
-                execute_file_position: FilePosition {
+                executed_file_position: FilePosition {
                     offset: file_position,
                     line_num,
                 },
                 timestampe: 0,
+                current_stock_object_list_file: executed_file.path.clone(),
             };
             if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
                 log::error!("{}", e);

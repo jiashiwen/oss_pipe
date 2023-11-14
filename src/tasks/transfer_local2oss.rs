@@ -7,6 +7,7 @@ use super::TransferTaskAttributes;
 use super::NOTIFY_FILE_PREFIX;
 use super::OFFSET_PREFIX;
 use super::{gen_file_path, ERROR_RECORD_PREFIX};
+use crate::checkpoint::get_task_checkpoint;
 use crate::checkpoint::ExecutedFile;
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::commons::scan_folder_files_last_modify_greater_then_to_file;
@@ -225,6 +226,13 @@ impl TransferTaskActions for TransferLocal2Oss {
                 return;
             }
         };
+        let checkpoint = match get_task_checkpoint(&lock.check_point_path) {
+            Ok(c) => c,
+            Err(e) => {
+                log::error!("{}", e);
+                return;
+            }
+        };
         drop(lock);
 
         let mut offset = TryInto::<u64>::try_into(start_file_position.offset).unwrap();
@@ -242,6 +250,7 @@ impl TransferTaskActions for TransferLocal2Oss {
 
         let task_status_saver = TaskStatusSaver {
             check_point_path: assistant.lock().await.check_point_path.clone(),
+            current_stock_object_list_file: checkpoint.current_stock_object_list_file.clone(),
             executed_file,
             stop_mark: Arc::clone(&snapshot_stop_mark),
             list_file_positon_map: Arc::clone(&offset_map),
@@ -387,7 +396,7 @@ impl TransferLocal2Oss {
         modified_str: &str,
         list_file_path: &str,
         offset: usize,
-        line_num: usize,
+        line_num: u64,
     ) -> Result<RecordDescription> {
         let modified = from_str::<Modified>(modified_str)?;
         let mut target_path = modified.path.clone();
@@ -562,8 +571,6 @@ impl Local2OssExecuter {
             .await
     }
 
-    //Todo
-    // 重构
     pub async fn exec_record_descriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
         let subffix = records[0].list_file_position.offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();

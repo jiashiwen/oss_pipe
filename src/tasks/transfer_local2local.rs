@@ -3,7 +3,7 @@ use super::{
     gen_file_path, IncrementAssistant, LocalNotify, TaskStage, TaskStatusSaver,
     TransferTaskAttributes, ERROR_RECORD_PREFIX, NOTIFY_FILE_PREFIX, OFFSET_PREFIX,
 };
-use crate::checkpoint::{ExecutedFile, ListedRecord};
+use crate::checkpoint::{get_task_checkpoint, ExecutedFile, ListedRecord};
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::commons::{
     copy_file, scan_folder_files_last_modify_greater_then_to_file, scan_folder_files_to_file,
@@ -135,6 +135,13 @@ impl TransferTaskActions for TransferLocal2Local {
             Some(n) => n,
             None => return,
         };
+        let checkpoint = match get_task_checkpoint(&lock.check_point_path) {
+            Ok(c) => c,
+            Err(e) => {
+                log::error!("{}", e);
+                return;
+            }
+        };
         drop(lock);
 
         let executed_file = ExecutedFile {
@@ -159,6 +166,7 @@ impl TransferTaskActions for TransferLocal2Local {
             file_for_notify: Some(local_notify.notify_file_path.clone()),
             task_stage: TaskStage::Increment,
             interval: 3,
+            current_stock_object_list_file: checkpoint.current_stock_object_list_file.clone(),
         };
 
         task::spawn(async move {
@@ -292,7 +300,7 @@ impl TransferLocal2Local {
         modified_str: &str,
         list_file_path: &str,
         offset: usize,
-        line_num: usize,
+        line_num: u64,
     ) -> Result<RecordDescription> {
         let modified = from_str::<Modified>(modified_str)?;
         let mut target_path = modified.path.clone();

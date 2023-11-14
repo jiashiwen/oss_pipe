@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 pub struct ListedRecord {
     pub key: String,
     pub offset: usize,
-    pub line_num: usize,
+    pub line_num: u64,
 }
 
 impl FromStr for ListedRecord {
@@ -44,7 +44,7 @@ pub enum Opt {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FilePosition {
     pub offset: usize,
-    pub line_num: usize,
+    pub line_num: u64,
 }
 
 impl Default for FilePosition {
@@ -76,13 +76,11 @@ impl FromStr for RecordDescription {
 impl RecordDescription {
     pub fn handle_error(
         &self,
-        // e: Error,
         err_counter: &Arc<AtomicUsize>,
         offset_map: &Arc<DashMap<String, FilePosition>>,
         save_to: &mut File,
         file_position_key: &str,
     ) {
-        // log::error!("{}", e);
         offset_map.insert(
             file_position_key.to_string(),
             self.list_file_position.clone(),
@@ -91,6 +89,7 @@ impl RecordDescription {
         err_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let _ = self.save_json_to_file(save_to);
     }
+
     pub fn save_json_to_file(&self, file: &mut File) -> Result<()> {
         let mut json = serde_json::to_string(self)?;
         json.push_str("\n");

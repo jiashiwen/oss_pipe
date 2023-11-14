@@ -29,14 +29,13 @@ pub async fn exec_processbar(
 
     while !stop_mark.load(std::sync::atomic::Ordering::Relaxed) {
         tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-        let line_num: Option<usize> = status_map
+        let line_num = status_map
             .iter()
             .filter(|f| f.key().starts_with(key_prefix))
             .map(|m| m.line_num)
             .min();
         match line_num {
-            Some(size) => {
-                let current: u64 = size.try_into().unwrap();
+            Some(current) => {
                 let new = min(current, total);
                 pb.set_position(new);
             }
