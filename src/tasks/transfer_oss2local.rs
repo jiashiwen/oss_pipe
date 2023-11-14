@@ -18,6 +18,7 @@ use aws_sdk_s3::error::GetObjectErrorKind;
 use dashmap::DashMap;
 use regex::RegexSet;
 use serde::{Deserialize, Serialize};
+use serde_json::from_str;
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, BufRead, Write},
@@ -204,12 +205,14 @@ impl TransferTaskActions for TransferOss2Local {
 
         // 循环执行获取lastmodify 大于checkpoint指定的时间戳的对象
         let lock = assistant.lock().await;
-        let timestampe = match lock.last_modify_timestamp {
+        let mut timestampe = match lock.last_modify_timestamp {
             Some(t) => t,
             None => {
                 return;
             }
         };
+
+        let checkpoint_path = lock.check_point_path.clone();
 
         let mut checkpoint = match get_task_checkpoint(&lock.check_point_path) {
             Ok(c) => c,
@@ -219,39 +222,6 @@ impl TransferTaskActions for TransferOss2Local {
             }
         };
         drop(lock);
-
-        // let mut executed_file = ExecutedFile {
-        //     path: gen_file_path(
-        //         self.attributes.meta_dir.as_str(),
-        //         OBJECT_LIST_FILE_PREFIX,
-        //         timestampe.to_string().as_str(),
-        //     ),
-        //     size: 0,
-        //     total_lines: 0,
-        // };
-
-        // 启动checkpoint记录线程
-        // let stock_status_saver = Arc::new(Mutex::new(TaskStatusSaver {
-        //     check_point_path: assistant.lock().await.check_point_path.clone(),
-        //     executed_file: executed_file.clone(),
-        //     stop_mark: Arc::clone(&snapshot_stop_mark),
-        //     list_file_positon_map: Arc::clone(&offset_map),
-        //     file_for_notify: None,
-        //     task_stage: TaskStage::Increment,
-        //     interval: 3,
-        // }));
-
-        // 可能发生死锁
-        // let saver = Arc::clone(&stock_status_saver);
-        // task::spawn(async move {
-        //     saver.lock().await.snapshot_to_file().await;
-        // });
-        // drop(saver);
-
-        // 记录checkpoint，每完成一次循环，记录checkpoint，执行文件为新的 object list file
-        // let lock = assistant.lock().await;
-        // let check_point_path = lock.check_point_path.clone();
-        // drop(lock);
 
         let mut exclude_regex_set: Option<RegexSet> = None;
         let mut include_regex_set: Option<RegexSet> = None;
@@ -266,49 +236,21 @@ impl TransferTaskActions for TransferOss2Local {
             include_regex_set = Some(set);
         };
 
-        // println!(
-        //     "stop mark is {}",
-        //     snapshot_stop_mark.load(std::sync::atomic::Ordering::SeqCst)
-        // );
-        // println!(
-        //     "err_counter is {}",
-        //     err_counter.load(std::sync::atomic::Ordering::SeqCst)
-        // );
-
         while !snapshot_stop_mark.load(std::sync::atomic::Ordering::SeqCst)
             && self
                 .attributes
                 .max_errors
                 .ge(&err_counter.load(std::sync::atomic::Ordering::SeqCst))
         {
-            let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
-                Ok(n) => n,
-                Err(e) => {
-                    log::error!("{}", e);
-                    return;
-                }
-            };
-            let (modified_file, new_object_list_file) = self
-                .gen_modified_record_file(timestampe, &checkpoint.executed_file.path)
+            let (modified_file, new_object_list_file, exec_time) = self
+                .gen_modified_record_file(timestampe, &checkpoint.current_stock_object_list_file)
                 .await
                 .unwrap();
+            timestampe = exec_time;
 
-            let mut vec_keys: Vec<ListedRecord> = vec![];
+            let mut vec_keys = vec![];
             // 生成执行文件
             let mut list_file_position = FilePosition::default();
-
-            // let mut executed_file = match self
-            //     .generate_execute_file(Some(timestampe), &modified_file.path)
-            //     .await
-            // {
-            //     Ok(f) => f,
-            //     Err(e) => {
-            //         log::error!("{}", e);
-            //         err_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            //         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            //         continue;
-            //     }
-            // };
 
             let executed_file = match File::open(&modified_file.path) {
                 Ok(f) => f,
@@ -321,7 +263,6 @@ impl TransferTaskActions for TransferOss2Local {
 
             if executed_file.metadata().unwrap().len().eq(&0) {
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                continue;
             }
             // 按列表传输object from source to target
             let lines: io::Lines<io::BufReader<File>> = io::BufReader::new(executed_file).lines();
@@ -332,36 +273,37 @@ impl TransferTaskActions for TransferOss2Local {
                 {
                     break;
                 }
-                if let Result::Ok(key) = line {
-                    let len = key.bytes().len() + "\n".bytes().len();
+                if let Result::Ok(line_str) = line {
+                    let len = line_str.bytes().len() + "\n".bytes().len();
                     list_file_position.offset += len;
                     list_file_position.line_num += 1;
 
-                    if !key.ends_with("/") {
-                        let record = ListedRecord {
-                            key,
-                            offset: list_file_position.offset,
-                            line_num: list_file_position.line_num,
-                        };
-                        match exclude_regex_set {
-                            Some(ref exclude) => {
-                                if exclude.is_match(&record.key) {
-                                    continue;
-                                }
-                            }
-                            None => {}
+                    let record = match from_str::<RecordDescription>(&line_str) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            log::error!("{}", e);
+                            continue;
                         }
-                        match include_regex_set {
-                            Some(ref set) => {
-                                if set.is_match(&record.key) {
-                                    vec_keys.push(record);
-                                }
-                            }
-                            None => {
-                                vec_keys.push(record);
+                    };
+
+                    match exclude_regex_set {
+                        Some(ref exclude) => {
+                            if exclude.is_match(&record.source_key) {
+                                continue;
                             }
                         }
+                        None => {}
                     }
+                    match include_regex_set {
+                        Some(ref set) => {
+                            if set.is_match(&record.source_key) {
+                                vec_keys.push(record);
+                                continue;
+                            }
+                        }
+                        None => {}
+                    }
+                    vec_keys.push(record);
                 };
 
                 if vec_keys
@@ -372,8 +314,8 @@ impl TransferTaskActions for TransferOss2Local {
                     while execute_set.len() >= self.attributes.task_threads {
                         execute_set.join_next().await;
                     }
-                    let vk: Vec<ListedRecord> = vec_keys.clone();
-                    self.records_excutor(
+                    let vk = vec_keys.clone();
+                    self.record_discriptions_excutor(
                         &mut execute_set,
                         vk,
                         Arc::clone(&err_counter),
@@ -397,7 +339,7 @@ impl TransferTaskActions for TransferOss2Local {
                 }
 
                 let vk = vec_keys.clone();
-                self.records_excutor(
+                self.record_discriptions_excutor(
                     &mut execute_set,
                     vk,
                     Arc::clone(&err_counter),
@@ -412,22 +354,50 @@ impl TransferTaskActions for TransferOss2Local {
             }
 
             let _ = fs::remove_file(&modified_file.path);
+            let old_object_file = checkpoint.current_stock_object_list_file.clone();
+            // let _ = fs::remove_file(&checkpoint.current_stock_object_list_file);
             checkpoint.executed_file_position = FilePosition {
                 offset: modified_file.size.try_into().unwrap(),
                 line_num: modified_file.total_lines,
             };
             checkpoint.executed_file = modified_file;
             checkpoint.current_stock_object_list_file = new_object_list_file.path;
-
-            let lock = assistant.lock().await;
-            let _ = checkpoint.save_to(&lock.check_point_path);
-
-            drop(lock);
+            let _ = checkpoint.save_to(&checkpoint_path);
+            let _ = fs::remove_file(&old_object_file);
         }
     }
 }
 
 impl TransferOss2Local {
+    async fn record_discriptions_excutor(
+        &self,
+        joinset: &mut JoinSet<()>,
+        records: Vec<RecordDescription>,
+        err_counter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, FilePosition>>,
+        list_file: String,
+    ) {
+        let download = Oss2LocalListedRecordsExecutor {
+            target: self.target.clone(),
+            source: self.source.clone(),
+            err_counter,
+            offset_map,
+            meta_dir: self.attributes.meta_dir.clone(),
+            target_exist_skip: false,
+            large_file_size: self.attributes.large_file_size,
+            multi_part_chunk: self.attributes.multi_part_chunk,
+            list_file_path: list_file,
+        };
+
+        joinset.spawn(async move {
+            if let Err(e) = download.exec_record_descriptions(records).await {
+                download
+                    .err_counter
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                log::error!("{}", e);
+            };
+        });
+    }
     // 从object list 文件 查找已删除的文件并记录
     pub async fn removed_oss_objects_from_list(
         &self,
@@ -477,7 +447,7 @@ impl TransferOss2Local {
         &self,
         timestampe: i64,
         list_file_path: &str,
-    ) -> Result<(ExecutedFile, ExecutedFile)> {
+    ) -> Result<(ExecutedFile, ExecutedFile, i64)> {
         // let mut set = JoinSet::new();
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let new_object_list = gen_file_path(
@@ -543,7 +513,6 @@ impl TransferOss2Local {
             )
             .await?;
         let mut token = resp.next_token;
-
         if let Some(objects) = resp.object_list {
             objects.iter().for_each(|o| match o.key() {
                 Some(k) => {
@@ -608,6 +577,7 @@ impl TransferOss2Local {
                 });
 
                 modified_file.flush()?;
+                new_object_list_file.flush()?;
             }
             token = resp.next_token;
         }
@@ -625,9 +595,16 @@ impl TransferOss2Local {
             size: new_object_list_file_size,
             total_lines: new_list_total_lines,
         };
-        Ok((modified_executed_file, new_object_list_executed_file))
+        println!("{}", new_object_list_file_size);
+        let timestampe = now.as_secs().try_into()?;
+        Ok((
+            modified_executed_file,
+            new_object_list_executed_file,
+            timestampe,
+        ))
     }
 }
+
 #[derive(Debug, Clone)]
 pub struct Oss2LocalListedRecordsExecutor {
     pub source: OSSDescription,
