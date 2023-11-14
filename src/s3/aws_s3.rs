@@ -620,7 +620,7 @@ impl OssClient {
     }
 }
 
-pub async fn oss_download_to_file(
+pub async fn download_object_to_file(
     get_object: GetObjectOutput,
     file: &mut File,
     splite_size: usize,

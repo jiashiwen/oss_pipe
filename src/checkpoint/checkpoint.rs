@@ -31,10 +31,12 @@ impl Default for ExecutedFile {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckPoint {
+    //当前全量对象列表
+    pub current_stock_object_list_file: String,
     // 对象列表命名规则：OBJECT_LIST_FILE_PREFIX+秒级unix 时间戳 'objeclt_list_unixtimestampe'
-    pub execute_file: ExecutedFile,
+    pub executed_file: ExecutedFile,
     // 文件执行位置，既执行到的offset，用于断点续传
-    pub execute_file_position: FilePosition,
+    pub executed_file_position: FilePosition,
     pub file_for_notify: Option<String>,
     pub task_stage: TaskStage,
     // 记录 checkpoint 时点的时间戳
@@ -44,14 +46,15 @@ pub struct CheckPoint {
 impl Default for CheckPoint {
     fn default() -> Self {
         Self {
-            execute_file: Default::default(),
-            execute_file_position: FilePosition {
+            executed_file: Default::default(),
+            executed_file_position: FilePosition {
                 offset: 0,
                 line_num: 0,
             },
             file_for_notify: Default::default(),
             task_stage: TaskStage::Stock,
             timestampe: 0,
+            current_stock_object_list_file: "".to_string(),
         }
     }
 }
@@ -66,8 +69,8 @@ impl FromStr for CheckPoint {
 
 impl CheckPoint {
     pub fn seeked_execute_file(&self) -> Result<File> {
-        let mut file = File::open(&self.execute_file.path)?;
-        let seek_offset = TryInto::<u64>::try_into(self.execute_file_position.offset)?;
+        let mut file = File::open(&self.executed_file.path)?;
+        let seek_offset = TryInto::<u64>::try_into(self.executed_file_position.offset)?;
         file.seek(SeekFrom::Start(seek_offset))?;
         Ok(file)
     }
@@ -97,42 +100,6 @@ impl CheckPoint {
 // pub fn get_task_checkpoint(checkpoint_file: &str, meta_dir: &str) -> Result<CheckPoint> {
 pub fn get_task_checkpoint(checkpoint_file: &str) -> Result<CheckPoint> {
     let checkpoint = read_yaml_file::<CheckPoint>(checkpoint_file)?;
-
-    // 遍历offset 日志文件，选取每个文件中最大的offset，当offset 小于checkpoint中的offset，则取较小值
-    // for entry in WalkDir::new(meta_dir)
-    //     .into_iter()
-    //     .filter_map(Result::ok)
-    //     .filter(|e| !e.file_type().is_dir() && e.file_name().to_str().is_some())
-    // {
-    //     let file_name = entry.file_name().to_str().unwrap();
-
-    //     if !file_name.starts_with(OFFSET_PREFIX) {
-    //         continue;
-    //     };
-
-    //     if let Some(p) = entry.path().to_str() {
-    //         if let Ok(lines) = read_lines(p) {
-    //             let mut max_offset_in_the_file = 0;
-    //             for line in lines {
-    //                 if let Ok(content) = line {
-    //                     match content.parse::<usize>() {
-    //                         Ok(offset) => {
-    //                             if offset > max_offset_in_the_file {
-    //                                 max_offset_in_the_file = offset
-    //                             }
-    //                         }
-    //                         Err(_) => {
-    //                             continue;
-    //                         }
-    //                     };
-    //                 }
-    //             }
-    //             if max_offset_in_the_file < checkpoint.execute_file_position.offset {
-    //                 checkpoint.execute_file_position.offset = max_offset_in_the_file
-    //             }
-    //         };
-    //     };
-    // }
     Ok(checkpoint)
 }
 
@@ -182,15 +149,16 @@ mod test {
                     line_num,
                 };
                 let mut checkpoint = CheckPoint {
-                    execute_file: ExecutedFile {
+                    executed_file: ExecutedFile {
                         path: path.to_string(),
                         size: 0,
                         total_lines: 0,
                     },
-                    execute_file_position: file_position,
+                    executed_file_position: file_position,
                     file_for_notify: None,
                     task_stage: crate::tasks::TaskStage::Stock,
                     timestampe: u128::from(now.as_secs()),
+                    current_stock_object_list_file: path.to_string(),
                 };
 
                 let _ = checkpoint.save_to(save_path);

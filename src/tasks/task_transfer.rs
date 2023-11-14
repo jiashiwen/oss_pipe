@@ -198,7 +198,7 @@ impl TransferTask {
                         return;
                     }
                 };
-                executed_file = checkpoint.execute_file.clone();
+                executed_file = checkpoint.executed_file.clone();
 
                 // 增加清理notify file 逻辑
                 for entry in WalkDir::new(&self.attributes.meta_dir)
@@ -208,7 +208,6 @@ impl TransferTask {
                 {
                     if let Some(p) = entry.path().to_str() {
                         if p.contains(NOTIFY_FILE_PREFIX) {
-                            println!("{}", p);
                             let _ = fs::remove_file(p);
                         }
                     };
@@ -217,7 +216,7 @@ impl TransferTask {
                 match checkpoint.task_stage {
                     TaskStage::Stock => match checkpoint.seeked_execute_file() {
                         Ok(f) => {
-                            list_file_position = checkpoint.execute_file_position.clone();
+                            list_file_position = checkpoint.executed_file_position.clone();
                             list_file = Some(f);
                         }
                         Err(e) => {
@@ -227,7 +226,7 @@ impl TransferTask {
                         }
                     },
                     TaskStage::Increment => {
-                        // 清理文件重新生成object list 文件需大于指定时间戳
+                        // 清理文件重新生成object list 文件需大于指定时间戳,并根据原始object list 删除位于目标端但源端不存在的文件
                         let timestamp = TryInto::<i64>::try_into(checkpoint.timestampe).unwrap();
                         let _ = fs::remove_file(&executed_file.path);
                         match task
@@ -290,14 +289,17 @@ impl TransferTask {
                     }
                 });
 
-                while file_for_notify.is_none() {
-                    let lock = increment_assistant.lock().await;
-                    file_for_notify = match lock.get_notify_file_path() {
-                        Some(s) => Some(s),
-                        None => None,
-                    };
-                    drop(lock);
-                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                // 当源存储为本地时，获取notify文件
+                if let ObjectStorage::Local(_) = self.source {
+                    while file_for_notify.is_none() {
+                        let lock = increment_assistant.lock().await;
+                        file_for_notify = match lock.get_notify_file_path() {
+                            Some(s) => Some(s),
+                            None => None,
+                        };
+                        drop(lock);
+                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    }
                 }
             }
 
@@ -310,6 +312,7 @@ impl TransferTask {
                 file_for_notify,
                 task_stage: TaskStage::Stock,
                 interval: 3,
+                current_stock_object_list_file: executed_file.path.clone(),
             };
             sys_set.spawn(async move {
                 stock_status_saver.snapshot_to_file().await;
@@ -423,11 +426,12 @@ impl TransferTask {
 
             // 记录checkpoint
             let mut checkpoint: CheckPoint = CheckPoint {
-                execute_file: executed_file.clone(),
-                execute_file_position: list_file_position.clone(),
+                executed_file: executed_file.clone(),
+                executed_file_position: list_file_position.clone(),
                 file_for_notify: notify,
                 task_stage: TaskStage::Stock,
                 timestampe: 0,
+                current_stock_object_list_file: executed_file.path.clone(),
             };
             if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
                 log::error!("{}", e);

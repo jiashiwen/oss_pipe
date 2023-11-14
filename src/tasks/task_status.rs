@@ -6,6 +6,7 @@ use tokio::task::yield_now;
 
 pub struct TaskStatusSaver {
     pub check_point_path: String,
+    pub current_stock_object_list_file: String,
     pub executed_file: ExecutedFile,
     pub stop_mark: Arc<AtomicBool>,
     pub list_file_positon_map: Arc<DashMap<String, FilePosition>>,
@@ -17,14 +18,15 @@ pub struct TaskStatusSaver {
 impl TaskStatusSaver {
     pub async fn snapshot_to_file(&self) {
         let mut checkpoint = CheckPoint {
-            execute_file: self.executed_file.clone(),
-            execute_file_position: FilePosition {
+            executed_file: self.executed_file.clone(),
+            executed_file_position: FilePosition {
                 offset: 0,
                 line_num: 0,
             },
             file_for_notify: self.file_for_notify.clone(),
             task_stage: self.task_stage,
             timestampe: 0,
+            current_stock_object_list_file: self.current_stock_object_list_file.clone(),
         };
         let _ = checkpoint.save_to(&self.check_point_path);
 
@@ -44,7 +46,7 @@ impl TaskStatusSaver {
                 .min();
             // log::warn!("execute checkpoint,file positon:{:?}", file_position);
             self.list_file_positon_map.shrink_to_fit();
-            checkpoint.execute_file_position = file_position.clone();
+            checkpoint.executed_file_position = file_position.clone();
 
             if let Err(e) = checkpoint.save_to(&self.check_point_path) {
                 log::error!("{},{}", e, self.check_point_path);
