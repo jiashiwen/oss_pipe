@@ -3,11 +3,10 @@ use super::{
     gen_file_path, IncrementAssistant, LocalNotify, TaskStage, TaskStatusSaver,
     TransferTaskAttributes, ERROR_RECORD_PREFIX, NOTIFY_FILE_PREFIX, OFFSET_PREFIX,
 };
-use crate::checkpoint::{get_task_checkpoint, ExecutedFile, ListedRecord};
+use crate::checkpoint::{get_task_checkpoint, FileDescription, ListedRecord};
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::commons::{
-    copy_file, scan_folder_files_last_modify_greater_then_to_file, scan_folder_files_to_file,
-    Modified, ModifyType, NotifyWatcher, PathType,
+    copy_file, scan_folder_files_to_file, Modified, ModifyType, NotifyWatcher, PathType,
 };
 use anyhow::anyhow;
 use anyhow::Result;
@@ -74,18 +73,16 @@ impl TransferTaskActions for TransferLocal2Local {
         &self,
         last_modify_timestamp: Option<i64>,
         object_list_file: &str,
-    ) -> Result<ExecutedFile> {
-        match last_modify_timestamp {
+    ) -> Result<FileDescription> {
+        let t = match last_modify_timestamp {
             Some(t) => {
-                let timestamp = TryInto::<u64>::try_into(t)?;
-                scan_folder_files_last_modify_greater_then_to_file(
-                    self.source.as_str(),
-                    &object_list_file,
-                    timestamp,
-                )
+                let u = TryInto::<u64>::try_into(t)?;
+                Some(u)
             }
-            None => scan_folder_files_to_file(self.source.as_str(), &object_list_file),
-        }
+            None => None,
+        };
+
+        scan_folder_files_to_file(self.source.as_str(), &object_list_file, t)
     }
 
     async fn increment_prelude(&self, assistant: Arc<Mutex<IncrementAssistant>>) -> Result<()> {
@@ -128,7 +125,7 @@ impl TransferTaskActions for TransferLocal2Local {
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         snapshot_stop_mark: Arc<AtomicBool>,
-        start_file_position: FilePosition,
+        // start_file_position: FilePosition,
     ) {
         let lock = assistant.lock().await;
         let local_notify = match lock.local_notify.clone() {
@@ -144,14 +141,15 @@ impl TransferTaskActions for TransferLocal2Local {
         };
         drop(lock);
 
-        let executed_file = ExecutedFile {
+        let executed_file = FileDescription {
             path: local_notify.notify_file_path.clone(),
             size: 0,
             total_lines: 0,
         };
+        let file_position = FilePosition::default();
 
-        let mut offset = TryInto::<u64>::try_into(start_file_position.offset).unwrap();
-        let mut line_num = start_file_position.line_num;
+        let mut offset = TryInto::<u64>::try_into(file_position.offset).unwrap();
+        let mut line_num = file_position.line_num;
 
         let subffix = offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
@@ -160,13 +158,13 @@ impl TransferTaskActions for TransferLocal2Local {
         // 启动 checkpoint 记录器
         let task_status_saver = TaskStatusSaver {
             check_point_path: assistant.lock().await.check_point_path.clone(),
+            current_stock_object_list_file: checkpoint.current_stock_object_list_file.clone(),
             executed_file,
             stop_mark: Arc::clone(&snapshot_stop_mark),
             list_file_positon_map: Arc::clone(&offset_map),
             file_for_notify: Some(local_notify.notify_file_path.clone()),
             task_stage: TaskStage::Increment,
             interval: 3,
-            current_stock_object_list_file: checkpoint.current_stock_object_list_file.clone(),
         };
 
         task::spawn(async move {

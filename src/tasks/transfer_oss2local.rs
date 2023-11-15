@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     checkpoint::{
-        get_task_checkpoint, ExecutedFile, FilePosition, ListedRecord, Opt, RecordDescription,
+        get_task_checkpoint, FileDescription, FilePosition, ListedRecord, Opt, RecordDescription,
     },
     commons::{json_to_struct, read_lines},
     s3::{
@@ -121,7 +121,7 @@ impl TransferTaskActions for TransferOss2Local {
         &self,
         last_modify_timestamp: Option<i64>,
         object_list_file: &str,
-    ) -> Result<ExecutedFile> {
+    ) -> Result<FileDescription> {
         let client_source = self.source.gen_oss_client()?;
 
         // 若为持续同步模式，且 last_modify_timestamp 大于 0，则将 last_modify 属性大于last_modify_timestamp变量的对象加入执行列表
@@ -197,12 +197,7 @@ impl TransferTaskActions for TransferOss2Local {
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         snapshot_stop_mark: Arc<AtomicBool>,
-        start_file_position: FilePosition,
     ) {
-        // Todo
-        // 遍历objectlist 找出删除文件
-        // 通过lastmodify 时间戳找出新增及变更文件
-
         // 循环执行获取lastmodify 大于checkpoint指定的时间戳的对象
         let lock = assistant.lock().await;
         let mut timestampe = match lock.last_modify_timestamp {
@@ -211,9 +206,7 @@ impl TransferTaskActions for TransferOss2Local {
                 return;
             }
         };
-
         let checkpoint_path = lock.check_point_path.clone();
-
         let mut checkpoint = match get_task_checkpoint(&lock.check_point_path) {
             Ok(c) => c,
             Err(e) => {
@@ -236,6 +229,7 @@ impl TransferTaskActions for TransferOss2Local {
             include_regex_set = Some(set);
         };
 
+        let mut sleep_time = 5;
         while !snapshot_stop_mark.load(std::sync::atomic::Ordering::SeqCst)
             && self
                 .attributes
@@ -261,9 +255,17 @@ impl TransferTaskActions for TransferOss2Local {
                 }
             };
 
-            if executed_file.metadata().unwrap().len().eq(&0) {
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            if sleep_time.ge(&300) {
+                sleep_time = 5;
             }
+            if executed_file.metadata().unwrap().len().eq(&0) {
+                //递增等待时间
+                tokio::time::sleep(tokio::time::Duration::from_secs(sleep_time)).await;
+                sleep_time += 5;
+            } else {
+                sleep_time = 5;
+            }
+
             // 按列表传输object from source to target
             let lines: io::Lines<io::BufReader<File>> = io::BufReader::new(executed_file).lines();
             for line in lines {
@@ -271,7 +273,7 @@ impl TransferTaskActions for TransferOss2Local {
                 if err_counter.load(std::sync::atomic::Ordering::SeqCst)
                     >= self.attributes.max_errors
                 {
-                    break;
+                    return;
                 }
                 if let Result::Ok(line_str) = line {
                     let len = line_str.bytes().len() + "\n".bytes().len();
@@ -282,6 +284,7 @@ impl TransferTaskActions for TransferOss2Local {
                         Ok(r) => r,
                         Err(e) => {
                             log::error!("{}", e);
+                            err_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                             continue;
                         }
                     };
@@ -355,7 +358,7 @@ impl TransferTaskActions for TransferOss2Local {
 
             let _ = fs::remove_file(&modified_file.path);
             let old_object_file = checkpoint.current_stock_object_list_file.clone();
-            // let _ = fs::remove_file(&checkpoint.current_stock_object_list_file);
+
             checkpoint.executed_file_position = FilePosition {
                 offset: modified_file.size.try_into().unwrap(),
                 line_num: modified_file.total_lines,
@@ -398,48 +401,6 @@ impl TransferOss2Local {
             };
         });
     }
-    // 从object list 文件 查找已删除的文件并记录
-    pub async fn removed_oss_objects_from_list(
-        &self,
-        list_file_path: &str,
-        out_put_file_name: &str,
-    ) -> Result<()> {
-        let path = std::path::Path::new(out_put_file_name);
-        if let Some(p) = path.parent() {
-            std::fs::create_dir_all(p)?;
-        };
-        //写入文件
-        let mut out_put_file = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(out_put_file_name)?;
-
-        let oss_client = self.source.gen_oss_client()?;
-        let list_file = File::open(list_file_path)?;
-        let lines: io::Lines<io::BufReader<File>> = io::BufReader::new(list_file).lines();
-        let mut position = FilePosition::default();
-
-        for line in lines {
-            if let Result::Ok(key) = line {
-                let len = key.bytes().len() + "\n".bytes().len();
-                position.offset += len;
-                position.line_num += 1;
-                let target_key = gen_file_path(self.target.as_str(), &key, "");
-                if !oss_client.object_exists(&self.source.bucket, &key).await? {
-                    let record = RecordDescription {
-                        source_key: key,
-                        target_key,
-                        list_file_path: list_file_path.to_string(),
-                        list_file_position: position.clone(),
-                        option: Opt::REMOVE,
-                    };
-                    let _ = record.save_json_to_file(&mut out_put_file);
-                };
-            }
-        }
-        Ok(())
-    }
 
     // Todo 多线程改造
     // 遍历源找出last modify 大于指定时间戳的对象并记录，同时生成新的object list，下次以新的objec list 文件为基准计算删除和新增文件
@@ -447,7 +408,7 @@ impl TransferOss2Local {
         &self,
         timestampe: i64,
         list_file_path: &str,
-    ) -> Result<(ExecutedFile, ExecutedFile, i64)> {
+    ) -> Result<(FileDescription, FileDescription, i64)> {
         // let mut set = JoinSet::new();
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let new_object_list = gen_file_path(
@@ -539,6 +500,7 @@ impl TransferOss2Local {
             });
 
             modified_file.flush()?;
+            new_object_list_file.flush()?;
         }
 
         while token.is_some() {
@@ -584,13 +546,13 @@ impl TransferOss2Local {
 
         let new_object_list_file_size = new_object_list_file.metadata()?.len();
         let modified_file_size = modified_file.metadata()?.len();
-        let modified_executed_file = ExecutedFile {
+        let modified_executed_file = FileDescription {
             path: modified.clone(),
             size: modified_file_size,
             total_lines: modified_total_lines,
         };
 
-        let new_object_list_executed_file = ExecutedFile {
+        let new_object_list_executed_file = FileDescription {
             path: new_object_list.clone(),
             size: new_object_list_file_size,
             total_lines: new_list_total_lines,

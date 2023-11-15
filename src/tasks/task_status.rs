@@ -1,5 +1,5 @@
 use super::{TaskStage, OFFSET_PREFIX};
-use crate::checkpoint::{CheckPoint, ExecutedFile, FilePosition};
+use crate::checkpoint::{CheckPoint, FileDescription, FilePosition};
 use dashmap::DashMap;
 use std::sync::{atomic::AtomicBool, Arc};
 use tokio::task::yield_now;
@@ -7,7 +7,7 @@ use tokio::task::yield_now;
 pub struct TaskStatusSaver {
     pub check_point_path: String,
     pub current_stock_object_list_file: String,
-    pub executed_file: ExecutedFile,
+    pub executed_file: FileDescription,
     pub stop_mark: Arc<AtomicBool>,
     pub list_file_positon_map: Arc<DashMap<String, FilePosition>>,
     pub file_for_notify: Option<String>,
@@ -44,7 +44,7 @@ impl TaskStatusSaver {
                     m.offset
                 })
                 .min();
-            // log::warn!("execute checkpoint,file positon:{:?}", file_position);
+
             self.list_file_positon_map.shrink_to_fit();
             checkpoint.executed_file_position = file_position.clone();
 
@@ -57,7 +57,7 @@ impl TaskStatusSaver {
         }
     }
 
-    pub fn set_executed_file(&mut self, exec_file: ExecutedFile) {
+    pub fn set_executed_file(&mut self, exec_file: FileDescription) {
         self.executed_file = exec_file;
     }
 }

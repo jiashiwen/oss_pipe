@@ -8,13 +8,10 @@ use super::NOTIFY_FILE_PREFIX;
 use super::OFFSET_PREFIX;
 use super::{gen_file_path, ERROR_RECORD_PREFIX};
 use crate::checkpoint::get_task_checkpoint;
-use crate::checkpoint::ExecutedFile;
+use crate::checkpoint::FileDescription;
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
-use crate::commons::scan_folder_files_last_modify_greater_then_to_file;
-use crate::commons::{
-    json_to_struct, read_lines, scan_folder_files_to_file, Modified, ModifyType, NotifyWatcher,
-    PathType,
-};
+use crate::commons::scan_folder_files_to_file;
+use crate::commons::{json_to_struct, read_lines, Modified, ModifyType, NotifyWatcher, PathType};
 use crate::s3::aws_s3::OssClient;
 use crate::{checkpoint::ListedRecord, s3::OSSDescription};
 use anyhow::anyhow;
@@ -162,19 +159,17 @@ impl TransferTaskActions for TransferLocal2Oss {
         &self,
         last_modify_timestamp: Option<i64>,
         object_list_file: &str,
-    ) -> Result<ExecutedFile> {
+    ) -> Result<FileDescription> {
         // 遍历目录并生成文件列表
-        match last_modify_timestamp {
+        let t = match last_modify_timestamp {
             Some(t) => {
-                let timestamp = TryInto::<u64>::try_into(t)?;
-                scan_folder_files_last_modify_greater_then_to_file(
-                    self.source.as_str(),
-                    &object_list_file,
-                    timestamp,
-                )
+                let timestampe = TryInto::<u64>::try_into(t)?;
+                Some(timestampe)
             }
-            None => scan_folder_files_to_file(self.source.as_str(), &object_list_file),
-        }
+            None => None,
+        };
+
+        scan_folder_files_to_file(self.source.as_str(), &object_list_file, t)
     }
 
     async fn increment_prelude(&self, assistant: Arc<Mutex<IncrementAssistant>>) -> Result<()> {
@@ -217,7 +212,7 @@ impl TransferTaskActions for TransferLocal2Oss {
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         snapshot_stop_mark: Arc<AtomicBool>,
-        start_file_position: FilePosition,
+        // start_file_position: FilePosition,
     ) {
         let lock = assistant.lock().await;
         let local_notify = match lock.local_notify.clone() {
@@ -235,14 +230,14 @@ impl TransferTaskActions for TransferLocal2Oss {
         };
         drop(lock);
 
-        let mut offset = TryInto::<u64>::try_into(start_file_position.offset).unwrap();
-        let mut line_num = start_file_position.line_num;
+        let mut offset = 0;
+        let mut line_num = 0;
 
         let subffix = offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
 
-        let executed_file = ExecutedFile {
+        let executed_file = FileDescription {
             path: local_notify.notify_file_path.clone(),
             size: 0,
             total_lines: 0,

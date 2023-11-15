@@ -2,7 +2,7 @@ use super::{
     task_actions::TransferTaskActions, IncrementAssistant, TransferLocal2Local, TransferLocal2Oss,
     TransferOss2Local, TransferOss2Oss, TransferTaskAttributes,
 };
-use crate::{checkpoint::ExecutedFile, s3::OSSDescription, tasks::NOTIFY_FILE_PREFIX};
+use crate::{checkpoint::FileDescription, s3::OSSDescription, tasks::NOTIFY_FILE_PREFIX};
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
@@ -119,7 +119,7 @@ impl TransferTask {
         let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
 
-        let mut executed_file = ExecutedFile {
+        let mut executed_file = FileDescription {
             path: gen_file_path(
                 self.attributes.meta_dir.as_str(),
                 OBJECT_LIST_FILE_PREFIX,
@@ -454,10 +454,6 @@ impl TransferTask {
                         Arc::clone(&err_counter),
                         Arc::clone(&offset_map),
                         Arc::clone(&stop_mark),
-                        FilePosition {
-                            offset: 0,
-                            line_num: 0,
-                        },
                     )
                     .await;
                 // 配置停止 offset save 标识为 true

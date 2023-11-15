@@ -12,7 +12,7 @@ use std::{
 };
 use tokio::io::AsyncReadExt;
 
-use crate::checkpoint::ExecutedFile;
+use crate::checkpoint::FileDescription;
 
 #[derive(Debug, Clone)]
 pub struct OssClient {
@@ -34,7 +34,7 @@ impl OssClient {
         prefix: Option<String>,
         batch: i32,
         file_path: &str,
-    ) -> Result<ExecutedFile> {
+    ) -> Result<FileDescription> {
         let mut total_lines = 0;
         let resp = self
             .list_objects(bucket.clone(), prefix.clone(), batch, None)
@@ -88,7 +88,7 @@ impl OssClient {
             token = resp.next_token;
         }
         let size = file.metadata()?.len();
-        let exec_file = ExecutedFile {
+        let exec_file = FileDescription {
             path: file_path.to_string(),
             size,
             total_lines,
@@ -107,7 +107,7 @@ impl OssClient {
         batch: i32,
         file_path: &str,
         greater: i64,
-    ) -> Result<ExecutedFile> {
+    ) -> Result<FileDescription> {
         let mut total_lines = 0;
         let path = std::path::Path::new(file_path);
         if let Some(p) = path.parent() {
@@ -172,7 +172,7 @@ impl OssClient {
             token = resp.next_token;
         }
         let size = file.metadata()?.len();
-        let execute_file = ExecutedFile {
+        let execute_file = FileDescription {
             path: file_path.to_string(),
             size,
             total_lines,

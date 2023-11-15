@@ -1,6 +1,6 @@
 use super::{osscompare::OssCompare, TaskStatusSaver, TransferTask};
 use crate::{
-    checkpoint::{get_task_checkpoint, CheckPoint, ExecutedFile, FilePosition, ListedRecord},
+    checkpoint::{get_task_checkpoint, CheckPoint, FileDescription, FilePosition, ListedRecord},
     s3::OSSDescription,
 };
 use anyhow::{anyhow, Result};
@@ -368,7 +368,7 @@ impl TaskOssCompare {
         let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
 
         // let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_PREFIX, "");
-        let mut executed_file = ExecutedFile {
+        let mut executed_file = FileDescription {
             path: gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_PREFIX, ""),
             size: 0,
             total_lines: 0,

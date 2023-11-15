@@ -13,13 +13,13 @@ use std::{
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ExecutedFile {
+pub struct FileDescription {
     pub path: String,
     pub size: u64,
     pub total_lines: u64,
 }
 
-impl Default for ExecutedFile {
+impl Default for FileDescription {
     fn default() -> Self {
         Self {
             path: "".to_string(),
@@ -34,7 +34,7 @@ pub struct CheckPoint {
     //当前全量对象列表
     pub current_stock_object_list_file: String,
     // 对象列表命名规则：OBJECT_LIST_FILE_PREFIX+秒级unix 时间戳 'objeclt_list_unixtimestampe'
-    pub executed_file: ExecutedFile,
+    pub executed_file: FileDescription,
     // 文件执行位置，既执行到的offset，用于断点续传
     pub executed_file_position: FilePosition,
     pub file_for_notify: Option<String>,
@@ -116,9 +116,10 @@ mod test {
 
     use crate::checkpoint::checkpoint::get_task_checkpoint;
     use crate::checkpoint::checkpoint::CheckPoint;
-    use crate::checkpoint::checkpoint::ExecutedFile;
+    use crate::checkpoint::checkpoint::FileDescription;
     use crate::checkpoint::FilePosition;
     use crate::commons::scan_folder_files_to_file;
+
     //cargo test checkpoint::checkpoint::test::test_get_task_checkpoint -- --nocapture
     #[test]
     fn test_get_task_checkpoint() {
@@ -132,7 +133,7 @@ mod test {
     fn test_checkpoint() {
         let path = "/tmp/jddownload/objlist";
         let _ = fs::remove_file(path);
-        scan_folder_files_to_file("/tmp", path).unwrap();
+        scan_folder_files_to_file("/tmp", path, None).unwrap();
         let mut f = File::open(path).unwrap();
 
         let mut positon = 0;
@@ -149,7 +150,7 @@ mod test {
                     line_num,
                 };
                 let mut checkpoint = CheckPoint {
-                    executed_file: ExecutedFile {
+                    executed_file: FileDescription {
                         path: path.to_string(),
                         size: 0,
                         total_lines: 0,
