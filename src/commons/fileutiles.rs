@@ -1,4 +1,4 @@
-use crate::checkpoint::ExecutedFile;
+use crate::checkpoint::FileDescription;
 
 use super::rand_util::rand_string;
 use anyhow::Result;
@@ -6,7 +6,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, BufRead, LineWriter, Read, Write},
     path::Path,
-    time::{Duration, UNIX_EPOCH},
+    time::UNIX_EPOCH,
 };
 use walkdir::WalkDir;
 
@@ -91,56 +91,11 @@ fn remove_dir_contents<P: AsRef<Path>>(path: P) -> io::Result<()> {
     Ok(())
 }
 
-pub fn scan_folder_files_to_file(folder: &str, file_name: &str) -> Result<ExecutedFile> {
-    let mut total_lines = 0;
-    let path = std::path::Path::new(file_name);
-    if let Some(p) = path.parent() {
-        std::fs::create_dir_all(p)?;
-    };
-    //写入文件
-    let file = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .append(true)
-        .open(file_name)?;
-    let mut line_writer = LineWriter::new(&file);
-
-    // 遍历目录并将文件路径写入文件
-    for entry in WalkDir::new(folder)
-        .into_iter()
-        .filter_map(Result::ok)
-        .filter(|e| !e.file_type().is_dir())
-    {
-        if let Some(p) = entry.path().to_str() {
-            if p.eq(folder) {
-                continue;
-            }
-
-            let key = match folder.ends_with("/") {
-                true => &p[folder.len()..],
-                false => &p[folder.len() + 1..],
-            };
-
-            let _ = line_writer.write_all(key.as_bytes());
-            let _ = line_writer.write_all("\n".as_bytes());
-            total_lines += 1;
-        };
-        line_writer.flush()?;
-    }
-    let size = file.metadata()?.len();
-    let executed_file = ExecutedFile {
-        path: file_name.to_string(),
-        size,
-        total_lines,
-    };
-    Ok(executed_file)
-}
-
-pub fn scan_folder_files_last_modify_greater_then_to_file(
+pub fn scan_folder_files_to_file(
     folder: &str,
     file_name: &str,
-    timestamp: u64,
-) -> Result<ExecutedFile> {
+    greater_timestampe: Option<u64>,
+) -> Result<FileDescription> {
     let mut total_lines = 0;
     let path = std::path::Path::new(file_name);
     if let Some(p) = path.parent() {
@@ -160,16 +115,20 @@ pub fn scan_folder_files_last_modify_greater_then_to_file(
         .filter_map(Result::ok)
         .filter(|e| !e.file_type().is_dir())
     {
-        let time = entry.metadata()?.modified()?;
-        let d = UNIX_EPOCH + Duration::from_secs(timestamp);
-
         if let Some(p) = entry.path().to_str() {
             if p.eq(folder) {
                 continue;
             }
 
-            if time.lt(&d) {
-                continue;
+            if let Some(t) = greater_timestampe {
+                let modified_time = entry
+                    .metadata()?
+                    .modified()?
+                    .duration_since(UNIX_EPOCH)?
+                    .as_secs();
+                if modified_time.lt(&t) {
+                    continue;
+                }
             }
 
             let key = match folder.ends_with("/") {
@@ -184,7 +143,7 @@ pub fn scan_folder_files_last_modify_greater_then_to_file(
         line_writer.flush()?;
     }
     let size = file.metadata()?.len();
-    let executed_file = ExecutedFile {
+    let executed_file = FileDescription {
         path: file_name.to_string(),
         size,
         total_lines,
@@ -222,6 +181,27 @@ pub fn generate_file(file_size: usize, batch: usize, file_name: &str) -> Result<
 
     file.flush()?;
 
+    Ok(())
+}
+
+pub fn merge_file<P: AsRef<Path>>(file: P, merge_to: P, chunk_size: usize) -> Result<()> {
+    let mut f = OpenOptions::new().read(true).open(file)?;
+    let mut merge_to = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .write(true)
+        .open(merge_to)?;
+
+    loop {
+        let mut buffer = vec![0; chunk_size];
+        let read_count = f.read(&mut buffer)?;
+        let buf = &buffer[..read_count];
+        merge_to.write_all(&buf)?;
+        if read_count != chunk_size {
+            break;
+        }
+    }
+    merge_to.flush()?;
     Ok(())
 }
 
@@ -313,8 +293,7 @@ pub fn generate_files(
 #[cfg(test)]
 mod test {
     use crate::commons::{
-        fileutiles::{generate_file, scan_folder_files_to_file},
-        multi_parts_copy_file, scan_folder_files_last_modify_greater_then_to_file,
+        fileutiles::generate_file, multi_parts_copy_file, scan_folder_files_to_file,
     };
 
     use super::generate_line_file;
@@ -333,13 +312,6 @@ mod test {
         // println!("test scan result {:?}", r);
     }
 
-    //cargo test commons::fileutiles::test::test_scan_folder_files_to_file -- --nocapture
-    #[test]
-    fn test_scan_folder_files_to_file() {
-        let r = scan_folder_files_to_file("/tmp/", "/tmp/test_scan");
-        println!("test scan result {:?}", r);
-    }
-
     //cargo test commons::fileutiles::test::test_multi_parts_copy_file -- --nocapture
     #[test]
     fn test_multi_parts_copy_file() {
@@ -350,11 +322,7 @@ mod test {
     //cargo test commons::fileutiles::test::test_scan_folder_files_last_modify_greater_then_to_file -- --nocapture
     #[test]
     fn test_scan_folder_files_last_modify_greater_then_to_file() {
-        let r = scan_folder_files_last_modify_greater_then_to_file(
-            "/tmp/",
-            "/tmp/lastmodify",
-            1697423669,
-        );
+        let r = scan_folder_files_to_file("/tmp/", "/tmp/lastmodify", 1697423669);
         println!("test older_files_last_modify_greater_then_to_file {:?}", r);
     }
 }
