@@ -7,6 +7,7 @@ use crate::checkpoint::{get_task_checkpoint, FileDescription, ListedRecord};
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::commons::{
     copy_file, scan_folder_files_to_file, Modified, ModifyType, NotifyWatcher, PathType,
+    RegexFilter,
 };
 use anyhow::anyhow;
 use anyhow::Result;
@@ -174,6 +175,15 @@ impl TransferTaskActions for TransferLocal2Local {
         let error_file_name =
             gen_file_path(&self.attributes.meta_dir, ERROR_RECORD_PREFIX, &subffix);
 
+        let regex_filter =
+            match RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include) {
+                Ok(r) => r,
+                Err(e) => {
+                    log::error!("{}", e);
+                    return;
+                }
+            };
+
         loop {
             if local_notify
                 .notify_file_size
@@ -220,34 +230,36 @@ impl TransferTaskActions for TransferLocal2Local {
                 if let Result::Ok(key) = line {
                     // Modifed 解析
                     offset_usize += key.len();
-                    match self
-                        .modified_str_to_record_description(
-                            &key,
-                            &local_notify.notify_file_path,
-                            offset_usize,
-                            line_num,
-                        )
-                        .await
-                    {
-                        Ok(r) => records.push(r),
-                        Err(e) => {
-                            let r = RecordDescription {
-                                source_key: "".to_string(),
-                                target_key: "".to_string(),
-                                list_file_path: local_notify.notify_file_path.clone(),
-                                list_file_position: FilePosition {
-                                    offset: offset_usize,
-                                    line_num,
-                                },
-                                option: Opt::UNKOWN,
-                            };
-                            r.handle_error(
-                                &err_counter,
-                                &offset_map,
-                                &mut error_file,
-                                offset_key.as_str(),
-                            );
-                            log::error!("{}", e);
+                    if regex_filter.filter(&key) {
+                        match self
+                            .modified_str_to_record_description(
+                                &key,
+                                &local_notify.notify_file_path,
+                                offset_usize,
+                                line_num,
+                            )
+                            .await
+                        {
+                            Ok(r) => records.push(r),
+                            Err(e) => {
+                                let r = RecordDescription {
+                                    source_key: "".to_string(),
+                                    target_key: "".to_string(),
+                                    list_file_path: local_notify.notify_file_path.clone(),
+                                    list_file_position: FilePosition {
+                                        offset: offset_usize,
+                                        line_num,
+                                    },
+                                    option: Opt::UNKOWN,
+                                };
+                                r.handle_error(
+                                    &err_counter,
+                                    &offset_map,
+                                    &mut error_file,
+                                    offset_key.as_str(),
+                                );
+                                log::error!("{}", e);
+                            }
                         }
                     }
                 }

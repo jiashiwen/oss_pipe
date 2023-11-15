@@ -18,15 +18,15 @@ impl Default for RegexFilter {
 
 impl RegexFilter {
     pub fn from_vec(
-        exclude_regex: Option<Vec<String>>,
-        include_regex: Option<Vec<String>>,
+        exclude_regex: &Option<Vec<String>>,
+        include_regex: &Option<Vec<String>>,
     ) -> Result<Self> {
         let exclude_regex = match exclude_regex {
-            Some(v) => Some(RegexSet::new(&v)?),
+            Some(v) => Some(RegexSet::new(v)?),
             None => None,
         };
         let include_regex = match include_regex {
-            Some(v) => Some(RegexSet::new(&v)?),
+            Some(v) => Some(RegexSet::new(v)?),
             None => None,
         };
 
@@ -49,15 +49,15 @@ impl RegexFilter {
         self.include_regex = Some(reg_set);
     }
 
-    pub fn filter(self, content: &str) -> bool {
-        match self.exclude_regex {
+    pub fn filter(&self, content: &str) -> bool {
+        match self.exclude_regex.clone() {
             Some(e) => {
                 return !e.is_match(content);
             }
             None => {}
         }
 
-        match self.include_regex {
+        match self.include_regex.clone() {
             Some(i) => return i.is_match(content),
             None => {}
         }
