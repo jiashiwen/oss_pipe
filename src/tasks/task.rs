@@ -60,7 +60,6 @@ pub enum TaskDescription {
 impl TaskDescription {
     pub fn exec_multi_threads(&self) -> Result<()> {
         match self {
-            // TaskDescription::Transfer(transfer) => execute_transfer_task(transfer.clone()),
             TaskDescription::Transfer(transfer) => transfer.execute(),
             TaskDescription::TruncateBucket(truncate) => truncate.exec_multi_threads(),
             TaskDescription::OssCompare(oss_compare) => oss_compare.exec_multi_threads(),
