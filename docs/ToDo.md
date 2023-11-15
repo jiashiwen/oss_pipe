@@ -65,6 +65,7 @@
     - [ ] 任务相关状态字段定义，任务checkpoint，任务错误数，任务offset map，停止标识
   - [ ] 为便于扩展，新增objectstorage enum，用来区分不同数据源
   - [x] 解决modify create modify重复问题
+  - [ ] 增量逻辑新增正则过滤
 
 ## 校验项
 

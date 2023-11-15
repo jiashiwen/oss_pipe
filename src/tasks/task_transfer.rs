@@ -2,7 +2,10 @@ use super::{
     task_actions::TransferTaskActions, IncrementAssistant, TransferLocal2Local, TransferLocal2Oss,
     TransferOss2Local, TransferOss2Oss, TransferTaskAttributes,
 };
-use crate::{checkpoint::FileDescription, s3::OSSDescription, tasks::NOTIFY_FILE_PREFIX};
+use crate::{
+    checkpoint::FileDescription, commons::RegexFilter, s3::OSSDescription,
+    tasks::NOTIFY_FILE_PREFIX,
+};
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
@@ -136,18 +139,17 @@ impl TransferTask {
         assistant.check_point_path = check_point_file.clone();
         let increment_assistant = Arc::new(Mutex::new(assistant));
 
-        let mut exclude_regex_set: Option<RegexSet> = None;
-        let mut include_regex_set: Option<RegexSet> = None;
+        let regex_filter =
+            RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include)?;
 
-        if let Some(vec_regex_str) = self.attributes.exclude.clone() {
-            let set = RegexSet::new(&vec_regex_str)?;
-            exclude_regex_set = Some(set);
-        };
-
-        if let Some(vec_regex_str) = self.attributes.include.clone() {
-            let set = RegexSet::new(&vec_regex_str)?;
-            include_regex_set = Some(set);
-        };
+        // let exclude_regex_set: Option<RegexSet> = match self.attributes.exclude.clone() {
+        //     Some(v) => Some(RegexSet::new(&v)?),
+        //     None => None,
+        // };
+        // let include_regex_set: Option<RegexSet> = match self.attributes.include.clone() {
+        //     Some(v) => Some(RegexSet::new(&v)?),
+        //     None => None,
+        // };
 
         let mut list_file = None;
         let mut list_file_position = FilePosition::default();
@@ -349,23 +351,9 @@ impl TransferTask {
                             offset: list_file_position.offset,
                             line_num: list_file_position.line_num,
                         };
-                        match exclude_regex_set {
-                            Some(ref exclude) => {
-                                if exclude.is_match(&record.key) {
-                                    continue;
-                                }
-                            }
-                            None => {}
-                        }
-                        match include_regex_set {
-                            Some(ref set) => {
-                                if set.is_match(&record.key) {
-                                    vec_keys.push(record);
-                                }
-                            }
-                            None => {
-                                vec_keys.push(record);
-                            }
+
+                        if regex_filter.filter(&record.key) {
+                            vec_keys.push(record);
                         }
                     }
                 };
