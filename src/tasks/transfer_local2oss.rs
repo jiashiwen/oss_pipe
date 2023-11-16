@@ -10,7 +10,6 @@ use super::{gen_file_path, ERROR_RECORD_PREFIX};
 use crate::checkpoint::get_task_checkpoint;
 use crate::checkpoint::FileDescription;
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
-use crate::commons::promote_processbar;
 use crate::commons::scan_folder_files_to_file;
 use crate::commons::RegexFilter;
 use crate::commons::{json_to_struct, read_lines, Modified, ModifyType, NotifyWatcher, PathType};
@@ -19,7 +18,6 @@ use crate::{checkpoint::ListedRecord, s3::OSSDescription};
 use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
-
 use dashmap::DashMap;
 use serde::Deserialize;
 use serde::Serialize;

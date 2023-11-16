@@ -16,7 +16,6 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use aws_sdk_s3::error::GetObjectErrorKind;
 use dashmap::DashMap;
-use regex::RegexSet;
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
 use std::{
