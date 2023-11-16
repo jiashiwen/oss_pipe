@@ -3,7 +3,9 @@ use super::{
     TransferOss2Local, TransferOss2Oss, TransferTaskAttributes,
 };
 use crate::{
-    checkpoint::FileDescription, commons::RegexFilter, s3::OSSDescription,
+    checkpoint::FileDescription,
+    commons::{promote_processbar, RegexFilter},
+    s3::OSSDescription,
     tasks::NOTIFY_FILE_PREFIX,
 };
 use serde::{Deserialize, Serialize};
@@ -15,7 +17,7 @@ use super::{
 };
 use crate::{
     checkpoint::{get_task_checkpoint, CheckPoint, FilePosition, ListedRecord},
-    commons::exec_processbar,
+    commons::quantify_processbar,
 };
 use anyhow::{anyhow, Result};
 use dashmap::DashMap;
@@ -142,15 +144,6 @@ impl TransferTask {
         let regex_filter =
             RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include)?;
 
-        // let exclude_regex_set: Option<RegexSet> = match self.attributes.exclude.clone() {
-        //     Some(v) => Some(RegexSet::new(&v)?),
-        //     None => None,
-        // };
-        // let include_regex_set: Option<RegexSet> = match self.attributes.include.clone() {
-        //     Some(v) => Some(RegexSet::new(&v)?),
-        //     None => None,
-        // };
-
         let mut list_file = None;
         let mut list_file_position = FilePosition::default();
 
@@ -160,25 +153,7 @@ impl TransferTask {
             .max_io_events_per_tick(self.attributes.task_threads)
             .build()?;
 
-        // 生成object list 文件
-        let pd_gen_object_list = ProgressBar::new_spinner();
-        pd_gen_object_list.enable_steady_tick(Duration::from_millis(120));
-        pd_gen_object_list.set_style(
-            ProgressStyle::with_template("{spinner:.green} {msg}")
-                .unwrap()
-                .tick_strings(&[
-                    "▰▱▱▱▱▱▱",
-                    "▰▰▱▱▱▱▱",
-                    "▰▰▰▱▱▱▱",
-                    "▰▰▰▰▱▱▱",
-                    "▰▰▰▰▰▱▱",
-                    "▰▰▰▰▰▰▱",
-                    "▰▰▰▰▰▰▰",
-                    "▰▱▱▱▱▱▱",
-                ]),
-        );
-        pd_gen_object_list.set_message("Generating object list ...");
-
+        let pd = promote_processbar("Generating object list ...");
         rt.block_on(async {
             if self.attributes.start_from_checkpoint {
                 // 执行error retry
@@ -267,7 +242,7 @@ impl TransferTask {
             return Err(anyhow!("get object list error"));
         }
 
-        pd_gen_object_list.finish_with_message("object list generated");
+        pd.finish_with_message("object list generated");
 
         // sys_set 用于执行checkpoint、notify等辅助任务
         let mut sys_set = JoinSet::new();
@@ -326,7 +301,7 @@ impl TransferTask {
             let total = executed_file.total_lines;
             sys_set.spawn(async move {
                 // Todo 调整进度条
-                exec_processbar(total, stop_mark, map, OFFSET_PREFIX).await;
+                quantify_processbar(total, stop_mark, map, OFFSET_PREFIX).await;
             });
             let task_stock = self.gen_transfer_actions();
             let mut vec_keys: Vec<ListedRecord> = vec![];
@@ -428,13 +403,17 @@ impl TransferTask {
             while sys_set.len() > 0 {
                 sys_set.join_next().await;
             }
+        });
 
-            // 增量逻辑
-            if self.attributes.continuous {
+        // 增量逻辑
+        if self.attributes.continuous {
+            rt.block_on(async {
+                // let pd = promote_processbar("Executing increment ...");
+
                 let stop_mark = Arc::new(AtomicBool::new(false));
                 let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
-
                 let task_increment = self.gen_transfer_actions();
+
                 let _ = task_increment
                     .execute_increment(
                         &mut execut_set,
@@ -446,8 +425,9 @@ impl TransferTask {
                     .await;
                 // 配置停止 offset save 标识为 true
                 snapshot_stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
-            }
-        });
+                // pd.finish_with_message("Execut increment down");
+            });
+        }
 
         Ok(())
     }

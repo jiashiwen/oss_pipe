@@ -216,18 +216,6 @@ impl TransferTaskActions for TransferOss2Local {
         };
         drop(lock);
 
-        // let mut exclude_regex_set: Option<RegexSet> = None;
-        // let mut include_regex_set: Option<RegexSet> = None;
-
-        // if let Some(vec_regex_str) = self.attributes.exclude.clone() {
-        //     let set = RegexSet::new(&vec_regex_str).unwrap();
-        //     exclude_regex_set = Some(set);
-        // };
-
-        // if let Some(vec_regex_str) = self.attributes.include.clone() {
-        //     let set = RegexSet::new(&vec_regex_str).unwrap();
-        //     include_regex_set = Some(set);
-        // };
         let regex_filter =
             match RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include) {
                 Ok(r) => r,

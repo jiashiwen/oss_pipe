@@ -6,7 +6,7 @@ use crate::{
     checkpoint::{
         get_task_checkpoint, FileDescription, FilePosition, ListedRecord, Opt, RecordDescription,
     },
-    commons::{json_to_struct, read_lines, RegexFilter},
+    commons::{json_to_struct, promote_processbar, read_lines, RegexFilter},
     s3::{aws_s3::OssClient, OSSDescription},
     tasks::{MODIFIED_PREFIX, OBJECT_LIST_FILE_PREFIX},
 };
@@ -218,6 +218,9 @@ impl TransferTaskActions for TransferOss2Oss {
             };
 
         let mut sleep_time = 5;
+        let pd = promote_processbar("executing increment:waiting for data...");
+        let mut finished_total_objects = 0;
+
         while !snapshot_stop_mark.load(std::sync::atomic::Ordering::SeqCst)
             && self
                 .attributes
@@ -243,13 +246,15 @@ impl TransferTaskActions for TransferOss2Oss {
                 }
             };
 
-            if sleep_time.ge(&300) {
-                sleep_time = 5;
-            }
             if executed_file.metadata().unwrap().len().eq(&0) {
                 //递增等待时间
+                let _ = fs::remove_file(&modified_file.path);
                 tokio::time::sleep(tokio::time::Duration::from_secs(sleep_time)).await;
-                sleep_time += 5;
+                if sleep_time.ge(&300) {
+                    sleep_time = 60;
+                } else {
+                    sleep_time += 5;
+                }
             } else {
                 sleep_time = 5;
             }
@@ -329,9 +334,16 @@ impl TransferTaskActions for TransferOss2Oss {
                 execute_set.join_next().await;
             }
 
-            let _ = fs::remove_file(&modified_file.path);
             let old_object_file = checkpoint.current_stock_object_list_file.clone();
-
+            finished_total_objects += modified_file.total_lines;
+            if !modified_file.total_lines.eq(&0) {
+                let msg = format!(
+                    "executing transfer modified finished this batch {} total {};",
+                    modified_file.total_lines, finished_total_objects
+                );
+                pd.set_message(msg);
+            }
+            let _ = fs::remove_file(&modified_file.path);
             checkpoint.executed_file_position = FilePosition {
                 offset: modified_file.size.try_into().unwrap(),
                 line_num: modified_file.total_lines,
@@ -341,6 +353,7 @@ impl TransferTaskActions for TransferOss2Oss {
             let _ = checkpoint.save_to(&checkpoint_path);
             let _ = fs::remove_file(&old_object_file);
         }
+        pd.finish();
     }
 }
 
@@ -409,15 +422,16 @@ impl TransferOss2Oss {
 
         // let mut position = FilePosition::default();
         let list_file = File::open(list_file_path)?;
-        let mut offset = 0;
+        let mut list_file_offset = 0;
         let mut new_list_total_lines = 0;
-        let mut modified_total_lines = 0;
+        let mut list_file_line_num = 0;
+        let mut modified_file_total_lines = 0;
         let lines: io::Lines<io::BufReader<File>> = io::BufReader::new(list_file).lines();
         for line in lines {
             if let Result::Ok(key) = line {
                 let len = key.bytes().len() + "\n".bytes().len();
-                offset += len;
-                modified_total_lines += 1;
+                list_file_offset += len;
+                list_file_line_num += 1;
 
                 let mut target_key = match self.target.prefix.clone() {
                     Some(s) => s,
@@ -435,12 +449,13 @@ impl TransferOss2Oss {
                         target_key,
                         list_file_path: list_file_path.to_string(),
                         list_file_position: FilePosition {
-                            offset,
-                            line_num: modified_total_lines,
+                            offset: list_file_offset,
+                            line_num: list_file_line_num,
                         },
                         option: Opt::REMOVE,
                     };
                     let _ = record.save_json_to_file(&mut modified_file);
+                    modified_file_total_lines += 1;
                 };
             }
         }
@@ -476,7 +491,7 @@ impl TransferOss2Oss {
                                 option: Opt::PUT,
                             };
                             let _ = record.save_json_to_file(&mut modified_file);
-                            modified_total_lines += 1;
+                            modified_file_total_lines += 1;
                         }
                     }
                 }
@@ -520,7 +535,7 @@ impl TransferOss2Oss {
                                     option: Opt::PUT,
                                 };
                                 let _ = record.save_json_to_file(&mut modified_file);
-                                modified_total_lines += 1;
+                                list_file_line_num += 1;
                             }
                         }
                     }
@@ -538,7 +553,7 @@ impl TransferOss2Oss {
         let modified_executed_file = FileDescription {
             path: modified.clone(),
             size: modified_file_size,
-            total_lines: modified_total_lines,
+            total_lines: modified_file_total_lines,
         };
 
         let new_object_list_executed_file = FileDescription {
@@ -546,7 +561,6 @@ impl TransferOss2Oss {
             size: new_object_list_file_size,
             total_lines: new_list_total_lines,
         };
-        println!("{}", new_object_list_file_size);
         let timestampe = now.as_secs().try_into()?;
         Ok((
             modified_executed_file,
