@@ -4,13 +4,14 @@ use std::{
     cmp::min,
     fmt::Write,
     sync::{atomic::AtomicBool, Arc},
+    time::Duration,
 };
 use tokio::task::yield_now;
 
 use crate::checkpoint::FilePosition;
 
 /// 进度条，使用时在主线程之外的线程使用
-pub async fn exec_processbar(
+pub async fn quantify_processbar(
     total: u64,
     stop_mark: Arc<AtomicBool>,
     status_map: Arc<DashMap<String, FilePosition>>,
@@ -45,4 +46,24 @@ pub async fn exec_processbar(
     }
     pb.set_position(total);
     pb.finish_with_message("Finish");
+}
+
+pub fn promote_processbar(message: &str) -> ProgressBar {
+    let pd = ProgressBar::new_spinner();
+    pd.enable_steady_tick(Duration::from_millis(200));
+    pd.set_style(
+        ProgressStyle::with_template("{spinner:.green} {msg}")
+            .unwrap()
+            .tick_strings(&[
+                "▰▱▱▱▱▱▱",
+                "▰▰▱▱▱▱▱",
+                "▰▰▰▱▱▱▱",
+                "▰▰▰▰▱▱▱",
+                "▰▰▰▰▰▱▱",
+                "▰▰▰▰▰▰▱",
+                "▰▰▰▰▰▰▰",
+            ]),
+    );
+    pd.set_message(message.to_string());
+    pd
 }

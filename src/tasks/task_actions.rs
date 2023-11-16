@@ -45,7 +45,6 @@ pub trait TransferTaskActions {
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         snapshot_stop_mark: Arc<AtomicBool>,
-        // start_file_position: FilePosition,
     );
 }
 
