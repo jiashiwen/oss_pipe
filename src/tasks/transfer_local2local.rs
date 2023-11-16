@@ -126,7 +126,6 @@ impl TransferTaskActions for TransferLocal2Local {
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         snapshot_stop_mark: Arc<AtomicBool>,
-        // start_file_position: FilePosition,
     ) {
         let lock = assistant.lock().await;
         let local_notify = match lock.local_notify.clone() {
@@ -230,36 +229,39 @@ impl TransferTaskActions for TransferLocal2Local {
                 if let Result::Ok(key) = line {
                     // Modifed 解析
                     offset_usize += key.len();
-                    if regex_filter.filter(&key) {
-                        match self
-                            .modified_str_to_record_description(
-                                &key,
-                                &local_notify.notify_file_path,
-                                offset_usize,
-                                line_num,
-                            )
-                            .await
-                        {
-                            Ok(r) => records.push(r),
-                            Err(e) => {
-                                let r = RecordDescription {
-                                    source_key: "".to_string(),
-                                    target_key: "".to_string(),
-                                    list_file_path: local_notify.notify_file_path.clone(),
-                                    list_file_position: FilePosition {
-                                        offset: offset_usize,
-                                        line_num,
-                                    },
-                                    option: Opt::UNKOWN,
-                                };
-                                r.handle_error(
-                                    &err_counter,
-                                    &offset_map,
-                                    &mut error_file,
-                                    offset_key.as_str(),
-                                );
-                                log::error!("{}", e);
+
+                    match self
+                        .modified_str_to_record_description(
+                            &key,
+                            &local_notify.notify_file_path,
+                            offset_usize,
+                            line_num,
+                        )
+                        .await
+                    {
+                        Ok(r) => {
+                            if regex_filter.filter(&r.source_key) {
+                                records.push(r);
                             }
+                        }
+                        Err(e) => {
+                            let r = RecordDescription {
+                                source_key: "".to_string(),
+                                target_key: "".to_string(),
+                                list_file_path: local_notify.notify_file_path.clone(),
+                                list_file_position: FilePosition {
+                                    offset: offset_usize,
+                                    line_num,
+                                },
+                                option: Opt::UNKOWN,
+                            };
+                            r.handle_error(
+                                &err_counter,
+                                &offset_map,
+                                &mut error_file,
+                                offset_key.as_str(),
+                            );
+                            log::error!("{}", e);
                         }
                     }
                 }
@@ -314,6 +316,7 @@ impl TransferLocal2Local {
     ) -> Result<RecordDescription> {
         let modified = from_str::<Modified>(modified_str)?;
         let mut target_path = modified.path.clone();
+
         match self.source.ends_with("/") {
             true => target_path.drain(..self.source.len()),
             false => target_path.drain(..self.source.len() + 1),

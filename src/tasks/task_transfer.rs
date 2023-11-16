@@ -20,7 +20,7 @@ use crate::{
 use anyhow::{anyhow, Result};
 use dashmap::DashMap;
 use indicatif::{ProgressBar, ProgressStyle};
-use regex::RegexSet;
+
 use std::{
     fs::{self, File},
     io::{self, BufRead},
