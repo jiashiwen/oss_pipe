@@ -11,6 +11,7 @@ use crate::checkpoint::get_task_checkpoint;
 use crate::checkpoint::FileDescription;
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::commons::scan_folder_files_to_file;
+use crate::commons::RegexFilter;
 use crate::commons::{json_to_struct, read_lines, Modified, ModifyType, NotifyWatcher, PathType};
 use crate::s3::aws_s3::OssClient;
 use crate::{checkpoint::ListedRecord, s3::OSSDescription};
@@ -212,7 +213,6 @@ impl TransferTaskActions for TransferLocal2Oss {
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         snapshot_stop_mark: Arc<AtomicBool>,
-        // start_file_position: FilePosition,
     ) {
         let lock = assistant.lock().await;
         let local_notify = match lock.local_notify.clone() {
@@ -260,6 +260,15 @@ impl TransferTaskActions for TransferLocal2Oss {
 
         let error_file_name =
             gen_file_path(&self.attributes.meta_dir, ERROR_RECORD_PREFIX, &subffix);
+
+        let regex_filter =
+            match RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include) {
+                Ok(r) => r,
+                Err(e) => {
+                    log::error!("{}", e);
+                    return;
+                }
+            };
 
         loop {
             if local_notify
@@ -316,7 +325,11 @@ impl TransferTaskActions for TransferLocal2Oss {
                         )
                         .await
                     {
-                        Ok(r) => records.push(r),
+                        Ok(r) => {
+                            if regex_filter.filter(&r.source_key) {
+                                records.push(r);
+                            }
+                        }
                         Err(e) => {
                             let r = RecordDescription {
                                 source_key: "".to_string(),

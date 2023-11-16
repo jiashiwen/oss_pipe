@@ -6,7 +6,7 @@ use crate::{
     checkpoint::{
         get_task_checkpoint, FileDescription, FilePosition, ListedRecord, Opt, RecordDescription,
     },
-    commons::{json_to_struct, read_lines},
+    commons::{json_to_struct, read_lines, RegexFilter},
     s3::{
         aws_s3::{download_object_to_file, OssClient},
         OSSDescription,
@@ -216,19 +216,26 @@ impl TransferTaskActions for TransferOss2Local {
         };
         drop(lock);
 
-        let mut exclude_regex_set: Option<RegexSet> = None;
-        let mut include_regex_set: Option<RegexSet> = None;
+        // let mut exclude_regex_set: Option<RegexSet> = None;
+        // let mut include_regex_set: Option<RegexSet> = None;
 
-        if let Some(vec_regex_str) = self.attributes.exclude.clone() {
-            let set = RegexSet::new(&vec_regex_str).unwrap();
-            exclude_regex_set = Some(set);
-        };
+        // if let Some(vec_regex_str) = self.attributes.exclude.clone() {
+        //     let set = RegexSet::new(&vec_regex_str).unwrap();
+        //     exclude_regex_set = Some(set);
+        // };
 
-        if let Some(vec_regex_str) = self.attributes.include.clone() {
-            let set = RegexSet::new(&vec_regex_str).unwrap();
-            include_regex_set = Some(set);
-        };
-
+        // if let Some(vec_regex_str) = self.attributes.include.clone() {
+        //     let set = RegexSet::new(&vec_regex_str).unwrap();
+        //     include_regex_set = Some(set);
+        // };
+        let regex_filter =
+            match RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include) {
+                Ok(r) => r,
+                Err(e) => {
+                    log::error!("{}", e);
+                    return;
+                }
+            };
         let mut sleep_time = 5;
         while !snapshot_stop_mark.load(std::sync::atomic::Ordering::SeqCst)
             && self
@@ -289,24 +296,9 @@ impl TransferTaskActions for TransferOss2Local {
                         }
                     };
 
-                    match exclude_regex_set {
-                        Some(ref exclude) => {
-                            if exclude.is_match(&record.source_key) {
-                                continue;
-                            }
-                        }
-                        None => {}
+                    if regex_filter.filter(&record.source_key) {
+                        vec_keys.push(record);
                     }
-                    match include_regex_set {
-                        Some(ref set) => {
-                            if set.is_match(&record.source_key) {
-                                vec_keys.push(record);
-                                continue;
-                            }
-                        }
-                        None => {}
-                    }
-                    vec_keys.push(record);
                 };
 
                 if vec_keys
