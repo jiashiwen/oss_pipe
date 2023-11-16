@@ -21,8 +21,6 @@ use crate::{
 };
 use anyhow::{anyhow, Result};
 use dashmap::DashMap;
-use indicatif::{ProgressBar, ProgressStyle};
-
 use std::{
     fs::{self, File},
     io::{self, BufRead},
@@ -30,7 +28,7 @@ use std::{
         atomic::{AtomicBool, AtomicUsize},
         Arc,
     },
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::{
     runtime,

@@ -41,7 +41,7 @@ pub enum Opt {
     UNKOWN,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub struct FilePosition {
     pub offset: usize,
     pub line_num: u64,
@@ -90,7 +90,7 @@ impl RecordDescription {
         let _ = self.save_json_to_file(save_to);
     }
 
-    pub fn save_json_to_file(&self, file: &mut File) -> Result<()> {
+    pub fn save_json_to_file(&self, mut file: &File) -> Result<()> {
         let mut json = serde_json::to_string(self)?;
         json.push_str("\n");
         file.write_all(json.as_bytes())?;
