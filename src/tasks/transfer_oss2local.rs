@@ -225,13 +225,6 @@ impl TransferTaskActions for TransferOss2Local {
             };
         let mut sleep_time = 5;
 
-        let source_client = match self.source.gen_oss_client() {
-            Ok(client) => client,
-            Err(e) => {
-                log::error!("{}", e);
-                return;
-            }
-        };
         while !snapshot_stop_mark.load(std::sync::atomic::Ordering::SeqCst)
             && self
                 .attributes
@@ -244,7 +237,15 @@ impl TransferTaskActions for TransferOss2Local {
             //     .unwrap();
             // timestampe = exec_time;
 
-            let (modified_desc, new_object_list_desc, exec_time) = match &source_client
+            let source_client = match self.source.gen_oss_client() {
+                Ok(client) => client,
+                Err(e) => {
+                    log::error!("{}", e);
+                    return;
+                }
+            };
+
+            let (modified_desc, new_object_list_desc, exec_time) = match source_client
                 .changed_object_capture(
                     &self.source.bucket,
                     self.source.prefix.clone(),

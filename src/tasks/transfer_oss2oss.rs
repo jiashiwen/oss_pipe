@@ -220,13 +220,6 @@ impl TransferTaskActions for TransferOss2Oss {
         let mut sleep_time = 5;
         let pd = promote_processbar("executing increment:waiting for data...");
         let mut finished_total_objects = 0;
-        let source_client = match self.source.gen_oss_client() {
-            Ok(client) => client,
-            Err(e) => {
-                log::error!("{}", e);
-                return;
-            }
-        };
 
         while !snapshot_stop_mark.load(std::sync::atomic::Ordering::SeqCst)
             && self
@@ -234,30 +227,36 @@ impl TransferTaskActions for TransferOss2Oss {
                 .max_errors
                 .ge(&err_counter.load(std::sync::atomic::Ordering::SeqCst))
         {
-            // let (modified_desc, new_object_list_desc, exec_time) = self
-            //     .gen_changed_record_file(timestampe, &checkpoint.current_stock_object_list_file)
-            //     .await
-            //     .unwrap();
-
-            let (modified_desc, new_object_list_desc, exec_time) = match source_client
-                .changed_object_capture(
-                    &self.source.bucket,
-                    self.source.prefix.clone(),
-                    self.target.prefix.clone(),
-                    &self.attributes.meta_dir,
-                    timestampe,
-                    &checkpoint.current_stock_object_list_file,
-                    self.attributes.bach_size,
-                    self.attributes.multi_part_chunk,
-                )
+            let (modified_desc, new_object_list_desc, exec_time) = self
+                .gen_changed_record_file(timestampe, &checkpoint.current_stock_object_list_file)
                 .await
-            {
-                Ok((m, n, t)) => (m.clone(), n.clone(), t.clone()),
+                .unwrap();
+            let source_client = match self.source.gen_oss_client() {
+                Ok(client) => client,
                 Err(e) => {
                     log::error!("{}", e);
                     return;
                 }
             };
+            // let (modified_desc, new_object_list_desc, exec_time) = match source_client
+            //     .changed_object_capture(
+            //         &self.source.bucket,
+            //         self.source.prefix.clone(),
+            //         self.target.prefix.clone(),
+            //         &self.attributes.meta_dir,
+            //         timestampe,
+            //         &checkpoint.current_stock_object_list_file,
+            //         self.attributes.bach_size,
+            //         self.attributes.multi_part_chunk,
+            //     )
+            //     .await
+            // {
+            //     Ok((m, n, t)) => (m.clone(), n.clone(), t.clone()),
+            //     Err(e) => {
+            //         log::error!("{}", e);
+            //         return;
+            //     }
+            // };
 
             timestampe = exec_time.clone();
 
@@ -416,249 +415,249 @@ impl TransferOss2Oss {
         });
     }
 
-    // pub async fn gen_changed_record_file(
-    //     &self,
-    //     timestampe: i64,
-    //     list_file_path: &str,
-    // ) -> Result<(FileDescription, FileDescription, i64)> {
-    //     // let mut set = JoinSet::new();
-    //     let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+    pub async fn gen_changed_record_file(
+        &self,
+        timestampe: i64,
+        list_file_path: &str,
+    ) -> Result<(FileDescription, FileDescription, i64)> {
+        // let mut set = JoinSet::new();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
 
-    //     let new_object_list = gen_file_path(
-    //         &self.attributes.meta_dir,
-    //         OBJECT_LIST_FILE_PREFIX,
-    //         now.as_secs().to_string().as_str(),
-    //     );
+        let new_object_list = gen_file_path(
+            &self.attributes.meta_dir,
+            OBJECT_LIST_FILE_PREFIX,
+            now.as_secs().to_string().as_str(),
+        );
 
-    //     let removed = gen_file_path(
-    //         &self.attributes.meta_dir,
-    //         REMOVED_PREFIX,
-    //         now.as_secs().to_string().as_str(),
-    //     );
-    //     let modified = gen_file_path(
-    //         &self.attributes.meta_dir,
-    //         MODIFIED_PREFIX,
-    //         now.as_secs().to_string().as_str(),
-    //     );
+        let removed = gen_file_path(
+            &self.attributes.meta_dir,
+            REMOVED_PREFIX,
+            now.as_secs().to_string().as_str(),
+        );
+        let modified = gen_file_path(
+            &self.attributes.meta_dir,
+            MODIFIED_PREFIX,
+            now.as_secs().to_string().as_str(),
+        );
 
-    //     let source_client = self.source.gen_oss_client()?;
+        let source_client = self.source.gen_oss_client()?;
 
-    //     let removed_description = self
-    //         .gen_removed_record_file(&source_client, list_file_path, &removed)
-    //         .await?;
-    //     let (mut modified_description, new_list_description) = self
-    //         .gen_modified_record_file(&source_client, timestampe, &modified, &new_object_list)
-    //         .await?;
-    //     if removed_description.size.gt(&0) {
-    //         merge_file(
-    //             &removed_description.path,
-    //             &modified_description.path,
-    //             self.attributes.multi_part_chunk,
-    //         )?;
-    //     }
+        let removed_description = self
+            .gen_removed_record_file(&source_client, list_file_path, &removed)
+            .await?;
+        let (mut modified_description, new_list_description) = self
+            .gen_modified_record_file(&source_client, timestampe, &modified, &new_object_list)
+            .await?;
+        if removed_description.size.gt(&0) {
+            merge_file(
+                &removed_description.path,
+                &modified_description.path,
+                self.attributes.multi_part_chunk,
+            )?;
+        }
 
-    //     let timestampe = now.as_secs().try_into()?;
-    //     modified_description.size = modified_description.size + removed_description.size;
-    //     modified_description.total_lines =
-    //         modified_description.total_lines + removed_description.total_lines;
+        let timestampe = now.as_secs().try_into()?;
+        modified_description.size = modified_description.size + removed_description.size;
+        modified_description.total_lines =
+            modified_description.total_lines + removed_description.total_lines;
 
-    //     let _ = fs::remove_file(&removed_description.path);
-    //     Ok((modified_description, new_list_description, timestampe))
-    // }
+        let _ = fs::remove_file(&removed_description.path);
+        Ok((modified_description, new_list_description, timestampe))
+    }
 
-    // async fn gen_removed_record_file(
-    //     &self,
-    //     source_client: &OssClient,
-    //     list_file: &str,
-    //     out_put: &str,
-    // ) -> Result<FileDescription> {
-    //     let obj_list_file = File::open(list_file)?;
-    //     let mut list_file_position = FilePosition::default();
-    //     let mut out_put_file_total_lines = 0;
+    async fn gen_removed_record_file(
+        &self,
+        source_client: &OssClient,
+        list_file: &str,
+        out_put: &str,
+    ) -> Result<FileDescription> {
+        let obj_list_file = File::open(list_file)?;
+        let mut list_file_position = FilePosition::default();
+        let mut out_put_file_total_lines = 0;
 
-    //     let out_put_file = OpenOptions::new()
-    //         .create(true)
-    //         .truncate(true)
-    //         .write(true)
-    //         .open(&out_put)?;
-    //     let lines: io::Lines<io::BufReader<File>> = io::BufReader::new(obj_list_file).lines();
-    //     for line in lines {
-    //         if let Result::Ok(key) = line {
-    //             let len = key.bytes().len() + "\n".bytes().len();
-    //             list_file_position.offset += len;
-    //             list_file_position.line_num += 1;
+        let out_put_file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&out_put)?;
+        let lines: io::Lines<io::BufReader<File>> = io::BufReader::new(obj_list_file).lines();
+        for line in lines {
+            if let Result::Ok(key) = line {
+                let len = key.bytes().len() + "\n".bytes().len();
+                list_file_position.offset += len;
+                list_file_position.line_num += 1;
 
-    //             let mut target_key = match self.target.prefix.clone() {
-    //                 Some(s) => s,
-    //                 None => "".to_string(),
-    //             };
-    //             target_key.push_str(&key);
+                let mut target_key = match self.target.prefix.clone() {
+                    Some(s) => s,
+                    None => "".to_string(),
+                };
+                target_key.push_str(&key);
 
-    //             if !source_client
-    //                 .object_exists(&self.source.bucket, &key)
-    //                 .await?
-    //             {
-    //                 // 填充变动对象文件
-    //                 let record = RecordDescription {
-    //                     source_key: key,
-    //                     target_key,
-    //                     list_file_path: list_file.to_string(),
-    //                     list_file_position,
-    //                     option: Opt::REMOVE,
-    //                 };
-    //                 let _ = record.save_json_to_file(&out_put_file);
-    //                 out_put_file_total_lines += 1;
-    //             };
-    //         }
-    //     }
-    //     let size = out_put_file.metadata()?.len();
-    //     let out_put_description = FileDescription {
-    //         path: out_put.to_string(),
-    //         size,
-    //         total_lines: out_put_file_total_lines,
-    //     };
+                if !source_client
+                    .object_exists(&self.source.bucket, &key)
+                    .await?
+                {
+                    // 填充变动对象文件
+                    let record = RecordDescription {
+                        source_key: key,
+                        target_key,
+                        list_file_path: list_file.to_string(),
+                        list_file_position,
+                        option: Opt::REMOVE,
+                    };
+                    let _ = record.save_json_to_file(&out_put_file);
+                    out_put_file_total_lines += 1;
+                };
+            }
+        }
+        let size = out_put_file.metadata()?.len();
+        let out_put_description = FileDescription {
+            path: out_put.to_string(),
+            size,
+            total_lines: out_put_file_total_lines,
+        };
 
-    //     Ok(out_put_description)
-    // }
+        Ok(out_put_description)
+    }
 
-    // // 通过时间戳生成变更文件的同时生成当前的文件列表
-    // async fn gen_modified_record_file(
-    //     &self,
-    //     source_client: &OssClient,
-    //     timestampe: i64,
-    //     modified_out_put: &str,
-    //     new_list: &str,
-    // ) -> Result<(FileDescription, FileDescription)> {
-    //     let mut modified_out_put_file = OpenOptions::new()
-    //         .create(true)
-    //         .truncate(true)
-    //         .write(true)
-    //         .open(&modified_out_put)?;
-    //     let mut new_list_file = OpenOptions::new()
-    //         .create(true)
-    //         .truncate(true)
-    //         .write(true)
-    //         .open(&new_list)?;
+    // 通过时间戳生成变更文件的同时生成当前的文件列表
+    async fn gen_modified_record_file(
+        &self,
+        source_client: &OssClient,
+        timestampe: i64,
+        modified_out_put: &str,
+        new_list: &str,
+    ) -> Result<(FileDescription, FileDescription)> {
+        let mut modified_out_put_file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&modified_out_put)?;
+        let mut new_list_file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&new_list)?;
 
-    //     let resp = source_client
-    //         .list_objects(
-    //             self.source.bucket.clone(),
-    //             self.source.prefix.clone(),
-    //             self.attributes.bach_size,
-    //             None,
-    //         )
-    //         .await?;
-    //     let mut token = resp.next_token;
+        let resp = source_client
+            .list_objects(
+                self.source.bucket.clone(),
+                self.source.prefix.clone(),
+                self.attributes.bach_size,
+                None,
+            )
+            .await?;
+        let mut token = resp.next_token;
 
-    //     let mut new_list_total_lines = 0;
-    //     let mut modified_total_lines = 0;
+        let mut new_list_total_lines = 0;
+        let mut modified_total_lines = 0;
 
-    //     if let Some(objects) = resp.object_list {
-    //         objects.iter().for_each(|o| match o.key() {
-    //             Some(key) => {
-    //                 let _ = new_list_file.write_all(key.as_bytes());
-    //                 let _ = new_list_file.write_all("\n".as_bytes());
-    //                 new_list_total_lines += 1;
-    //                 if let Some(d) = o.last_modified() {
-    //                     if d.secs().ge(&timestampe) {
-    //                         // 填充变动对象文件
-    //                         let target_key = match self.target.prefix.clone() {
-    //                             Some(mut s) => {
-    //                                 s.push_str(&key);
-    //                                 s
-    //                             }
-    //                             None => {
-    //                                 let mut s = "".to_string();
-    //                                 s.push_str(&key);
-    //                                 s
-    //                             }
-    //                         };
-    //                         // target_key.push_str(&key);
-    //                         let record = RecordDescription {
-    //                             source_key: key.to_string(),
-    //                             target_key,
-    //                             list_file_path: "".to_string(),
-    //                             list_file_position: FilePosition::default(),
-    //                             option: Opt::PUT,
-    //                         };
-    //                         let _ = record.save_json_to_file(&mut modified_out_put_file);
-    //                         modified_total_lines += 1;
-    //                     }
-    //                 }
-    //             }
-    //             None => {}
-    //         });
+        if let Some(objects) = resp.object_list {
+            objects.iter().for_each(|o| match o.key() {
+                Some(key) => {
+                    let _ = new_list_file.write_all(key.as_bytes());
+                    let _ = new_list_file.write_all("\n".as_bytes());
+                    new_list_total_lines += 1;
+                    if let Some(d) = o.last_modified() {
+                        if d.secs().ge(&timestampe) {
+                            // 填充变动对象文件
+                            let target_key = match self.target.prefix.clone() {
+                                Some(mut s) => {
+                                    s.push_str(&key);
+                                    s
+                                }
+                                None => {
+                                    let mut s = "".to_string();
+                                    s.push_str(&key);
+                                    s
+                                }
+                            };
+                            // target_key.push_str(&key);
+                            let record = RecordDescription {
+                                source_key: key.to_string(),
+                                target_key,
+                                list_file_path: "".to_string(),
+                                list_file_position: FilePosition::default(),
+                                option: Opt::PUT,
+                            };
+                            let _ = record.save_json_to_file(&mut modified_out_put_file);
+                            modified_total_lines += 1;
+                        }
+                    }
+                }
+                None => {}
+            });
 
-    //         modified_out_put_file.flush()?;
-    //         new_list_file.flush()?;
-    //     }
+            modified_out_put_file.flush()?;
+            new_list_file.flush()?;
+        }
 
-    //     while token.is_some() {
-    //         let resp = source_client
-    //             .list_objects(
-    //                 self.source.bucket.clone(),
-    //                 self.source.prefix.clone(),
-    //                 self.attributes.bach_size,
-    //                 token,
-    //             )
-    //             .await?;
-    //         if let Some(objects) = resp.object_list {
-    //             objects.iter().for_each(|o| match o.key() {
-    //                 Some(key) => {
-    //                     let _ = new_list_file.write_all(key.as_bytes());
-    //                     let _ = new_list_file.write_all("\n".as_bytes());
-    //                     new_list_total_lines += 1;
-    //                     if let Some(d) = o.last_modified() {
-    //                         if d.secs().ge(&timestampe) {
-    //                             // 填充变动对象文件
-    //                             let target_key = match self.target.prefix.clone() {
-    //                                 Some(mut s) => {
-    //                                     s.push_str(&key);
-    //                                     s
-    //                                 }
-    //                                 None => {
-    //                                     let mut s = "".to_string();
-    //                                     s.push_str(&key);
-    //                                     s
-    //                                 }
-    //                             };
-    //                             // target_key.push_str(&key);
-    //                             let record = RecordDescription {
-    //                                 source_key: key.to_string(),
-    //                                 target_key,
-    //                                 list_file_path: "".to_string(),
-    //                                 list_file_position: FilePosition::default(),
-    //                                 option: Opt::PUT,
-    //                             };
-    //                             let _ = record.save_json_to_file(&mut modified_out_put_file);
-    //                             modified_total_lines += 1;
-    //                         }
-    //                     }
-    //                 }
-    //                 None => {}
-    //             });
+        while token.is_some() {
+            let resp = source_client
+                .list_objects(
+                    self.source.bucket.clone(),
+                    self.source.prefix.clone(),
+                    self.attributes.bach_size,
+                    token,
+                )
+                .await?;
+            if let Some(objects) = resp.object_list {
+                objects.iter().for_each(|o| match o.key() {
+                    Some(key) => {
+                        let _ = new_list_file.write_all(key.as_bytes());
+                        let _ = new_list_file.write_all("\n".as_bytes());
+                        new_list_total_lines += 1;
+                        if let Some(d) = o.last_modified() {
+                            if d.secs().ge(&timestampe) {
+                                // 填充变动对象文件
+                                let target_key = match self.target.prefix.clone() {
+                                    Some(mut s) => {
+                                        s.push_str(&key);
+                                        s
+                                    }
+                                    None => {
+                                        let mut s = "".to_string();
+                                        s.push_str(&key);
+                                        s
+                                    }
+                                };
+                                // target_key.push_str(&key);
+                                let record = RecordDescription {
+                                    source_key: key.to_string(),
+                                    target_key,
+                                    list_file_path: "".to_string(),
+                                    list_file_position: FilePosition::default(),
+                                    option: Opt::PUT,
+                                };
+                                let _ = record.save_json_to_file(&mut modified_out_put_file);
+                                modified_total_lines += 1;
+                            }
+                        }
+                    }
+                    None => {}
+                });
 
-    //             modified_out_put_file.flush()?;
-    //             new_list_file.flush()?;
-    //         }
-    //         token = resp.next_token;
-    //     }
+                modified_out_put_file.flush()?;
+                new_list_file.flush()?;
+            }
+            token = resp.next_token;
+        }
 
-    //     let modified_size = modified_out_put_file.metadata()?.len();
-    //     let new_list_size = new_list_file.metadata()?.len();
-    //     let modified_file_description = FileDescription {
-    //         path: modified_out_put.to_string(),
-    //         size: modified_size,
-    //         total_lines: modified_total_lines,
-    //     };
-    //     let new_list_description = FileDescription {
-    //         path: new_list.to_string(),
-    //         size: new_list_size,
-    //         total_lines: new_list_total_lines,
-    //     };
+        let modified_size = modified_out_put_file.metadata()?.len();
+        let new_list_size = new_list_file.metadata()?.len();
+        let modified_file_description = FileDescription {
+            path: modified_out_put.to_string(),
+            size: modified_size,
+            total_lines: modified_total_lines,
+        };
+        let new_list_description = FileDescription {
+            path: new_list.to_string(),
+            size: new_list_size,
+            total_lines: new_list_total_lines,
+        };
 
-    //     Ok((modified_file_description, new_list_description))
-    // }
+        Ok((modified_file_description, new_list_description))
+    }
 }
 
 #[derive(Debug, Clone)]
