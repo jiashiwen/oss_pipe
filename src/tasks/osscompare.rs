@@ -315,8 +315,8 @@ mod test {
 
     use crate::{
         commons::struct_to_json_string,
-        tasks::osscompare::{DateTime, DiffExpires, ObjectDiff},
         s3::OSSDescription,
+        tasks::osscompare::{DateTime, DiffExpires, ObjectDiff},
     };
 
     //cargo test osstask::osscompare::test::test_object_diff -- --nocapture
@@ -369,7 +369,7 @@ mod test {
         rt.block_on(async {
             // 上传本地文件
             let _ = jd_client
-                .upload_from_local("jsw-bucket-1", key, path, 209715200, 10485760)
+                .upload("jsw-bucket-1", key, path, 209715200, 10485760)
                 .await;
 
             // let byte_stream = jd_client

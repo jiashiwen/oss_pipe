@@ -6,13 +6,18 @@ use aws_sdk_s3::{
     Client,
 };
 use std::{
-    fs::{File, OpenOptions},
-    io::{LineWriter, Read, Write},
+    fs::{self, File, OpenOptions},
+    io::{BufRead, BufReader, LineWriter, Lines, Read, Write},
     path::Path,
+    time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::io::AsyncReadExt;
 
-use crate::checkpoint::FileDescription;
+use crate::{
+    checkpoint::{FileDescription, FilePosition, Opt, RecordDescription},
+    commons::merge_file,
+    tasks::{gen_file_path, MODIFIED_PREFIX, OBJECT_LIST_FILE_PREFIX, REMOVED_PREFIX},
+};
 
 #[derive(Debug, Clone)]
 pub struct OssClient {
@@ -180,55 +185,6 @@ impl OssClient {
         Ok(execute_file)
     }
 
-    pub async fn append_object_list_to_file(
-        &self,
-        bucket: String,
-        prefix: Option<String>,
-        batch: i32,
-        token: Option<String>,
-        file_path: String,
-    ) -> Result<Option<String>> {
-        let mut obj_list = self
-            .client
-            .list_objects_v2()
-            .bucket(bucket.clone())
-            .max_keys(batch);
-        if let Some(prefix_str) = prefix.clone() {
-            obj_list = obj_list.prefix(prefix_str);
-        }
-
-        if let Some(token_str) = token.clone() {
-            obj_list = obj_list.continuation_token(token_str);
-        }
-
-        let r = obj_list.send().await?;
-
-        //写入文件
-        let store_path = Path::new(file_path.as_str());
-
-        if let Some(p) = store_path.parent() {
-            std::fs::create_dir_all(p)?;
-        };
-        let file_ref = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .append(true)
-            .open(file_path.clone())?;
-        let mut file = LineWriter::new(file_ref);
-        if let Some(objects) = r.contents() {
-            for item in objects.iter() {
-                let _ = file.write_all(item.key().unwrap().as_bytes());
-                let _ = file.write_all("\n".as_bytes());
-            }
-            file.flush()?;
-        }
-
-        return match r.next_continuation_token() {
-            Some(str) => Ok(Some(str.to_string())),
-            None => Ok(None),
-        };
-    }
-
     pub async fn get_object(
         &self,
         bucket: &str,
@@ -308,8 +264,8 @@ impl OssClient {
             .bucket(bucket)
             .max_keys(max_keys);
 
-        if let Some(prefix_str) = prefix.clone() {
-            obj_list = obj_list.prefix(prefix_str);
+        if let Some(prefix_str) = &prefix {
+            obj_list = obj_list.prefix(prefix_str.to_string());
         }
 
         if let Some(token_str) = token.clone() {
@@ -472,8 +428,7 @@ impl OssClient {
         Ok(())
     }
 
-    //Todo 新增upload 函数，判断当 file size 大于 chunck size 时主动拆分
-    pub async fn upload_from_local(
+    pub async fn upload(
         &self,
         bucket: &str,
         key: &str,
@@ -495,8 +450,7 @@ impl OssClient {
                 .await?;
             return Ok(());
         }
-
-        self.multipart_upload_local_file(bucket, key, &mut file, chuck_size)
+        self.multipart_upload_local(bucket, key, &mut file, chuck_size)
             .await
     }
 
@@ -521,7 +475,7 @@ impl OssClient {
     }
 
     // multipart upload
-    pub async fn multipart_upload_local_file(
+    pub async fn multipart_upload_local(
         &self,
         bucket: &str,
         key: &str,
@@ -599,7 +553,12 @@ impl OssClient {
         Ok(())
     }
 
-    pub async fn object_exists(&self, bucket: &str, key: &str) -> Result<bool> {
+    // pub async fn object_exists(&self, bucket: &str, key: &str) -> Result<bool> {
+    pub async fn object_exists(
+        &self,
+        bucket: impl Into<std::string::String>,
+        key: impl Into<std::string::String>,
+    ) -> Result<bool> {
         let mut exist = true;
         if let Err(e) = self
             .client
@@ -618,9 +577,285 @@ impl OssClient {
         };
         Ok(exist)
     }
+    pub async fn object_exists_string(&self, bucket: String, key: String) -> Result<bool> {
+        let mut exist = true;
+        if let Err(e) = self
+            .client
+            .head_object()
+            .bucket(bucket)
+            .key(key)
+            .send()
+            .await
+        {
+            let err = e.into_service_error();
+            if err.is_not_found() {
+                exist = false
+            } else {
+                return Err(anyhow::Error::new(err));
+            }
+        };
+        Ok(exist)
+    }
+    pub async fn changed_object_capture(
+        &self,
+        bucket: &str,
+        source_prefix: Option<String>,
+        target_prefix: Option<String>,
+        out_put_dir: &str,
+        timestampe: i64,
+        list_file_path: &str,
+        batch_size: i32,
+        multi_part_chunk: usize,
+    ) -> Result<(FileDescription, FileDescription, i64)> {
+        // let mut set = JoinSet::new();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+
+        let new_object_list = gen_file_path(
+            out_put_dir,
+            OBJECT_LIST_FILE_PREFIX,
+            now.as_secs().to_string().as_str(),
+        );
+
+        let removed = gen_file_path(
+            out_put_dir,
+            REMOVED_PREFIX,
+            now.as_secs().to_string().as_str(),
+        );
+        let modified = gen_file_path(
+            out_put_dir,
+            MODIFIED_PREFIX,
+            now.as_secs().to_string().as_str(),
+        );
+
+        let removed_description = self
+            .capture_removed_objects(bucket, target_prefix.clone(), list_file_path, &removed)
+            .await?;
+
+        let (mut modified_description, new_list_description) = self
+            .capture_modified_objects(
+                bucket,
+                source_prefix.clone(),
+                target_prefix.clone(),
+                timestampe,
+                &modified,
+                &new_object_list,
+                batch_size,
+            )
+            .await?;
+        if removed_description.size.gt(&0) {
+            merge_file(
+                &removed_description.path,
+                &modified_description.path,
+                multi_part_chunk,
+            )?;
+        }
+
+        let timestampe = now.as_secs().try_into()?;
+        modified_description.size = modified_description.size + removed_description.size;
+        modified_description.total_lines =
+            modified_description.total_lines + removed_description.total_lines;
+
+        let _ = fs::remove_file(&removed_description.path);
+
+        Ok((modified_description, new_list_description, timestampe))
+    }
+
+    pub async fn capture_removed_objects(
+        &self,
+        bucket: &str,
+        target_prefix: Option<String>,
+        current_object_list: &str,
+        out_put: &str,
+    ) -> Result<FileDescription> {
+        let obj_list_file = File::open(current_object_list)?;
+
+        let mut list_file_position = FilePosition::default();
+        let mut out_put_file_total_lines = 0;
+
+        let out_put_path = Path::new(out_put);
+        if let Some(p) = out_put_path.parent() {
+            if !p.exists() {
+                std::fs::create_dir_all(p)?;
+            }
+        };
+        let out_put_file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(out_put_path)?;
+
+        let lines: Lines<BufReader<File>> = BufReader::new(obj_list_file).lines();
+        for line in lines {
+            if let Result::Ok(key) = line {
+                let len = key.bytes().len() + "\n".bytes().len();
+                list_file_position.offset += len;
+                list_file_position.line_num += 1;
+
+                let mut target_key = match &target_prefix {
+                    Some(s) => s.to_string(),
+                    None => "".to_string(),
+                };
+                target_key.push_str(&key);
+
+                if !self.object_exists(bucket, &key).await? {
+                    // 填充变动对象文件
+                    let record = RecordDescription {
+                        source_key: key,
+                        target_key,
+                        list_file_path: current_object_list.to_string(),
+                        list_file_position,
+                        option: Opt::REMOVE,
+                    };
+                    let _ = record.save_json_to_file(&out_put_file);
+                    out_put_file_total_lines += 1;
+                };
+            }
+        }
+
+        let size = out_put_file.metadata()?.len();
+        let out_put_description = FileDescription {
+            path: out_put.to_string(),
+            size,
+            total_lines: out_put_file_total_lines,
+        };
+
+        Ok(out_put_description)
+    }
+
+    pub async fn capture_modified_objects(
+        &self,
+        bucket: &str,
+        source_prefix: Option<String>,
+        target_prefix: Option<String>,
+        timestampe: i64,
+        out_put_modified: &str,
+        out_put_new_list: &str,
+        batch_size: i32,
+    ) -> Result<(FileDescription, FileDescription)> {
+        let modified_path = Path::new(out_put_modified);
+        if let Some(p) = modified_path.parent() {
+            if !p.exists() {
+                std::fs::create_dir_all(p)?;
+            }
+        };
+
+        let new_list_path = Path::new(out_put_new_list);
+        if let Some(p) = new_list_path.parent() {
+            if !p.exists() {
+                std::fs::create_dir_all(p)?;
+            }
+        };
+
+        let mut modified_file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&modified_path)?;
+        let mut new_list_file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&new_list_path)?;
+
+        let resp = self
+            .list_objects(bucket.to_string(), source_prefix.clone(), batch_size, None)
+            .await?;
+        let mut token = resp.next_token;
+
+        let mut new_list_total_lines = 0;
+        let mut modified_total_lines = 0;
+
+        if let Some(objects) = resp.object_list {
+            objects.iter().for_each(|o| match o.key() {
+                Some(key) => {
+                    let _ = new_list_file.write_all(key.as_bytes());
+                    let _ = new_list_file.write_all("\n".as_bytes());
+                    new_list_total_lines += 1;
+                    if let Some(d) = o.last_modified() {
+                        if d.secs().ge(&timestampe) {
+                            // 填充变动对象文件
+                            let mut target_key = match &target_prefix {
+                                Some(s) => s.to_string(),
+                                None => "".to_string(),
+                            };
+                            target_key.push_str(&key);
+
+                            let record = RecordDescription {
+                                source_key: key.to_string(),
+                                target_key,
+                                list_file_path: "".to_string(),
+                                list_file_position: FilePosition::default(),
+                                option: Opt::PUT,
+                            };
+                            let _ = record.save_json_to_file(&mut modified_file);
+                            modified_total_lines += 1;
+                        }
+                    }
+                }
+                None => {}
+            });
+
+            modified_file.flush()?;
+            new_list_file.flush()?;
+        }
+
+        while token.is_some() {
+            let resp = self
+                .list_objects(bucket.to_string(), source_prefix.clone(), batch_size, token)
+                .await?;
+            if let Some(objects) = resp.object_list {
+                objects.iter().for_each(|o| match o.key() {
+                    Some(key) => {
+                        let _ = new_list_file.write_all(key.as_bytes());
+                        let _ = new_list_file.write_all("\n".as_bytes());
+                        new_list_total_lines += 1;
+                        if let Some(d) = o.last_modified() {
+                            if d.secs().ge(&timestampe) {
+                                // 填充变动对象文件
+                                let mut target_key = match &target_prefix {
+                                    Some(s) => s.to_string(),
+                                    None => "".to_string(),
+                                };
+                                target_key.push_str(&key);
+                                let record = RecordDescription {
+                                    source_key: key.to_string(),
+                                    target_key,
+                                    list_file_path: "".to_string(),
+                                    list_file_position: FilePosition::default(),
+                                    option: Opt::PUT,
+                                };
+                                let _ = record.save_json_to_file(&mut modified_file);
+                                modified_total_lines += 1;
+                            }
+                        }
+                    }
+                    None => {}
+                });
+
+                modified_file.flush()?;
+                new_list_file.flush()?;
+            }
+            token = resp.next_token;
+        }
+
+        let modified_size = modified_file.metadata()?.len();
+        let new_list_size = new_list_file.metadata()?.len();
+        let modified_file_description = FileDescription {
+            path: out_put_modified.to_string(),
+            size: modified_size,
+            total_lines: modified_total_lines,
+        };
+        let new_list_description = FileDescription {
+            path: out_put_new_list.to_string(),
+            size: new_list_size,
+            total_lines: new_list_total_lines,
+        };
+
+        Ok((modified_file_description, new_list_description))
+    }
 }
 
-pub async fn download_object_to_file(
+pub async fn download_object(
     get_object: GetObjectOutput,
     file: &mut File,
     splite_size: usize,
