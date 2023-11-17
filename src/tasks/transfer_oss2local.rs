@@ -8,7 +8,7 @@ use crate::{
     },
     commons::{json_to_struct, read_lines, RegexFilter},
     s3::{
-        aws_s3::{download_object_to_file, OssClient},
+        aws_s3::{download_object, OssClient},
         OSSDescription,
     },
 };
@@ -224,23 +224,53 @@ impl TransferTaskActions for TransferOss2Local {
                 }
             };
         let mut sleep_time = 5;
+
+        let source_client = match self.source.gen_oss_client() {
+            Ok(client) => client,
+            Err(e) => {
+                log::error!("{}", e);
+                return;
+            }
+        };
         while !snapshot_stop_mark.load(std::sync::atomic::Ordering::SeqCst)
             && self
                 .attributes
                 .max_errors
                 .ge(&err_counter.load(std::sync::atomic::Ordering::SeqCst))
         {
-            let (modified_file, new_object_list_file, exec_time) = self
-                .gen_modified_record_file(timestampe, &checkpoint.current_stock_object_list_file)
+            // let (modified_file, new_object_list_file, exec_time) = self
+            //     .gen_modified_record_file(timestampe, &checkpoint.current_stock_object_list_file)
+            //     .await
+            //     .unwrap();
+            // timestampe = exec_time;
+
+            let (modified_desc, new_object_list_desc, exec_time) = match &source_client
+                .changed_object_capture(
+                    &self.source.bucket,
+                    self.source.prefix.clone(),
+                    // self.target.prefix.clone(),
+                    None,
+                    &self.attributes.meta_dir,
+                    timestampe,
+                    &checkpoint.current_stock_object_list_file,
+                    self.attributes.bach_size,
+                    self.attributes.multi_part_chunk,
+                )
                 .await
-                .unwrap();
-            timestampe = exec_time;
+            {
+                Ok((m, n, t)) => (m.clone(), n.clone(), t.clone()),
+                Err(e) => {
+                    log::error!("{}", e);
+                    return;
+                }
+            };
+            timestampe = exec_time.clone();
 
             let mut vec_keys = vec![];
             // 生成执行文件
             let mut list_file_position = FilePosition::default();
 
-            let executed_file = match File::open(&modified_file.path) {
+            let executed_file = match File::open(&modified_desc.path) {
                 Ok(f) => f,
                 Err(e) => {
                     log::error!("{}", e);
@@ -302,7 +332,7 @@ impl TransferTaskActions for TransferOss2Local {
                         vk,
                         Arc::clone(&err_counter),
                         Arc::clone(&offset_map),
-                        modified_file.path.clone(),
+                        modified_desc.path.clone(),
                     )
                     .await;
 
@@ -326,7 +356,7 @@ impl TransferTaskActions for TransferOss2Local {
                     vk,
                     Arc::clone(&err_counter),
                     Arc::clone(&offset_map),
-                    modified_file.path.clone(),
+                    modified_desc.path.clone(),
                 )
                 .await;
             }
@@ -335,15 +365,15 @@ impl TransferTaskActions for TransferOss2Local {
                 execute_set.join_next().await;
             }
 
-            let _ = fs::remove_file(&modified_file.path);
+            let _ = fs::remove_file(&modified_desc.path);
             let old_object_file = checkpoint.current_stock_object_list_file.clone();
 
             checkpoint.executed_file_position = FilePosition {
-                offset: modified_file.size.try_into().unwrap(),
-                line_num: modified_file.total_lines,
+                offset: modified_desc.size.try_into().unwrap(),
+                line_num: modified_desc.total_lines,
             };
-            checkpoint.executed_file = modified_file;
-            checkpoint.current_stock_object_list_file = new_object_list_file.path;
+            checkpoint.executed_file = modified_desc;
+            checkpoint.current_stock_object_list_file = new_object_list_desc.path;
             let _ = checkpoint.save_to(&checkpoint_path);
             let _ = fs::remove_file(&old_object_file);
         }
@@ -665,7 +695,7 @@ impl Oss2LocalListedRecordsExecutor {
             .write(true)
             .open(target_file)?;
 
-        download_object_to_file(
+        download_object(
             resp,
             &mut t_file,
             self.large_file_size,
@@ -689,9 +719,6 @@ impl Oss2LocalListedRecordsExecutor {
 
         let source_client = self.source.gen_oss_client()?;
 
-        // Todo
-        // 增加去重逻辑，当两条记录相邻为 create和modif时只put一次
-        // 增加目录删除逻辑，对应oss删除指定prefix下的所有文件，文件系统删除目录
         for record in records {
             // 记录执行文件位置
             self.offset_map
@@ -766,7 +793,7 @@ impl Oss2LocalListedRecordsExecutor {
                     .create(true)
                     .write(true)
                     .open(&record.target_key)?;
-                download_object_to_file(
+                download_object(
                     obj,
                     &mut t_file,
                     self.large_file_size,

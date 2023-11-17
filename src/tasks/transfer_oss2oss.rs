@@ -1,12 +1,12 @@
 use super::{
-    gen_file_path, task_actions::TransferTaskActions, IncrementAssistant, TransferTaskAttributes,
-    ERROR_RECORD_PREFIX, OFFSET_PREFIX,
+    gen_file_path, task_actions::TransferTaskActions, IncrementAssistant, TaskStage,
+    TransferTaskAttributes, ERROR_RECORD_PREFIX, OFFSET_PREFIX, REMOVED_PREFIX,
 };
 use crate::{
     checkpoint::{
         get_task_checkpoint, FileDescription, FilePosition, ListedRecord, Opt, RecordDescription,
     },
-    commons::{json_to_struct, promote_processbar, read_lines, RegexFilter},
+    commons::{json_to_struct, merge_file, promote_processbar, read_lines, RegexFilter},
     s3::{aws_s3::OssClient, OSSDescription},
     tasks::{MODIFIED_PREFIX, OBJECT_LIST_FILE_PREFIX},
 };
@@ -205,6 +205,7 @@ impl TransferTaskActions for TransferOss2Oss {
                 return;
             }
         };
+        checkpoint.task_stage = TaskStage::Increment;
         drop(lock);
 
         let regex_filter =
@@ -219,6 +220,13 @@ impl TransferTaskActions for TransferOss2Oss {
         let mut sleep_time = 5;
         let pd = promote_processbar("executing increment:waiting for data...");
         let mut finished_total_objects = 0;
+        let source_client = match self.source.gen_oss_client() {
+            Ok(client) => client,
+            Err(e) => {
+                log::error!("{}", e);
+                return;
+            }
+        };
 
         while !snapshot_stop_mark.load(std::sync::atomic::Ordering::SeqCst)
             && self
@@ -226,16 +234,37 @@ impl TransferTaskActions for TransferOss2Oss {
                 .max_errors
                 .ge(&err_counter.load(std::sync::atomic::Ordering::SeqCst))
         {
-            let (modified_file, new_object_list_file, exec_time) = self
-                .gen_changed_record_file(timestampe, &checkpoint.current_stock_object_list_file)
+            // let (modified_desc, new_object_list_desc, exec_time) = self
+            //     .gen_changed_record_file(timestampe, &checkpoint.current_stock_object_list_file)
+            //     .await
+            //     .unwrap();
+
+            let (modified_desc, new_object_list_desc, exec_time) = match source_client
+                .changed_object_capture(
+                    &self.source.bucket,
+                    self.source.prefix.clone(),
+                    self.target.prefix.clone(),
+                    &self.attributes.meta_dir,
+                    timestampe,
+                    &checkpoint.current_stock_object_list_file,
+                    self.attributes.bach_size,
+                    self.attributes.multi_part_chunk,
+                )
                 .await
-                .unwrap();
-            timestampe = exec_time;
+            {
+                Ok((m, n, t)) => (m.clone(), n.clone(), t.clone()),
+                Err(e) => {
+                    log::error!("{}", e);
+                    return;
+                }
+            };
+
+            timestampe = exec_time.clone();
 
             let mut vec_keys = vec![];
             // 生成执行文件
             let mut list_file_position = FilePosition::default();
-            let executed_file = match File::open(&modified_file.path) {
+            let modified_file = match File::open(&modified_desc.path) {
                 Ok(f) => f,
                 Err(e) => {
                     log::error!("{}", e);
@@ -244,21 +273,10 @@ impl TransferTaskActions for TransferOss2Oss {
                 }
             };
 
-            if executed_file.metadata().unwrap().len().eq(&0) {
-                //递增等待时间
-                let _ = fs::remove_file(&modified_file.path);
-                tokio::time::sleep(tokio::time::Duration::from_secs(sleep_time)).await;
-                if sleep_time.ge(&300) {
-                    sleep_time = 60;
-                } else {
-                    sleep_time += 5;
-                }
-            } else {
-                sleep_time = 5;
-            }
+            let modified_file_is_empty = modified_file.metadata().unwrap().len().eq(&0);
 
             // 按列表传输object from source to target
-            let lines: io::Lines<io::BufReader<File>> = io::BufReader::new(executed_file).lines();
+            let lines: io::Lines<io::BufReader<File>> = io::BufReader::new(modified_file).lines();
             for line in lines {
                 // 若错误达到上限，则停止任务
                 if err_counter.load(std::sync::atomic::Ordering::SeqCst)
@@ -299,7 +317,7 @@ impl TransferTaskActions for TransferOss2Oss {
                         vk,
                         Arc::clone(&err_counter),
                         Arc::clone(&offset_map),
-                        modified_file.path.clone(),
+                        modified_desc.path.clone(),
                     )
                     .await;
 
@@ -323,7 +341,7 @@ impl TransferTaskActions for TransferOss2Oss {
                     vk,
                     Arc::clone(&err_counter),
                     Arc::clone(&offset_map),
-                    modified_file.path.clone(),
+                    modified_desc.path.clone(),
                 )
                 .await;
             }
@@ -332,24 +350,36 @@ impl TransferTaskActions for TransferOss2Oss {
                 execute_set.join_next().await;
             }
 
-            let old_object_file = checkpoint.current_stock_object_list_file.clone();
-            finished_total_objects += modified_file.total_lines;
-            if !modified_file.total_lines.eq(&0) {
+            finished_total_objects += modified_desc.total_lines;
+            if !modified_desc.total_lines.eq(&0) {
                 let msg = format!(
                     "executing transfer modified finished this batch {} total {};",
-                    modified_file.total_lines, finished_total_objects
+                    modified_desc.total_lines, finished_total_objects
                 );
                 pd.set_message(msg);
             }
-            let _ = fs::remove_file(&modified_file.path);
+
+            let _ = fs::remove_file(&checkpoint.current_stock_object_list_file);
+            let _ = fs::remove_file(&modified_desc.path);
             checkpoint.executed_file_position = FilePosition {
-                offset: modified_file.size.try_into().unwrap(),
-                line_num: modified_file.total_lines,
+                offset: modified_desc.size.try_into().unwrap(),
+                line_num: modified_desc.total_lines,
             };
-            checkpoint.executed_file = modified_file;
-            checkpoint.current_stock_object_list_file = new_object_list_file.path;
+            checkpoint.executed_file = modified_desc.clone();
+            checkpoint.current_stock_object_list_file = new_object_list_desc.path.clone();
             let _ = checkpoint.save_to(&checkpoint_path);
-            let _ = fs::remove_file(&old_object_file);
+
+            //递增等待时间
+            if modified_file_is_empty {
+                tokio::time::sleep(tokio::time::Duration::from_secs(sleep_time)).await;
+                if sleep_time.ge(&300) {
+                    sleep_time = 60;
+                } else {
+                    sleep_time += 5;
+                }
+            } else {
+                sleep_time = 5;
+            }
         }
         pd.finish();
     }
@@ -393,9 +423,16 @@ impl TransferOss2Oss {
     ) -> Result<(FileDescription, FileDescription, i64)> {
         // let mut set = JoinSet::new();
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+
         let new_object_list = gen_file_path(
             &self.attributes.meta_dir,
             OBJECT_LIST_FILE_PREFIX,
+            now.as_secs().to_string().as_str(),
+        );
+
+        let removed = gen_file_path(
+            &self.attributes.meta_dir,
+            REMOVED_PREFIX,
             now.as_secs().to_string().as_str(),
         );
         let modified = gen_file_path(
@@ -404,166 +441,29 @@ impl TransferOss2Oss {
             now.as_secs().to_string().as_str(),
         );
 
-        let mut new_object_list_file = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(&new_object_list)?;
-
-        let mut modified_file = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(&modified)?;
-
         let source_client = self.source.gen_oss_client()?;
 
-        let list_file = File::open(list_file_path)?;
-        let mut list_file_offset = 0;
-        let mut new_list_total_lines = 0;
-        let mut list_file_line_num = 0;
-        let mut modified_file_total_lines = 0;
-        let lines: io::Lines<io::BufReader<File>> = io::BufReader::new(list_file).lines();
-        for line in lines {
-            if let Result::Ok(key) = line {
-                let len = key.bytes().len() + "\n".bytes().len();
-                list_file_offset += len;
-                list_file_line_num += 1;
-
-                let mut target_key = match self.target.prefix.clone() {
-                    Some(s) => s,
-                    None => "".to_string(),
-                };
-                target_key.push_str(&key);
-
-                if !source_client
-                    .object_exists(&self.source.bucket, &key)
-                    .await?
-                {
-                    // 填充变动对象文件
-                    let record = RecordDescription {
-                        source_key: key,
-                        target_key,
-                        list_file_path: list_file_path.to_string(),
-                        list_file_position: FilePosition {
-                            offset: list_file_offset,
-                            line_num: list_file_line_num,
-                        },
-                        option: Opt::REMOVE,
-                    };
-                    let _ = record.save_json_to_file(&mut modified_file);
-                    modified_file_total_lines += 1;
-                };
-            }
-        }
-
-        let resp = source_client
-            .list_objects(
-                self.source.bucket.clone(),
-                self.source.prefix.clone(),
-                self.attributes.bach_size,
-                None,
-            )
+        let removed_description = self
+            .gen_removed_record_file(&source_client, list_file_path, &removed)
             .await?;
-        let mut token = resp.next_token;
-        if let Some(objects) = resp.object_list {
-            objects.iter().for_each(|o| match o.key() {
-                Some(key) => {
-                    let _ = new_object_list_file.write_all(key.as_bytes());
-                    let _ = new_object_list_file.write_all("\n".as_bytes());
-                    new_list_total_lines += 1;
-                    if let Some(d) = o.last_modified() {
-                        if d.secs().ge(&timestampe) {
-                            // 填充变动对象文件
-                            let mut target_key = match self.target.prefix.clone() {
-                                Some(s) => s,
-                                None => "".to_string(),
-                            };
-                            target_key.push_str(&key);
-                            let record = RecordDescription {
-                                source_key: key.to_string(),
-                                target_key,
-                                list_file_path: "".to_string(),
-                                list_file_position: FilePosition::default(),
-                                option: Opt::PUT,
-                            };
-                            let _ = record.save_json_to_file(&mut modified_file);
-                            modified_file_total_lines += 1;
-                        }
-                    }
-                }
-                None => {}
-            });
-
-            modified_file.flush()?;
-            new_object_list_file.flush()?;
+        let (mut modified_description, new_list_description) = self
+            .gen_modified_record_file(&source_client, timestampe, &modified, &new_object_list)
+            .await?;
+        if removed_description.size.gt(&0) {
+            merge_file(
+                &removed_description.path,
+                &modified_description.path,
+                self.attributes.multi_part_chunk,
+            )?;
         }
 
-        while token.is_some() {
-            let resp = source_client
-                .list_objects(
-                    self.source.bucket.clone(),
-                    self.source.prefix.clone(),
-                    self.attributes.bach_size,
-                    token.clone(),
-                )
-                .await?;
-            if let Some(objects) = resp.object_list {
-                objects.iter().for_each(|o| match o.key() {
-                    Some(key) => {
-                        // 填充新的对象列表文件
-                        let _ = new_object_list_file.write_all(key.as_bytes());
-                        let _ = new_object_list_file.write_all("\n".as_bytes());
-                        new_list_total_lines += 1;
-                        if let Some(d) = o.last_modified() {
-                            if d.secs().ge(&timestampe) {
-                                // 填充变动对象文件
-                                let mut target_key = match self.target.prefix.clone() {
-                                    Some(s) => s,
-                                    None => "".to_string(),
-                                };
-                                target_key.push_str(&key);
-
-                                let record = RecordDescription {
-                                    source_key: key.to_string(),
-                                    target_key,
-                                    list_file_path: "".to_string(),
-                                    list_file_position: FilePosition::default(),
-                                    option: Opt::PUT,
-                                };
-                                let _ = record.save_json_to_file(&mut modified_file);
-                                list_file_line_num += 1;
-                            }
-                        }
-                    }
-                    None => {}
-                });
-
-                modified_file.flush()?;
-                new_object_list_file.flush()?;
-            }
-            token = resp.next_token;
-        }
-
-        let new_object_list_file_size = new_object_list_file.metadata()?.len();
-        let modified_file_size = modified_file.metadata()?.len();
-        let modified_executed_file = FileDescription {
-            path: modified.clone(),
-            size: modified_file_size,
-            total_lines: modified_file_total_lines,
-        };
-
-        let new_object_list_executed_file = FileDescription {
-            path: new_object_list.clone(),
-            size: new_object_list_file_size,
-            total_lines: new_list_total_lines,
-        };
         let timestampe = now.as_secs().try_into()?;
-        Ok((
-            modified_executed_file,
-            new_object_list_executed_file,
-            timestampe,
-        ))
+        modified_description.size = modified_description.size + removed_description.size;
+        modified_description.total_lines =
+            modified_description.total_lines + removed_description.total_lines;
+
+        let _ = fs::remove_file(&removed_description.path);
+        Ok((modified_description, new_list_description, timestampe))
     }
 
     async fn gen_removed_record_file(
@@ -662,7 +562,7 @@ impl TransferOss2Oss {
                     if let Some(d) = o.last_modified() {
                         if d.secs().ge(&timestampe) {
                             // 填充变动对象文件
-                            let mut target_key = match self.target.prefix.clone() {
+                            let target_key = match self.target.prefix.clone() {
                                 Some(mut s) => {
                                     s.push_str(&key);
                                     s
@@ -752,9 +652,9 @@ impl TransferOss2Oss {
             total_lines: modified_total_lines,
         };
         let new_list_description = FileDescription {
-            path: modified_out_put.to_string(),
+            path: new_list.to_string(),
             size: new_list_size,
-            total_lines: modified_total_lines,
+            total_lines: new_list_total_lines,
         };
 
         Ok((modified_file_description, new_list_description))
