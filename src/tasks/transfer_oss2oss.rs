@@ -1,14 +1,13 @@
 use super::{
     gen_file_path, task_actions::TransferTaskActions, IncrementAssistant, TaskStage,
-    TransferTaskAttributes, ERROR_RECORD_PREFIX, OFFSET_PREFIX, REMOVED_PREFIX,
+    TransferTaskAttributes, ERROR_RECORD_PREFIX, OFFSET_PREFIX,
 };
 use crate::{
     checkpoint::{
         get_task_checkpoint, FileDescription, FilePosition, ListedRecord, Opt, RecordDescription,
     },
-    commons::{json_to_struct, merge_file, promote_processbar, read_lines, RegexFilter},
+    commons::{json_to_struct, promote_processbar, read_lines, RegexFilter},
     s3::{aws_s3::OssClient, OSSDescription},
-    tasks::{MODIFIED_PREFIX, OBJECT_LIST_FILE_PREFIX},
 };
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -48,6 +47,19 @@ impl Default for TransferOss2Oss {
 
 #[async_trait]
 impl TransferTaskActions for TransferOss2Oss {
+    async fn analyze_source(&self) -> Result<DashMap<String, i128>> {
+        let filter = RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include)?;
+        let client = self.source.gen_oss_client()?;
+        client
+            .analyze_objects_size(
+                &self.source.bucket,
+                self.source.prefix.clone(),
+                None,
+                Some(filter),
+                self.attributes.bach_size,
+            )
+            .await
+    }
     // 错误记录重试
     fn error_record_retry(&self) -> Result<()> {
         // 遍历错误记录

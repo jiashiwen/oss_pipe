@@ -5,6 +5,7 @@ use aws_sdk_s3::{
     types::ByteStream,
     Client,
 };
+use dashmap::DashMap;
 use std::{
     fs::{self, File, OpenOptions},
     io::{BufRead, BufReader, LineWriter, Lines, Read, Write},
@@ -15,7 +16,7 @@ use tokio::io::AsyncReadExt;
 
 use crate::{
     checkpoint::{FileDescription, FilePosition, Opt, RecordDescription},
-    commons::merge_file,
+    commons::{merge_file, size_distributed, RegexFilter},
     tasks::{gen_file_path, MODIFIED_PREFIX, OBJECT_LIST_FILE_PREFIX, REMOVED_PREFIX},
 };
 
@@ -656,11 +657,10 @@ impl OssClient {
             modified_description.total_lines + removed_description.total_lines;
 
         let _ = fs::remove_file(&removed_description.path);
-
         Ok((modified_description, new_list_description, timestampe))
     }
 
-    pub async fn capture_removed_objects(
+    async fn capture_removed_objects(
         &self,
         bucket: &str,
         target_prefix: Option<String>,
@@ -722,7 +722,7 @@ impl OssClient {
         Ok(out_put_description)
     }
 
-    pub async fn capture_modified_objects(
+    async fn capture_modified_objects(
         &self,
         bucket: &str,
         source_prefix: Option<String>,
@@ -852,6 +852,107 @@ impl OssClient {
         };
 
         Ok((modified_file_description, new_list_description))
+    }
+
+    pub async fn analyze_objects_size(
+        &self,
+        bucket: &str,
+        prefix: Option<String>,
+        timestampe: Option<i64>,
+        filter: Option<RegexFilter>,
+        batch_size: i32,
+    ) -> Result<DashMap<String, i128>> {
+        let size_map = DashMap::<String, i128>::new();
+        let resp = self
+            .list_objects(bucket.to_string(), prefix.clone(), batch_size, None)
+            .await?;
+        let mut token = resp.next_token;
+
+        if let Some(objects) = resp.object_list {
+            for obj in objects.into_iter() {
+                let key = match obj.key() {
+                    Some(k) => k,
+                    None => {
+                        continue;
+                    }
+                };
+
+                if let Some(p) = &prefix {
+                    if !key.starts_with(p) {
+                        continue;
+                    }
+                }
+
+                if let Some(f) = &filter {
+                    if !f.filter(key) {
+                        continue;
+                    }
+                }
+
+                if let Some(t) = timestampe {
+                    if let Some(d) = obj.last_modified() {
+                        if d.secs().lt(&t) {
+                            continue;
+                        }
+                    }
+                }
+                let obj_size = i128::from(obj.size());
+                let map_key = size_distributed(obj_size);
+                let mut map_val = match size_map.get(&map_key) {
+                    Some(m) => *m.value(),
+                    None => 0,
+                };
+                map_val += 1;
+                size_map.insert(map_key, map_val);
+            }
+        }
+
+        while token.is_some() {
+            let resp = self
+                .list_objects(bucket.to_string(), prefix.clone(), batch_size, token)
+                .await?;
+            if let Some(objects) = resp.object_list {
+                for obj in objects.into_iter() {
+                    let key = match obj.key() {
+                        Some(k) => k,
+                        None => {
+                            continue;
+                        }
+                    };
+
+                    if let Some(p) = &prefix {
+                        if !key.starts_with(p) {
+                            continue;
+                        }
+                    }
+
+                    if let Some(f) = &filter {
+                        if !f.filter(key) {
+                            continue;
+                        }
+                    }
+
+                    if let Some(t) = timestampe {
+                        if let Some(d) = obj.last_modified() {
+                            if d.secs().lt(&t) {
+                                continue;
+                            }
+                        }
+                    }
+                    let obj_size = i128::from(obj.size());
+                    let map_key = size_distributed(obj_size);
+                    let mut map_val = match size_map.get(&map_key) {
+                        Some(m) => *m.value(),
+                        None => 0,
+                    };
+                    map_val += 1;
+                    size_map.insert(map_key, map_val);
+                }
+            }
+            token = resp.next_token;
+        }
+
+        Ok(size_map)
     }
 }
 

@@ -6,8 +6,8 @@ use super::{
 use crate::checkpoint::{get_task_checkpoint, FileDescription, ListedRecord};
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::commons::{
-    copy_file, scan_folder_files_to_file, Modified, ModifyType, NotifyWatcher, PathType,
-    RegexFilter,
+    analyze_folder_files_size, copy_file, scan_folder_files_to_file, Modified, ModifyType,
+    NotifyWatcher, PathType, RegexFilter,
 };
 use anyhow::anyhow;
 use anyhow::Result;
@@ -38,6 +38,11 @@ pub struct TransferLocal2Local {
 
 #[async_trait]
 impl TransferTaskActions for TransferLocal2Local {
+    async fn analyze_source(&self) -> Result<DashMap<String, i128>> {
+        let filter = RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include)?;
+        analyze_folder_files_size(&self.source, None, Some(filter))
+    }
+
     fn error_record_retry(&self) -> Result<()> {
         Ok(())
     }
