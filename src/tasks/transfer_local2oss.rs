@@ -10,6 +10,7 @@ use super::{gen_file_path, ERROR_RECORD_PREFIX};
 use crate::checkpoint::get_task_checkpoint;
 use crate::checkpoint::FileDescription;
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
+use crate::commons::analyze_folder_files_size;
 use crate::commons::scan_folder_files_to_file;
 use crate::commons::RegexFilter;
 use crate::commons::{json_to_struct, read_lines, Modified, ModifyType, NotifyWatcher, PathType};
@@ -60,6 +61,10 @@ impl Default for TransferLocal2Oss {
 
 #[async_trait]
 impl TransferTaskActions for TransferLocal2Oss {
+    async fn analyze_source(&self) -> Result<DashMap<String, i128>> {
+        let filter = RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include)?;
+        analyze_folder_files_size(&self.source, None, Some(filter))
+    }
     // 错误记录重试
     fn error_record_retry(&self) -> Result<()> {
         // 遍历错误记录

@@ -15,6 +15,7 @@ use tokio::{sync::Mutex, task::JoinSet};
 // 设计 incrementparameter struct 用于统一存储 lastmodif notify file 以及 notify file size 等原子数据
 #[async_trait]
 pub trait TransferTaskActions {
+    async fn analyze_source(&self) -> Result<DashMap<String, i128>>;
     // 错误记录重试
     fn error_record_retry(&self) -> Result<()>;
     // 记录执行器

@@ -1,7 +1,8 @@
 use crate::checkpoint::FileDescription;
 
-use super::rand_util::rand_string;
+use super::{rand_util::rand_string, size_distributed, RegexFilter};
 use anyhow::Result;
+use dashmap::DashMap;
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, BufRead, LineWriter, Read, Write},
@@ -35,16 +36,6 @@ pub fn copy_file(
     match len_usize.gt(&multi_parts_size) {
         true => {
             multi_parts_copy_file(source, target, chunk_size)?;
-            // loop {
-            //     let mut buffer = vec![0; chunk_size];
-            //     let read_count = f_source.read(&mut buffer)?;
-            //     let buf = &buffer[..read_count];
-            //     f_target.write_all(&buf)?;
-            //     if read_count != chunk_size {
-            //         break;
-            //     }
-            // }
-            // f_target.flush()?;
         }
         false => {
             let data = fs::read(source)?;
@@ -91,6 +82,54 @@ fn remove_dir_contents<P: AsRef<Path>>(path: P) -> io::Result<()> {
     Ok(())
 }
 
+pub fn analyze_folder_files_size(
+    folder: &str,
+    timestampe: Option<u64>,
+    filter: Option<RegexFilter>,
+) -> Result<DashMap<String, i128>> {
+    let size_map = DashMap::<String, i128>::new();
+    for entry in WalkDir::new(folder)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|e| !e.file_type().is_dir())
+    {
+        if let Some(p) = entry.path().to_str() {
+            if p.eq(folder) {
+                continue;
+            }
+
+            if let Some(f) = &filter {
+                if !f.filter(p) {
+                    continue;
+                }
+            }
+
+            if let Some(t) = timestampe {
+                let modified_time = entry
+                    .metadata()?
+                    .modified()?
+                    .duration_since(UNIX_EPOCH)?
+                    .as_secs();
+                if modified_time.lt(&t) {
+                    continue;
+                }
+            }
+
+            let obj_size = i128::from(entry.metadata()?.len());
+            let key = size_distributed(obj_size);
+            let mut size = match size_map.get(&key) {
+                Some(m) => *m.value(),
+                None => 0,
+            };
+            size += 1;
+            size_map.insert(key, size);
+        };
+    }
+    Ok(size_map)
+}
+
+// Todo
+// 加入正则过滤功能
 pub fn scan_folder_files_to_file(
     folder: &str,
     file_name: &str,
@@ -205,9 +244,6 @@ pub fn merge_file<P: AsRef<Path>>(file: P, merge_to: P, chunk_size: usize) -> Re
     Ok(())
 }
 
-// 批量生成文件，文件名定长随机
-// pub fn generate_file_batch(files: usize,file_size:usize,dir:&str)
-
 // 生成指定行数，指定每行字节数的文件
 pub fn generate_line_file(line_base_size: usize, lines: usize, file_name: &str) -> Result<()> {
     // 生成文件目录
@@ -293,7 +329,8 @@ pub fn generate_files(
 #[cfg(test)]
 mod test {
     use crate::commons::{
-        fileutiles::generate_file, multi_parts_copy_file, scan_folder_files_to_file,
+        analyze_folder_files_size, fileutiles::generate_file, multi_parts_copy_file,
+        scan_folder_files_to_file,
     };
 
     use super::generate_line_file;
@@ -324,5 +361,12 @@ mod test {
     fn test_scan_folder_files_last_modify_greater_then_to_file() {
         let r = scan_folder_files_to_file("/tmp/", "/tmp/lastmodify", Some(1697423669));
         println!("test older_files_last_modify_greater_then_to_file {:?}", r);
+    }
+
+    //cargo test commons::fileutiles::test::test_analyze_folder_files_size -- --nocapture
+    #[test]
+    fn test_analyze_folder_files_size() {
+        // let r = analyze_folder_files_size("/tmp/");
+        // println!("test older_files_last_modify_greater_then_to_file {:?}", r);
     }
 }
