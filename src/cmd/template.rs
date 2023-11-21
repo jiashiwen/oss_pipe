@@ -3,23 +3,10 @@ use clap::{Arg, Command};
 pub fn new_template() -> Command {
     clap::Command::new("template")
         .about("generate oss task description yaml template")
-        // .subcommand(template_upload())
-        // .subcommand(local_to_local())
-        // .subcommand(template_download())
         .subcommand(template_transfer())
         .subcommand(truncate_bucket())
         .subcommand(oss_compare())
 }
-
-// fn template_download() -> Command {
-//     clap::Command::new("download")
-//         .about("generate oss task description template for download task")
-//         .args(&[Arg::new("file")
-//             .value_name("file")
-//             .required(false)
-//             .index(1)
-//             .help("specific output file path")])
-// }
 
 fn template_transfer() -> Command {
     clap::Command::new("transfer")

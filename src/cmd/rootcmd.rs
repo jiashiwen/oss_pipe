@@ -1,5 +1,5 @@
 use crate::cmd::gen_file_cmd::{new_gen_file_cmd, new_gen_files_cmd};
-use crate::cmd::osstaskcmd::new_osstask_cmd;
+use crate::cmd::taskcmd::new_task_cmd;
 use crate::cmd::{
     new_command_tree_cmd, new_config_cmd, new_exit_cmd, new_osscfg_cmd, new_parameters_cmd,
     new_template,
@@ -44,7 +44,7 @@ lazy_static! {
                 .action(ArgAction::SetTrue)
                 .help("run as interact mod")
         )
-        .subcommand(new_osstask_cmd())
+        .subcommand(new_task_cmd())
         .subcommand(new_template())
         .subcommand(new_parameters_cmd())
         .subcommand(new_config_cmd())
@@ -161,29 +161,69 @@ fn cmd_match(matches: &ArgMatches) {
         }
     }
 
-    if let Some(osstask) = matches.subcommand_matches("osstask") {
-        if let Some(f) = osstask.get_one::<String>("filepath") {
-            let task = read_yaml_file::<Task>(f);
-            let now = time::Instant::now();
+    if let Some(task) = matches.subcommand_matches("task") {
+        if let Some(exec) = task.subcommand_matches("exec") {
+            if let Some(f) = exec.get_one::<String>("filepath") {
+                let task = read_yaml_file::<Task>(f);
+                let now = time::Instant::now();
 
-            match task {
-                Ok(t) => {
-                    log::info!("execute task: {:?}", t.task_id);
-                    let r = t.task_desc.exec_multi_threads();
-                    match r {
-                        Ok(_) => log::info!("task {} execute ok!", t.task_id),
-                        Err(e) => {
-                            log::error!("{}", e);
+                match task {
+                    Ok(t) => {
+                        log::info!("execute task: {:?}", t.task_id);
+                        let r = t.task_desc.execute();
+                        match r {
+                            Ok(_) => log::info!("task {} execute ok!", t.task_id),
+                            Err(e) => {
+                                log::error!("{}", e);
+                            }
                         }
                     }
+                    Err(e) => {
+                        log::error!("{}", e);
+                    }
                 }
-                Err(e) => {
-                    log::error!("{}", e);
-                }
+                println!("{:?}", now.elapsed());
             }
-            println!("{:?}", now.elapsed());
+        }
+
+        if let Some(analyze) = task.subcommand_matches("analyze") {
+            if let Some(f) = analyze.get_one::<String>("filepath") {
+                let task = match read_yaml_file::<Task>(f) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        log::error!("{}", e);
+                        return;
+                    }
+                };
+
+                match task.task_desc {
+                    TaskDescription::Transfer(t) => {
+                        let analized = t.analyze();
+                    }
+                    _ => {
+                        println!("No analysis required");
+                    }
+                };
+
+                // match task {
+                //     Ok(t) => {
+                //         log::info!("execute task: {:?}", t.task_id);
+                //         let r = t.task_desc.execute();
+                //         match r {
+                //             Ok(_) => log::info!("task {} execute ok!", t.task_id),
+                //             Err(e) => {
+                //                 log::error!("{}", e);
+                //             }
+                //         }
+                //     }
+                //     Err(e) => {
+                //         log::error!("{}", e);
+                //     }
+                // }
+            }
         }
     }
+
     if let Some(template) = matches.subcommand_matches("template") {
         let task_id = task_id_generator();
 

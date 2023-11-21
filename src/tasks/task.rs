@@ -58,7 +58,7 @@ pub enum TaskDescription {
 // ToDo
 // 抽象 task
 impl TaskDescription {
-    pub fn exec_multi_threads(&self) -> Result<()> {
+    pub fn execute(&self) -> Result<()> {
         match self {
             TaskDescription::Transfer(transfer) => transfer.execute(),
             TaskDescription::TruncateBucket(truncate) => truncate.exec_multi_threads(),
