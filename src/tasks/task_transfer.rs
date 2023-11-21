@@ -1,5 +1,5 @@
 use super::{
-    gen_file_path, TaskStage, TaskStatusSaver, CHECK_POINT_FILE_NAME, OBJECT_LIST_FILE_PREFIX,
+    gen_file_path, TaskStatusSaver, TransferStage, CHECK_POINT_FILE_NAME, OBJECT_LIST_FILE_PREFIX,
     OFFSET_PREFIX,
 };
 use super::{
@@ -19,7 +19,6 @@ use crate::{
 use anyhow::{anyhow, Result};
 use dashmap::DashMap;
 use rust_decimal::prelude::*;
-use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File},
@@ -32,7 +31,6 @@ use std::{
 };
 use tabled::builder::Builder;
 use tabled::settings::Style;
-use tabled::{builder, row, Table};
 use tokio::{
     runtime,
     sync::Mutex,
@@ -206,18 +204,9 @@ impl TransferTask {
             .build()?;
 
         let pd = promote_processbar("Generating object list ...");
+        // 生成执行文件
         rt.block_on(async {
             if self.attributes.start_from_checkpoint {
-                // 执行error retry
-                match task.error_record_retry() {
-                    Ok(_) => {}
-                    Err(e) => {
-                        log::error!("{}", e);
-                        interrupt = true;
-                        return;
-                    }
-                };
-
                 // 变更object_list_file_name文件名
                 let checkpoint = match get_task_checkpoint(check_point_file.as_str()) {
                     Ok(c) => c,
@@ -243,18 +232,29 @@ impl TransferTask {
                 }
 
                 match checkpoint.task_stage {
-                    TaskStage::Stock => match checkpoint.seeked_execute_file() {
-                        Ok(f) => {
-                            list_file_position = checkpoint.executed_file_position.clone();
-                            list_file = Some(f);
+                    TransferStage::Stock => {
+                        // 执行error retry
+                        match task.error_record_retry() {
+                            Ok(_) => {}
+                            Err(e) => {
+                                log::error!("{}", e);
+                                interrupt = true;
+                                return;
+                            }
+                        };
+                        match checkpoint.seeked_execute_file() {
+                            Ok(f) => {
+                                list_file_position = checkpoint.executed_file_position.clone();
+                                list_file = Some(f);
+                            }
+                            Err(e) => {
+                                log::error!("{}", e);
+                                interrupt = true;
+                                return;
+                            }
                         }
-                        Err(e) => {
-                            log::error!("{}", e);
-                            interrupt = true;
-                            return;
-                        }
-                    },
-                    TaskStage::Increment => {
+                    }
+                    TransferStage::Increment => {
                         // 清理文件重新生成object list 文件需大于指定时间戳,并根据原始object list 删除位于目标端但源端不存在的文件
                         let timestamp = TryInto::<i64>::try_into(checkpoint.timestampe).unwrap();
                         let _ = fs::remove_file(&executed_file.path);
@@ -339,7 +339,7 @@ impl TransferTask {
                 stop_mark: Arc::clone(&snapshot_stop_mark),
                 list_file_positon_map: Arc::clone(&offset_map),
                 file_for_notify,
-                task_stage: TaskStage::Stock,
+                task_stage: TransferStage::Stock,
                 interval: 3,
                 current_stock_object_list_file: executed_file.path.clone(),
             };
@@ -444,7 +444,7 @@ impl TransferTask {
                 executed_file: executed_file.clone(),
                 executed_file_position: list_file_position.clone(),
                 file_for_notify: notify,
-                task_stage: TaskStage::Stock,
+                task_stage: TransferStage::Stock,
                 timestampe: 0,
                 current_stock_object_list_file: executed_file.path.clone(),
             };
@@ -457,11 +457,14 @@ impl TransferTask {
             }
         });
 
+        // match self.attributes.transfer_type{
+        //     super::TransferType::Full => todo!(),
+        //     super::TransferType::Stock => todo!(),
+        //     super::TransferType::Increment => todo!(),
+        // }
         // 增量逻辑
         if self.attributes.continuous {
             rt.block_on(async {
-                // let pd = promote_processbar("Executing increment ...");
-
                 let stop_mark = Arc::new(AtomicBool::new(false));
                 let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
                 let task_increment = self.gen_transfer_actions();

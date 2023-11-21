@@ -1,13 +1,13 @@
 use super::task_actions::TransferTaskActions;
 use super::{
-    gen_file_path, IncrementAssistant, LocalNotify, TaskStage, TaskStatusSaver,
+    gen_file_path, IncrementAssistant, LocalNotify, TaskStatusSaver, TransferStage,
     TransferTaskAttributes, ERROR_RECORD_PREFIX, NOTIFY_FILE_PREFIX, OFFSET_PREFIX,
 };
 use crate::checkpoint::{get_task_checkpoint, FileDescription, ListedRecord};
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::commons::{
-    analyze_folder_files_size, copy_file, scan_folder_files_to_file, Modified, ModifyType,
-    NotifyWatcher, PathType, RegexFilter,
+    analyze_folder_files_size, copy_file, json_to_struct, read_lines, scan_folder_files_to_file,
+    Modified, ModifyType, NotifyWatcher, PathType, RegexFilter,
 };
 use anyhow::anyhow;
 use anyhow::Result;
@@ -27,6 +27,7 @@ use std::{
 };
 use tokio::sync::Mutex;
 use tokio::task::{self, JoinSet};
+use walkdir::WalkDir;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
@@ -44,6 +45,58 @@ impl TransferTaskActions for TransferLocal2Local {
     }
 
     fn error_record_retry(&self) -> Result<()> {
+        // 遍历meta dir 执行所有err开头文件
+        for entry in WalkDir::new(self.attributes.meta_dir.as_str())
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|e| !e.file_type().is_dir() && e.file_name().to_str().is_some())
+        {
+            let file_name = match entry.file_name().to_str() {
+                Some(name) => name,
+                None => {
+                    continue;
+                }
+            };
+
+            if !file_name.starts_with(ERROR_RECORD_PREFIX) {
+                continue;
+            };
+
+            if let Some(p) = entry.path().to_str() {
+                if let Ok(lines) = read_lines(p) {
+                    let mut record_vec = vec![];
+                    for line in lines {
+                        match line {
+                            Ok(content) => {
+                                let record = json_to_struct::<RecordDescription>(content.as_str())?;
+                                record_vec.push(record);
+                            }
+                            Err(e) => {
+                                log::error!("{}", e);
+                                return Err(anyhow!("{}", e));
+                            }
+                        }
+                    }
+
+                    if record_vec.len() > 0 {
+                        let local2local = Local2LocalExecutor {
+                            source: self.source.clone(),
+                            target: self.target.clone(),
+                            err_counter: Arc::new(AtomicUsize::new(0)),
+                            offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
+                            meta_dir: self.attributes.meta_dir.clone(),
+                            target_exist_skip: self.attributes.target_exists_skip,
+                            large_file_size: self.attributes.large_file_size,
+                            multi_part_chunk: self.attributes.multi_part_chunk,
+                            list_file_path: p.to_string(),
+                        };
+                        let _ = local2local.exec_record_descriptions(record_vec);
+                    }
+                }
+                let _ = fs::remove_file(p);
+            }
+        }
+
         Ok(())
     }
     async fn records_excutor(
@@ -168,7 +221,7 @@ impl TransferTaskActions for TransferLocal2Local {
             stop_mark: Arc::clone(&snapshot_stop_mark),
             list_file_positon_map: Arc::clone(&offset_map),
             file_for_notify: Some(local_notify.notify_file_path.clone()),
-            task_stage: TaskStage::Increment,
+            task_stage: TransferStage::Increment,
             interval: 3,
         };
 
@@ -475,9 +528,14 @@ impl Local2LocalExecutor {
     }
 
     pub async fn exec_record_descriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
-        let subffix = records[0].list_file_position.offset.to_string();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        let mut subffix = records[0].list_file_position.offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
+
+        subffix.push_str("_");
+        subffix.push_str(now.as_secs().to_string().as_str());
+
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
 
         let mut error_file = OpenOptions::new()

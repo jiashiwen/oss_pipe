@@ -1,5 +1,5 @@
 use super::{
-    gen_file_path, task_actions::TransferTaskActions, IncrementAssistant, TaskStage,
+    gen_file_path, task_actions::TransferTaskActions, IncrementAssistant, TransferStage,
     TransferTaskAttributes, ERROR_RECORD_PREFIX, OFFSET_PREFIX,
 };
 use crate::{
@@ -80,19 +80,12 @@ impl TransferTaskActions for TransferOss2Oss {
                     for line in lines {
                         match line {
                             Ok(content) => {
-                                let record = match json_to_struct::<ListedRecord>(content.as_str())
-                                {
-                                    Ok(r) => r,
-                                    Err(e) => {
-                                        log::error!("{}", e);
-                                        continue;
-                                    }
-                                };
+                                let record = json_to_struct::<RecordDescription>(content.as_str())?;
                                 record_vec.push(record);
                             }
                             Err(e) => {
                                 log::error!("{}", e);
-                                continue;
+                                return Err(anyhow!("{}", e));
                             }
                         }
                     }
@@ -109,7 +102,7 @@ impl TransferTaskActions for TransferOss2Oss {
                             offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
                             list_file_path: p.to_string(),
                         };
-                        let _ = transfer.exec_listed_records(record_vec);
+                        let _ = transfer.exec_record_descriptions(record_vec);
                     }
                 }
 
@@ -217,7 +210,7 @@ impl TransferTaskActions for TransferOss2Oss {
                 return;
             }
         };
-        checkpoint.task_stage = TaskStage::Increment;
+        checkpoint.task_stage = TransferStage::Increment;
         drop(lock);
 
         let regex_filter =
@@ -803,9 +796,13 @@ impl TransferOss2OssRecordsExecutor {
     }
 
     pub async fn exec_record_descriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
-        let subffix = records[0].list_file_position.offset.to_string();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        let mut subffix = records[0].list_file_position.offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
+
+        subffix.push_str("_");
+        subffix.push_str(now.as_secs().to_string().as_str());
 
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
 

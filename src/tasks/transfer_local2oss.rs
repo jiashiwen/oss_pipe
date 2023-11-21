@@ -1,8 +1,8 @@
 use super::task_actions::TransferTaskActions;
 use super::IncrementAssistant;
 use super::LocalNotify;
-use super::TaskStage;
 use super::TaskStatusSaver;
+use super::TransferStage;
 use super::TransferTaskAttributes;
 use super::NOTIFY_FILE_PREFIX;
 use super::OFFSET_PREFIX;
@@ -90,19 +90,12 @@ impl TransferTaskActions for TransferLocal2Oss {
                     for line in lines {
                         match line {
                             Ok(content) => {
-                                let record =
-                                    match json_to_struct::<RecordDescription>(content.as_str()) {
-                                        Ok(r) => r,
-                                        Err(e) => {
-                                            log::error!("{}", e);
-                                            continue;
-                                        }
-                                    };
+                                let record = json_to_struct::<RecordDescription>(content.as_str())?;
                                 record_vec.push(record);
                             }
                             Err(e) => {
                                 log::error!("{}", e);
-                                continue;
+                                return Err(anyhow!("{}", e));
                             }
                         }
                     }
@@ -254,7 +247,7 @@ impl TransferTaskActions for TransferLocal2Oss {
             stop_mark: Arc::clone(&snapshot_stop_mark),
             list_file_positon_map: Arc::clone(&offset_map),
             file_for_notify: Some(local_notify.notify_file_path.clone()),
-            task_stage: TaskStage::Increment,
+            task_stage: TransferStage::Increment,
             interval: 3,
         };
 
@@ -584,9 +577,13 @@ impl Local2OssExecuter {
     }
 
     pub async fn exec_record_descriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
-        let subffix = records[0].list_file_position.offset.to_string();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        let mut subffix = records[0].list_file_position.offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
+
+        subffix.push_str("_");
+        subffix.push_str(now.as_secs().to_string().as_str());
 
         let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
 
