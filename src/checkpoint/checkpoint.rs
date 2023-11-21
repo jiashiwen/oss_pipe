@@ -1,7 +1,7 @@
 use super::FilePosition;
 use crate::{
     commons::{read_yaml_file, struct_to_yaml_string},
-    tasks::TaskStage,
+    tasks::TransferStage,
 };
 use anyhow::{Error, Ok, Result};
 use serde::{Deserialize, Serialize};
@@ -38,7 +38,7 @@ pub struct CheckPoint {
     // 文件执行位置，既执行到的offset，用于断点续传
     pub executed_file_position: FilePosition,
     pub file_for_notify: Option<String>,
-    pub task_stage: TaskStage,
+    pub task_stage: TransferStage,
     // 记录 checkpoint 时点的时间戳
     pub timestampe: u128,
 }
@@ -52,7 +52,7 @@ impl Default for CheckPoint {
                 line_num: 0,
             },
             file_for_notify: Default::default(),
-            task_stage: TaskStage::Stock,
+            task_stage: TransferStage::Stock,
             timestampe: 0,
             current_stock_object_list_file: "".to_string(),
         }
@@ -157,7 +157,7 @@ mod test {
                     },
                     executed_file_position: file_position,
                     file_for_notify: None,
-                    task_stage: crate::tasks::TaskStage::Stock,
+                    task_stage: crate::tasks::TransferStage::Stock,
                     timestampe: u128::from(now.as_secs()),
                     current_stock_object_list_file: path.to_string(),
                 };

@@ -204,22 +204,6 @@ fn cmd_match(matches: &ArgMatches) {
                         println!("No analysis required");
                     }
                 };
-
-                // match task {
-                //     Ok(t) => {
-                //         log::info!("execute task: {:?}", t.task_id);
-                //         let r = t.task_desc.execute();
-                //         match r {
-                //             Ok(_) => log::info!("task {} execute ok!", t.task_id),
-                //             Err(e) => {
-                //                 log::error!("{}", e);
-                //             }
-                //         }
-                //     }
-                //     Err(e) => {
-                //         log::error!("{}", e);
-                //     }
-                // }
             }
         }
     }

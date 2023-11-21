@@ -1,4 +1,4 @@
-use super::{TaskStage, OFFSET_PREFIX};
+use super::{TransferStage, OFFSET_PREFIX};
 use crate::checkpoint::{CheckPoint, FileDescription, FilePosition};
 use dashmap::DashMap;
 use std::sync::{atomic::AtomicBool, Arc};
@@ -11,7 +11,7 @@ pub struct TaskStatusSaver {
     pub stop_mark: Arc<AtomicBool>,
     pub list_file_positon_map: Arc<DashMap<String, FilePosition>>,
     pub file_for_notify: Option<String>,
-    pub task_stage: TaskStage,
+    pub task_stage: TransferStage,
     pub interval: u64,
 }
 
