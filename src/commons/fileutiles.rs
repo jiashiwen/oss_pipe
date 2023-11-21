@@ -329,8 +329,7 @@ pub fn generate_files(
 #[cfg(test)]
 mod test {
     use crate::commons::{
-        analyze_folder_files_size, fileutiles::generate_file, multi_parts_copy_file,
-        scan_folder_files_to_file,
+        fileutiles::generate_file, multi_parts_copy_file, scan_folder_files_to_file,
     };
 
     use super::generate_line_file;

@@ -1,4 +1,8 @@
 use super::{
+    gen_file_path, TaskStage, TaskStatusSaver, CHECK_POINT_FILE_NAME, OBJECT_LIST_FILE_PREFIX,
+    OFFSET_PREFIX,
+};
+use super::{
     task_actions::TransferTaskActions, IncrementAssistant, TransferLocal2Local, TransferLocal2Oss,
     TransferOss2Local, TransferOss2Oss, TransferTaskAttributes,
 };
@@ -8,19 +12,15 @@ use crate::{
     s3::OSSDescription,
     tasks::NOTIFY_FILE_PREFIX,
 };
-use serde::{Deserialize, Serialize};
-use walkdir::WalkDir;
-
-use super::{
-    gen_file_path, TaskStage, TaskStatusSaver, CHECK_POINT_FILE_NAME, OBJECT_LIST_FILE_PREFIX,
-    OFFSET_PREFIX,
-};
 use crate::{
     checkpoint::{get_task_checkpoint, CheckPoint, FilePosition, ListedRecord},
     commons::quantify_processbar,
 };
 use anyhow::{anyhow, Result};
 use dashmap::DashMap;
+use rust_decimal::prelude::*;
+use rust_decimal_macros::dec;
+use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File},
     io::{self, BufRead},
@@ -30,11 +30,21 @@ use std::{
     },
     time::{SystemTime, UNIX_EPOCH},
 };
+use tabled::builder::Builder;
+use tabled::settings::Style;
+use tabled::{builder, row, Table};
 use tokio::{
     runtime,
     sync::Mutex,
     task::{self, JoinSet},
 };
+use walkdir::WalkDir;
+
+pub struct AnalyzedResult {
+    pub size_range: String,
+    pub objects: i128,
+    pub total_objects: i128,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
@@ -109,6 +119,50 @@ impl TransferTask {
                 }
             },
         }
+    }
+
+    pub fn analyze(&self) -> Result<()> {
+        let task = self.gen_transfer_actions();
+        let rt = runtime::Builder::new_multi_thread()
+            .worker_threads(num_cpus::get())
+            .enable_all()
+            .max_io_events_per_tick(self.attributes.task_threads)
+            .build()?;
+
+        rt.block_on(async {
+            let map = match task.analyze_source().await {
+                Ok(m) => m,
+                Err(e) => {
+                    log::error!("{}", e);
+                    return;
+                }
+            };
+
+            let mut total_objects = 0;
+            for v in map.iter() {
+                total_objects += *v.value();
+            }
+            let total = Decimal::from(total_objects);
+
+            let mut builder = Builder::default();
+            for kv in map.iter() {
+                let val_dec = Decimal::from(*kv.value());
+
+                let key = kv.key().to_string();
+                let val = kv.value().to_string();
+                let percent = (val_dec / total).round_dp(2).to_string();
+                let raw = vec![key, val, percent];
+                builder.push_record(raw);
+            }
+
+            let header = vec!["size_range", "objects", "percent"];
+            builder.set_header(header);
+
+            let mut table = builder.build();
+            table.with(Style::ascii_rounded());
+            println!("{}", table);
+        });
+        Ok(())
     }
 
     pub fn execute(&self) -> Result<()> {
