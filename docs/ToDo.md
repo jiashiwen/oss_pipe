@@ -13,7 +13,7 @@
 - [x] 抽象各个厂商的oss client 形成统一的产生函数
 - [x] 抽象ossaction trait
 - [x] 实现读取和上传object bytes
-- [x] jrss适配，相关文档http://jrss-portal-public.jdfmgt.com/
+- [x] jrss适配，相关文档<http://jrss-portal-public.jdfmgt.com/>
 - [x] 多线程验证rayon 和 tokio两个方案
 - [x] 编写多线程程序
 - [x] checkpoint 设计与实现 transfer
@@ -23,7 +23,7 @@
 - [ ] 错误数据持久化与解析，配合checkpoint实现断点续传
 - [ ] 实现获取object属性函数
 - [x] 支持文件过期时间
-- [x] 大文件支持https://docs.aws.amazon.com/sdk-for-rust/latest/dg/rust_s3_code_examples.html
+- [x] 大文件支持<https://docs.aws.amazon.com/sdk-for-rust/latest/dg/rust_s3_code_examples.html>
   - [x] 大文件分片上传
   - [x] 大文件分片下载
 - [ ] 多任务模式，统一描述文件支持多任务同事运行
@@ -60,13 +60,15 @@
   - [ ] 实现机制：先开启notify记录变动文件；每次断点遍历上传文件目录，取last_modify 大于  checkpoint 记录时间戳的文件上传。需要考虑大量文件的遍历时间，需要做相关实验验证
   - [ ] 兼容minio
     - [ ] minio 环境部署
-    - [ ] 适配minio 
+    - [ ] 适配minio
   - [ ] 设计多任务snapshot，统一管理任务状态
     - [ ] 任务相关状态字段定义，任务checkpoint，任务错误数，任务offset map，停止标识
   - [ ] 为便于扩展，新增objectstorage enum，用来区分不同数据源
   - [x] 解决modify create modify重复问题
   - [x] 增量逻辑新增正则过滤
-  - [ ] 将oss 增量代码归并至oss client
+  - [x] 将oss 增量代码归并至oss client
+  - [ ] 适配七牛
+  - [ ] 支持从指定时间戳同步
 
 ## 校验项
 
@@ -74,12 +76,12 @@
 
 ## 错误处理及断点续传机制
 
-* 日志及执行offset记录
-  * 执行任务时每线程offset日志后写，记录完成的记录在文件中的offset，offset文件名为 文件名前缀+第一条记录的offset
-  * 某一记录执行出错时记录record及offset，当错误数达到某一阀值，停止任务
-* 断点续传机制
-  * 先根据错误记录日志做补偿同步，检查源端对象是否存在，若不存在则跳过
-  * 通过offset日志找到每个文件中的最大值，并所有文件的最大值取最小值，再与checkpoint中的offset比较取最小值，作为objectlist的起始offset。
+- 日志及执行offset记录
+  - 执行任务时每线程offset日志后写，记录完成的记录在文件中的offset，offset文件名为 文件名前缀+第一条记录的offset
+  - 某一记录执行出错时记录record及offset，当错误数达到某一阀值，停止任务
+- 断点续传机制
+  - 先根据错误记录日志做补偿同步，检查源端对象是否存在，若不存在则跳过
+  - 通过offset日志找到每个文件中的最大值，并所有文件的最大值取最小值，再与checkpoint中的offset比较取最小值，作为objectlist的起始offset。
 
 ## 增量实现
 
@@ -100,7 +102,7 @@
 
 ### 源为本地文件系统（linux）
 
-通过 inotify 获取目录变更事件（需要验证 https://crates.io/crates/notify）
+通过 inotify 获取目录变更事件（需要验证 <https://crates.io/crates/notify）>
 
 ## 面临问题 -- sdk 兼容性问题，需要实验
 
@@ -123,8 +125,5 @@
 - [ ] 任务meta data设计
 
 ## 分布式改造
-
-
-
 
 git log --since=2023-11-06 --until=2023-11-10 --pretty=tformat: --numstat | awk '{ add += $1; subs += $2; loc += $1 - $2 } END { printf "added lines: %s, removed lines: %s, total lines: %s\n", add, subs, loc }'

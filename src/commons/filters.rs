@@ -1,5 +1,6 @@
 use anyhow::Result;
 use regex::RegexSet;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub struct RegexFilter {
@@ -35,12 +36,14 @@ impl RegexFilter {
             include_regex,
         })
     }
+
     pub fn new(exclude_regex: Option<RegexSet>, include_regex: Option<RegexSet>) -> Self {
         Self {
             exclude_regex,
             include_regex,
         }
     }
+
     pub fn set_exclude(&mut self, reg_set: RegexSet) {
         self.exclude_regex = Some(reg_set);
     }
@@ -63,5 +66,26 @@ impl RegexFilter {
         }
 
         true
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+pub enum LastModifyFilterType {
+    Greater,
+    Less,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+pub struct LastModifyFilter {
+    pub filter_type: LastModifyFilterType,
+    pub timestampe: i128,
+}
+
+impl LastModifyFilter {
+    pub fn filter(&self, timestampe: i128) -> bool {
+        match self.filter_type {
+            LastModifyFilterType::Greater => timestampe.ge(&self.timestampe),
+            LastModifyFilterType::Less => timestampe.le(&self.timestampe),
+        }
     }
 }

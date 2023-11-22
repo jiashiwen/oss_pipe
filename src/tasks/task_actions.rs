@@ -1,5 +1,8 @@
 use super::IncrementAssistant;
-use crate::checkpoint::{FileDescription, FilePosition, ListedRecord};
+use crate::{
+    checkpoint::{FileDescription, FilePosition, ListedRecord},
+    commons::LastModifyFilter,
+};
 use anyhow::Result;
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -23,6 +26,7 @@ pub trait TransferTaskActions {
         &self,
         execute_set: &mut JoinSet<()>,
         records: Vec<ListedRecord>,
+        stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file: String,
@@ -31,7 +35,7 @@ pub trait TransferTaskActions {
     // 生成对象列表
     async fn generate_execute_file(
         &self,
-        last_modify_timestamp: Option<i64>,
+        last_modify_filter: Option<LastModifyFilter>,
         object_list_file: &str,
     ) -> Result<FileDescription>;
 

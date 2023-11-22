@@ -6,7 +6,7 @@ use crate::{
     checkpoint::{
         get_task_checkpoint, FileDescription, FilePosition, ListedRecord, Opt, RecordDescription,
     },
-    commons::{json_to_struct, promote_processbar, read_lines, RegexFilter},
+    commons::{json_to_struct, promote_processbar, read_lines, LastModifyFilter, RegexFilter},
     s3::{
         aws_s3::{download_object, OssClient},
         OSSDescription,
@@ -52,14 +52,15 @@ impl Default for TransferOss2Local {
 #[async_trait]
 impl TransferTaskActions for TransferOss2Local {
     async fn analyze_source(&self) -> Result<DashMap<String, i128>> {
-        let filter = RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include)?;
+        let regex_filter =
+            RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include)?;
         let client = self.source.gen_oss_client()?;
         client
             .analyze_objects_size(
                 &self.source.bucket,
                 self.source.prefix.clone(),
-                None,
-                Some(filter),
+                Some(regex_filter),
+                self.attributes.last_modify_filter.clone(),
                 self.attributes.bach_size,
             )
             .await
@@ -124,46 +125,57 @@ impl TransferTaskActions for TransferOss2Local {
 
     async fn generate_execute_file(
         &self,
-        last_modify_timestamp: Option<i64>,
+        // last_modify_timestamp: Option<i64>,
+        last_modify_filter: Option<LastModifyFilter>,
         object_list_file: &str,
     ) -> Result<FileDescription> {
         let client_source = self.source.gen_oss_client()?;
-
         // 若为持续同步模式，且 last_modify_timestamp 大于 0，则将 last_modify 属性大于last_modify_timestamp变量的对象加入执行列表
-        match last_modify_timestamp {
-            Some(t) => {
-                client_source
-                    .append_last_modify_greater_object_to_file(
-                        self.source.bucket.clone(),
-                        self.source.prefix.clone(),
-                        self.attributes.bach_size,
-                        object_list_file,
-                        t,
-                    )
-                    .await
-            }
-            None => {
-                client_source
-                    .append_all_object_list_to_file(
-                        self.source.bucket.clone(),
-                        self.source.prefix.clone(),
-                        self.attributes.bach_size,
-                        object_list_file,
-                    )
-                    .await
-            }
-        }
+        client_source
+            .append_object_list_to_file(
+                self.source.bucket.clone(),
+                self.source.prefix.clone(),
+                self.attributes.bach_size,
+                object_list_file,
+                last_modify_filter,
+            )
+            .await
+
+        // match last_modify_timestamp {
+        //     Some(t) => {
+        //         client_source
+        //             .append_last_modify_greater_object_to_file(
+        //                 self.source.bucket.clone(),
+        //                 self.source.prefix.clone(),
+        //                 self.attributes.bach_size,
+        //                 object_list_file,
+        //                 t,
+        //             )
+        //             .await
+        //     }
+        //     None => {
+        //         client_source
+        //             .append_all_object_list_to_file(
+        //                 self.source.bucket.clone(),
+        //                 self.source.prefix.clone(),
+        //                 self.attributes.bach_size,
+        //                 object_list_file,
+        //             )
+        //             .await
+        //     }
+        // }
     }
 
     async fn records_excutor(
         &self,
         joinset: &mut JoinSet<()>,
         records: Vec<ListedRecord>,
+        stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file: String,
     ) {
-        let download = Oss2LocalListedRecordsExecutor {
+        let oss2local = Oss2LocalListedRecordsExecutor {
             target: self.target.clone(),
             source: self.source.clone(),
             err_counter,
@@ -176,10 +188,11 @@ impl TransferTaskActions for TransferOss2Local {
         };
 
         joinset.spawn(async move {
-            if let Err(e) = download.exec_listed_records(records).await {
-                download
-                    .err_counter
-                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if let Err(e) = oss2local.exec_listed_records(records).await {
+                // oss2local
+                //     .err_counter
+                //     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{}", e);
             };
         });

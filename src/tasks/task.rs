@@ -1,6 +1,7 @@
 use super::{osscompare::OssCompare, TaskStatusSaver, TransferTask};
 use crate::{
     checkpoint::{get_task_checkpoint, CheckPoint, FileDescription, FilePosition, ListedRecord},
+    commons::LastModifyFilter,
     s3::OSSDescription,
 };
 use anyhow::{anyhow, Result};
@@ -131,6 +132,10 @@ impl TaskDefaultParameters {
     pub fn transfer_type_default() -> TransferType {
         TransferType::Stock
     }
+
+    pub fn last_modify_filter_default() -> Option<LastModifyFilter> {
+        None
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -170,6 +175,8 @@ pub struct TransferTaskAttributes {
     pub continuous: bool,
     #[serde(default = "TaskDefaultParameters::transfer_type_default")]
     pub transfer_type: TransferType,
+    #[serde(default = "TaskDefaultParameters::last_modify_filter_default")]
+    pub last_modify_filter: Option<LastModifyFilter>,
 }
 
 impl Default for TransferTaskAttributes {
@@ -187,6 +194,7 @@ impl Default for TransferTaskAttributes {
             include: TaskDefaultParameters::filter_default(),
             continuous: TaskDefaultParameters::continuous_default(),
             transfer_type: TaskDefaultParameters::transfer_type_default(),
+            last_modify_filter: TaskDefaultParameters::last_modify_filter_default(),
         }
     }
 }
@@ -237,11 +245,12 @@ impl TaskTruncateBucket {
                 }
             };
             if let Err(e) = client_source
-                .append_all_object_list_to_file(
+                .append_object_list_to_file(
                     self.oss.bucket.clone(),
                     self.oss.prefix.clone(),
                     self.bach_size,
                     &object_list_file,
+                    None,
                 )
                 .await
             {
@@ -411,11 +420,12 @@ impl TaskOssCompare {
                     }
                 };
                 executed_file = match client_source
-                    .append_all_object_list_to_file(
+                    .append_object_list_to_file(
                         self.source.bucket.clone(),
                         self.source.prefix.clone(),
                         self.bach_size,
                         &executed_file.path,
+                        None,
                     )
                     .await
                 {

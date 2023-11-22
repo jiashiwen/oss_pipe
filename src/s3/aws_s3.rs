@@ -16,7 +16,7 @@ use tokio::io::AsyncReadExt;
 
 use crate::{
     checkpoint::{FileDescription, FilePosition, Opt, RecordDescription},
-    commons::{merge_file, size_distributed, RegexFilter},
+    commons::{merge_file, size_distributed, LastModifyFilter, RegexFilter},
     tasks::{gen_file_path, MODIFIED_PREFIX, OBJECT_LIST_FILE_PREFIX, REMOVED_PREFIX},
 };
 
@@ -34,85 +34,85 @@ pub struct OssObjList {
 impl OssClient {
     /// 将bucket中需要迁移的文件写入文件列表
     /// 返回写入文件的条数
-    pub async fn append_all_object_list_to_file(
-        &self,
-        bucket: String,
-        prefix: Option<String>,
-        batch: i32,
-        file_path: &str,
-    ) -> Result<FileDescription> {
-        let mut total_lines = 0;
-        let resp = self
-            .list_objects(bucket.clone(), prefix.clone(), batch, None)
-            .await?;
-        let mut token: Option<String> = resp.next_token;
+    // pub async fn append_all_object_list_to_file(
+    //     &self,
+    //     bucket: String,
+    //     prefix: Option<String>,
+    //     batch: i32,
+    //     file_path: &str,
+    // ) -> Result<FileDescription> {
+    //     let mut total_lines = 0;
+    //     let resp = self
+    //         .list_objects(bucket.clone(), prefix.clone(), batch, None)
+    //         .await?;
+    //     let mut token: Option<String> = resp.next_token;
 
-        let path = std::path::Path::new(file_path);
-        if let Some(p) = path.parent() {
-            std::fs::create_dir_all(p)?;
-        };
+    //     let path = std::path::Path::new(file_path);
+    //     if let Some(p) = path.parent() {
+    //         std::fs::create_dir_all(p)?;
+    //     };
 
-        //写入文件
-        let file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .append(true)
-            .open(file_path)?;
-        let mut line_writer = LineWriter::new(&file);
+    //     //写入文件
+    //     let file = OpenOptions::new()
+    //         .create(true)
+    //         .write(true)
+    //         .append(true)
+    //         .open(file_path)?;
+    //     let mut line_writer = LineWriter::new(&file);
 
-        if let Some(objects) = resp.object_list {
-            for item in objects.iter() {
-                match item.key() {
-                    Some(i) => {
-                        let _ = line_writer.write_all(i.as_bytes());
-                        let _ = line_writer.write_all("\n".as_bytes());
-                        total_lines += 1;
-                    }
-                    None => {}
-                }
-            }
-            line_writer.flush()?;
-        }
+    //     if let Some(objects) = resp.object_list {
+    //         for item in objects.iter() {
+    //             match item.key() {
+    //                 Some(i) => {
+    //                     let _ = line_writer.write_all(i.as_bytes());
+    //                     let _ = line_writer.write_all("\n".as_bytes());
+    //                     total_lines += 1;
+    //                 }
+    //                 None => {}
+    //             }
+    //         }
+    //         line_writer.flush()?;
+    //     }
 
-        while token.is_some() {
-            let resp = self
-                .list_objects(bucket.clone(), prefix.clone(), batch, token.clone())
-                .await?;
-            if let Some(objects) = resp.object_list {
-                for item in objects.iter() {
-                    match item.key() {
-                        Some(i) => {
-                            let _ = line_writer.write_all(i.as_bytes());
-                            let _ = line_writer.write_all("\n".as_bytes());
-                            total_lines += 1;
-                        }
-                        None => {}
-                    }
-                }
-                line_writer.flush()?;
-            }
-            token = resp.next_token;
-        }
-        let size = file.metadata()?.len();
-        let exec_file = FileDescription {
-            path: file_path.to_string(),
-            size,
-            total_lines,
-        };
-        Ok(exec_file)
-    }
+    //     while token.is_some() {
+    //         let resp = self
+    //             .list_objects(bucket.clone(), prefix.clone(), batch, token.clone())
+    //             .await?;
+    //         if let Some(objects) = resp.object_list {
+    //             for item in objects.iter() {
+    //                 match item.key() {
+    //                     Some(i) => {
+    //                         let _ = line_writer.write_all(i.as_bytes());
+    //                         let _ = line_writer.write_all("\n".as_bytes());
+    //                         total_lines += 1;
+    //                     }
+    //                     None => {}
+    //                 }
+    //             }
+    //             line_writer.flush()?;
+    //         }
+    //         token = resp.next_token;
+    //     }
+    //     let size = file.metadata()?.len();
+    //     let exec_file = FileDescription {
+    //         path: file_path.to_string(),
+    //         size,
+    //         total_lines,
+    //     };
+    //     Ok(exec_file)
+    // }
 
     // 将last_modify 大于某时间戳的object列表写入文件
     // ToDo 为提高效率需进行多线程改造
     // 并发写文件问题如何解决
     // 返回值为写入条目
-    pub async fn append_last_modify_greater_object_to_file(
+    pub async fn append_object_list_to_file(
         &self,
         bucket: String,
         prefix: Option<String>,
         batch: i32,
         file_path: &str,
-        greater: i64,
+        last_modify_filter: Option<LastModifyFilter>,
     ) -> Result<FileDescription> {
         let mut total_lines = 0;
         let path = std::path::Path::new(file_path);
@@ -133,20 +133,18 @@ impl OssClient {
         let mut token = resp.next_token;
 
         if let Some(objects) = resp.object_list {
-            for item in objects.iter().filter(|obj| {
-                if let Some(d) = obj.last_modified() {
-                    d.secs().ge(&greater)
-                } else {
-                    false
-                }
-            }) {
-                match item.key() {
-                    Some(i) => {
-                        let _ = line_writer.write_all(i.as_bytes());
-                        let _ = line_writer.write_all("\n".as_bytes());
-                        total_lines += 1;
+            for item in objects {
+                if let Some(f) = last_modify_filter {
+                    if let Some(d) = item.last_modified() {
+                        if !f.filter(i128::from(d.secs())) {
+                            continue;
+                        }
                     }
-                    None => {}
+                }
+                if let Some(key) = item.key() {
+                    let _ = line_writer.write_all(key.as_bytes());
+                    let _ = line_writer.write_all("\n".as_bytes());
+                    total_lines += 1;
                 }
             }
             line_writer.flush()?;
@@ -157,20 +155,18 @@ impl OssClient {
                 .list_objects(bucket.clone(), prefix.clone(), batch, token.clone())
                 .await?;
             if let Some(objects) = resp.object_list {
-                for item in objects.iter().filter(|obj| {
-                    if let Some(d) = obj.last_modified() {
-                        d.secs().ge(&greater)
-                    } else {
-                        false
-                    }
-                }) {
-                    match item.key() {
-                        Some(i) => {
-                            let _ = line_writer.write_all(i.as_bytes());
-                            let _ = line_writer.write_all("\n".as_bytes());
-                            total_lines += 1;
+                for item in objects {
+                    if let Some(f) = last_modify_filter {
+                        if let Some(d) = item.last_modified() {
+                            if !f.filter(i128::from(d.secs())) {
+                                continue;
+                            }
                         }
-                        None => {}
+                    }
+                    if let Some(key) = item.key() {
+                        let _ = line_writer.write_all(key.as_bytes());
+                        let _ = line_writer.write_all("\n".as_bytes());
+                        total_lines += 1;
                     }
                 }
                 line_writer.flush()?;
@@ -554,7 +550,6 @@ impl OssClient {
         Ok(())
     }
 
-    // pub async fn object_exists(&self, bucket: &str, key: &str) -> Result<bool> {
     pub async fn object_exists(
         &self,
         bucket: impl Into<std::string::String>,
@@ -858,8 +853,8 @@ impl OssClient {
         &self,
         bucket: &str,
         prefix: Option<String>,
-        timestampe: Option<i64>,
-        filter: Option<RegexFilter>,
+        regex_filter: Option<RegexFilter>,
+        last_modify_filter: Option<LastModifyFilter>,
         batch_size: i32,
     ) -> Result<DashMap<String, i128>> {
         let size_map = DashMap::<String, i128>::new();
@@ -883,19 +878,20 @@ impl OssClient {
                     }
                 }
 
-                if let Some(f) = &filter {
+                if let Some(f) = &regex_filter {
                     if !f.filter(key) {
                         continue;
                     }
                 }
 
-                if let Some(t) = timestampe {
+                if let Some(f) = last_modify_filter {
                     if let Some(d) = obj.last_modified() {
-                        if d.secs().lt(&t) {
+                        if !f.filter(i128::from(d.secs())) {
                             continue;
                         }
                     }
                 }
+
                 let obj_size = i128::from(obj.size());
                 let map_key = size_distributed(obj_size);
                 let mut map_val = match size_map.get(&map_key) {
@@ -926,15 +922,15 @@ impl OssClient {
                         }
                     }
 
-                    if let Some(f) = &filter {
+                    if let Some(f) = &regex_filter {
                         if !f.filter(key) {
                             continue;
                         }
                     }
 
-                    if let Some(t) = timestampe {
+                    if let Some(f) = last_modify_filter {
                         if let Some(d) = obj.last_modified() {
-                            if d.secs().lt(&t) {
+                            if !f.filter(i128::from(d.secs())) {
                                 continue;
                             }
                         }
@@ -997,33 +993,6 @@ mod test {
     use aws_sdk_s3::types::ByteStream;
 
     use crate::{commons::rand_string, s3::OSSDescription};
-
-    //cargo test s3::aws_s3::test::test_append_last_modify_greater_object_to_file -- --nocapture
-    #[test]
-    fn test_append_last_modify_greater_object_to_file() {
-        // 获取oss连接参数
-        let vec_oss = crate::commons::read_yaml_file::<Vec<OSSDescription>>("osscfg.yml").unwrap();
-        let oss_desc = vec_oss[0].clone();
-        let jd_client = oss_desc.gen_oss_client().unwrap();
-        let rt = tokio::runtime::Runtime::new().unwrap();
-
-        rt.block_on(async {
-            let r = jd_client
-                .append_last_modify_greater_object_to_file(
-                    "jsw-bucket-1".to_string(),
-                    None,
-                    100,
-                    "/tmp/objlist",
-                    1689642000,
-                )
-                .await;
-
-            if let Err(e) = r {
-                println!("{}", e.to_string());
-                return;
-            }
-        });
-    }
 
     //cargo test s3::aws_s3::test::test_vec_to_byte_stream -- --nocapture
     #[test]

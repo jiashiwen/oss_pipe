@@ -1,6 +1,6 @@
 use crate::checkpoint::FileDescription;
 
-use super::{rand_util::rand_string, size_distributed, RegexFilter};
+use super::{rand_util::rand_string, size_distributed, LastModifyFilter, RegexFilter};
 use anyhow::Result;
 use dashmap::DashMap;
 use std::{
@@ -84,8 +84,8 @@ fn remove_dir_contents<P: AsRef<Path>>(path: P) -> io::Result<()> {
 
 pub fn analyze_folder_files_size(
     folder: &str,
-    timestampe: Option<u64>,
-    filter: Option<RegexFilter>,
+    regex_filter: Option<RegexFilter>,
+    last_modify_filter: Option<LastModifyFilter>,
 ) -> Result<DashMap<String, i128>> {
     let size_map = DashMap::<String, i128>::new();
     for entry in WalkDir::new(folder)
@@ -98,19 +98,19 @@ pub fn analyze_folder_files_size(
                 continue;
             }
 
-            if let Some(f) = &filter {
+            if let Some(f) = &regex_filter {
                 if !f.filter(p) {
                     continue;
                 }
             }
 
-            if let Some(t) = timestampe {
+            if let Some(f) = &last_modify_filter {
                 let modified_time = entry
                     .metadata()?
                     .modified()?
                     .duration_since(UNIX_EPOCH)?
                     .as_secs();
-                if modified_time.lt(&t) {
+                if !f.filter(i128::from(modified_time)) {
                     continue;
                 }
             }
@@ -133,7 +133,7 @@ pub fn analyze_folder_files_size(
 pub fn scan_folder_files_to_file(
     folder: &str,
     file_name: &str,
-    greater_timestampe: Option<u64>,
+    last_modify_filter: Option<LastModifyFilter>,
 ) -> Result<FileDescription> {
     let mut total_lines = 0;
     let path = std::path::Path::new(file_name);
@@ -159,13 +159,13 @@ pub fn scan_folder_files_to_file(
                 continue;
             }
 
-            if let Some(t) = greater_timestampe {
+            if let Some(f) = last_modify_filter {
                 let modified_time = entry
                     .metadata()?
                     .modified()?
                     .duration_since(UNIX_EPOCH)?
                     .as_secs();
-                if modified_time.lt(&t) {
+                if !f.filter(i128::from(modified_time)) {
                     continue;
                 }
             }
@@ -328,9 +328,7 @@ pub fn generate_files(
 
 #[cfg(test)]
 mod test {
-    use crate::commons::{
-        fileutiles::generate_file, multi_parts_copy_file, scan_folder_files_to_file,
-    };
+    use crate::commons::{fileutiles::generate_file, multi_parts_copy_file};
 
     use super::generate_line_file;
 
@@ -353,13 +351,6 @@ mod test {
     fn test_multi_parts_copy_file() {
         let r = multi_parts_copy_file("/tmp/oss_pipe", "/tmp/genfilecp", 1024);
         println!("test scan result {:?}", r);
-    }
-
-    //cargo test commons::fileutiles::test::test_scan_folder_files_last_modify_greater_then_to_file -- --nocapture
-    #[test]
-    fn test_scan_folder_files_last_modify_greater_then_to_file() {
-        let r = scan_folder_files_to_file("/tmp/", "/tmp/lastmodify", Some(1697423669));
-        println!("test older_files_last_modify_greater_then_to_file {:?}", r);
     }
 
     //cargo test commons::fileutiles::test::test_analyze_folder_files_size -- --nocapture
