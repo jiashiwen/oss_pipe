@@ -298,7 +298,7 @@ impl TransferTaskActions for TransferOss2Local {
             let modified_file_is_empty = modified_file.metadata().unwrap().len().eq(&0);
 
             // 按列表传输object from source to target
-            let lines: io::Lines<io::BufReader<File>> = io::BufReader::new(executed_file).lines();
+            let lines: io::Lines<io::BufReader<File>> = io::BufReader::new(modified_file).lines();
             for line in lines {
                 // 若错误达到上限，则停止任务
                 if err_counter.load(std::sync::atomic::Ordering::SeqCst)
