@@ -12,6 +12,7 @@ use crate::checkpoint::FileDescription;
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::commons::analyze_folder_files_size;
 use crate::commons::scan_folder_files_to_file;
+use crate::commons::LastModifyFilter;
 use crate::commons::RegexFilter;
 use crate::commons::{json_to_struct, read_lines, Modified, ModifyType, NotifyWatcher, PathType};
 use crate::s3::aws_s3::OssClient;
@@ -63,7 +64,11 @@ impl Default for TransferLocal2Oss {
 impl TransferTaskActions for TransferLocal2Oss {
     async fn analyze_source(&self) -> Result<DashMap<String, i128>> {
         let filter = RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include)?;
-        analyze_folder_files_size(&self.source, None, Some(filter))
+        analyze_folder_files_size(
+            &self.source,
+            Some(filter),
+            self.attributes.last_modify_filter.clone(),
+        )
     }
     // 错误记录重试
     fn error_record_retry(&self) -> Result<()> {
@@ -126,11 +131,12 @@ impl TransferTaskActions for TransferLocal2Oss {
         &self,
         joinset: &mut JoinSet<()>,
         records: Vec<ListedRecord>,
+        stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<std::string::String, FilePosition>>,
         list_file: String,
     ) {
-        let upload = Local2OssExecuter {
+        let local2oss = Local2OssExecuter {
             source: self.source.clone(),
             target: self.target.clone(),
             err_counter,
@@ -143,10 +149,11 @@ impl TransferTaskActions for TransferLocal2Oss {
         };
 
         joinset.spawn(async move {
-            if let Err(e) = upload.exec_listed_records(records).await {
-                upload
-                    .err_counter
-                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if let Err(e) = local2oss.exec_listed_records(records).await {
+                // local2oss
+                //     .err_counter
+                //     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{}", e);
             };
         });
@@ -155,19 +162,10 @@ impl TransferTaskActions for TransferLocal2Oss {
     // 生成对象列表
     async fn generate_execute_file(
         &self,
-        last_modify_timestamp: Option<i64>,
+        last_modify_filter: Option<LastModifyFilter>,
         object_list_file: &str,
     ) -> Result<FileDescription> {
-        // 遍历目录并生成文件列表
-        let t = match last_modify_timestamp {
-            Some(t) => {
-                let timestampe = TryInto::<u64>::try_into(t)?;
-                Some(timestampe)
-            }
-            None => None,
-        };
-
-        scan_folder_files_to_file(self.source.as_str(), &object_list_file, t)
+        scan_folder_files_to_file(self.source.as_str(), &object_list_file, last_modify_filter)
     }
 
     async fn increment_prelude(&self, assistant: Arc<Mutex<IncrementAssistant>>) -> Result<()> {

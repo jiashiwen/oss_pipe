@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use crate::cmd::gen_file_cmd::{new_gen_file_cmd, new_gen_files_cmd};
 use crate::cmd::taskcmd::new_task_cmd;
 use crate::cmd::{
@@ -5,7 +7,10 @@ use crate::cmd::{
     new_template,
 };
 use crate::commons::yamlutile::struct_to_yml_file;
-use crate::commons::{byte_size_to_usize, generate_file, generate_files, read_yaml_file, SubCmd};
+use crate::commons::{
+    byte_size_to_usize, generate_file, generate_files, read_yaml_file, LastModifyFilter,
+    LastModifyFilterType, SubCmd,
+};
 use crate::commons::{struct_to_yaml_string, CommandCompleter};
 use crate::configure::{generate_default_config, set_config_file_path};
 use crate::configure::{get_config_file_path, get_current_config_yml, set_config};
@@ -198,7 +203,7 @@ fn cmd_match(matches: &ArgMatches) {
 
                 match task.task_desc {
                     TaskDescription::Transfer(t) => {
-                        let analized = t.analyze();
+                        let _ = t.analyze();
                     }
                     _ => {
                         println!("No analysis required");
@@ -213,6 +218,13 @@ fn cmd_match(matches: &ArgMatches) {
 
         if let Some(transfer) = template.subcommand_matches("transfer") {
             if let Some(oss2oss) = transfer.subcommand_matches("oss2oss") {
+                let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
+                    Ok(n) => n,
+                    Err(e) => {
+                        log::error!("{}", e);
+                        return;
+                    }
+                };
                 let file = oss2oss.get_one::<String>("file");
                 let mut transfer_oss2oss = TransferTask::default();
                 let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
@@ -223,6 +235,10 @@ fn cmd_match(matches: &ArgMatches) {
                 oss_desc.provider = OssProvider::ALI;
                 oss_desc.endpoint = "http://oss-cn-beijing.aliyuncs.com".to_string();
                 transfer_oss2oss.source = ObjectStorage::OSS(oss_desc);
+                transfer_oss2oss.attributes.last_modify_filter = Some(LastModifyFilter {
+                    filter_type: LastModifyFilterType::Greater,
+                    timestampe: i128::from(now.as_secs()),
+                });
 
                 let task = Task {
                     task_id: task_id.to_string(),
@@ -251,6 +267,13 @@ fn cmd_match(matches: &ArgMatches) {
                 };
             }
             if let Some(oss2local) = transfer.subcommand_matches("oss2local") {
+                let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
+                    Ok(n) => n,
+                    Err(e) => {
+                        log::error!("{}", e);
+                        return;
+                    }
+                };
                 let file = oss2local.get_one::<String>("file");
                 let mut transfer_oss2local = TransferTask::default();
                 let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
@@ -259,6 +282,10 @@ fn cmd_match(matches: &ArgMatches) {
                 transfer_oss2local.attributes.include = Some(include_vec);
                 let target: &str = "/tmp";
                 transfer_oss2local.target = ObjectStorage::Local(target.to_string());
+                transfer_oss2local.attributes.last_modify_filter = Some(LastModifyFilter {
+                    filter_type: LastModifyFilterType::Greater,
+                    timestampe: i128::from(now.as_secs()),
+                });
 
                 let task = Task {
                     task_id: task_id.to_string(),
@@ -287,6 +314,13 @@ fn cmd_match(matches: &ArgMatches) {
                 };
             }
             if let Some(local2oss) = transfer.subcommand_matches("local2oss") {
+                let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
+                    Ok(n) => n,
+                    Err(e) => {
+                        log::error!("{}", e);
+                        return;
+                    }
+                };
                 let file = local2oss.get_one::<String>("file");
                 let mut transfer_local2oss = TransferTask::default();
                 let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
@@ -295,6 +329,10 @@ fn cmd_match(matches: &ArgMatches) {
                 transfer_local2oss.attributes.include = Some(include_vec);
                 let source: &str = "/tmp";
                 transfer_local2oss.source = ObjectStorage::Local(source.to_string());
+                transfer_local2oss.attributes.last_modify_filter = Some(LastModifyFilter {
+                    filter_type: LastModifyFilterType::Greater,
+                    timestampe: i128::from(now.as_secs()),
+                });
 
                 let task = Task {
                     task_id: task_id.to_string(),
@@ -322,7 +360,15 @@ fn cmd_match(matches: &ArgMatches) {
                     }
                 };
             }
+
             if let Some(local2local) = transfer.subcommand_matches("local2local") {
+                let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
+                    Ok(n) => n,
+                    Err(e) => {
+                        log::error!("{}", e);
+                        return;
+                    }
+                };
                 let file = local2local.get_one::<String>("file");
                 let mut transfer_local2local = TransferTask::default();
                 let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
@@ -332,7 +378,11 @@ fn cmd_match(matches: &ArgMatches) {
                 let source: &str = "/tmp/source";
                 let target: &str = "/tmp/target";
                 transfer_local2local.source = ObjectStorage::Local(source.to_string());
-                transfer_local2local.source = ObjectStorage::Local(target.to_string());
+                transfer_local2local.target = ObjectStorage::Local(target.to_string());
+                transfer_local2local.attributes.last_modify_filter = Some(LastModifyFilter {
+                    filter_type: LastModifyFilterType::Greater,
+                    timestampe: i128::from(now.as_secs()),
+                });
 
                 let task = Task {
                     task_id: task_id.to_string(),
@@ -360,109 +410,7 @@ fn cmd_match(matches: &ArgMatches) {
                     }
                 };
             }
-            // let file = transfer.get_one::<String>("file");
-            // let task_id = task_id_generator();
-
-            // // let mut task_transfer = TaskTransfer::default();
-            // let mut transfer = TransferTask::default();
-            // let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
-            // let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
-            // task_transfer.task_attributes.exclude = Some(exclude_vec);
-            // task_transfer.task_attributes.include = Some(include_vec);
-            // task_transfer.source.provider = OssProvider::ALI;
-            // task_transfer.source.endpoint = "http://oss-cn-beijing.aliyuncs.com".to_string();
-            // let task = Task {
-            //     task_id: task_id.to_string(),
-            //     name: "transfer task".to_string(),
-            //     task_desc: TaskDescription::Transfer(task_transfer),
-            // };
-            // match file {
-            //     Some(f) => {
-            //         match struct_to_yml_file(&task, f) {
-            //             Ok(_) => {
-            //                 println!("Generate {} succeed", f)
-            //             }
-            //             Err(e) => {
-            //                 log::error!("{}", e);
-            //             }
-            //         };
-            //     }
-            //     None => {
-            //         let yml = struct_to_yaml_string(&task);
-            //         match yml {
-            //             Ok(str) => println!("{}", str),
-            //             Err(e) => log::error!("{}", e),
-            //         }
-            //     }
-            // };
         }
-
-        // if let Some(upload) = template.subcommand_matches("upload") {
-        //     let file = upload.get_one::<String>("file");
-        //     let mut task_upload = UploadTask::default();
-        //     let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
-        //     let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
-        //     task_upload.task_attributes.include = Some(include_vec);
-        //     task_upload.task_attributes.exclude = Some(exclude_vec);
-        //     let task = Task {
-        //         task_id: task_id.to_string(),
-        //         name: "upload task".to_string(),
-        //         task_desc: TaskDescription::Upload(task_upload),
-        //     };
-        //     match file {
-        //         Some(f) => {
-        //             match struct_to_yml_file(&task, f) {
-        //                 Ok(_) => {
-        //                     println!("Generate {} succeed", f)
-        //                 }
-        //                 Err(e) => {
-        //                     log::error!("{}", e);
-        //                 }
-        //             };
-        //         }
-        //         None => {
-        //             let yml = struct_to_yaml_string(&task);
-        //             match yml {
-        //                 Ok(str) => println!("{}", str),
-        //                 Err(e) => log::error!("{}", e),
-        //             }
-        //         }
-        //     };
-        // }
-
-        // if let Some(localtolocal) = template.subcommand_matches("localtolocal") {
-        //     let file = localtolocal.get_one::<String>("file");
-
-        //     let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
-        //     let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
-        //     let mut task_localtolocal = TaskLocal2Local::default();
-        //     task_localtolocal.task_attributes.exclude = Some(exclude_vec);
-        //     task_localtolocal.task_attributes.include = Some(include_vec);
-        //     let task = Task {
-        //         task_id: task_id.to_string(),
-        //         name: "local to local task".to_string(),
-        //         task_desc: TaskDescription::LocalToLocal(task_localtolocal),
-        //     };
-        //     match file {
-        //         Some(f) => {
-        //             match struct_to_yml_file(&task, f) {
-        //                 Ok(_) => {
-        //                     println!("Generate {} succeed", f)
-        //                 }
-        //                 Err(e) => {
-        //                     log::error!("{}", e);
-        //                 }
-        //             };
-        //         }
-        //         None => {
-        //             let yml = struct_to_yaml_string(&task);
-        //             match yml {
-        //                 Ok(str) => println!("{}", str),
-        //                 Err(e) => log::error!("{}", e),
-        //             }
-        //         }
-        //     };
-        // }
 
         if let Some(truncate_bucket) = template.subcommand_matches("truncate_bucket") {
             let file = truncate_bucket.get_one::<String>("file");

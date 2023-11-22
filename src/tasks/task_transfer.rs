@@ -6,6 +6,7 @@ use super::{
     task_actions::TransferTaskActions, IncrementAssistant, TransferLocal2Local, TransferLocal2Oss,
     TransferOss2Local, TransferOss2Oss, TransferTaskAttributes,
 };
+use crate::commons::{LastModifyFilter, LastModifyFilterType};
 use crate::{
     checkpoint::FileDescription,
     commons::{promote_processbar, RegexFilter},
@@ -207,6 +208,15 @@ impl TransferTask {
         // 生成执行文件
         rt.block_on(async {
             if self.attributes.start_from_checkpoint {
+                // 执行error retry
+                match task.error_record_retry() {
+                    Ok(_) => {}
+                    Err(e) => {
+                        log::error!("{}", e);
+                        interrupt = true;
+                        return;
+                    }
+                };
                 // 变更object_list_file_name文件名
                 let checkpoint = match get_task_checkpoint(check_point_file.as_str()) {
                     Ok(c) => c,
@@ -218,7 +228,7 @@ impl TransferTask {
                 };
                 executed_file = checkpoint.executed_file.clone();
 
-                // 增加清理notify file 逻辑
+                // 清理notify file
                 for entry in WalkDir::new(&self.attributes.meta_dir)
                     .into_iter()
                     .filter_map(Result::ok)
@@ -232,34 +242,29 @@ impl TransferTask {
                 }
 
                 match checkpoint.task_stage {
-                    TransferStage::Stock => {
-                        // 执行error retry
-                        match task.error_record_retry() {
-                            Ok(_) => {}
-                            Err(e) => {
-                                log::error!("{}", e);
-                                interrupt = true;
-                                return;
-                            }
-                        };
-                        match checkpoint.seeked_execute_file() {
-                            Ok(f) => {
-                                list_file_position = checkpoint.executed_file_position.clone();
-                                list_file = Some(f);
-                            }
-                            Err(e) => {
-                                log::error!("{}", e);
-                                interrupt = true;
-                                return;
-                            }
+                    TransferStage::Stock => match checkpoint.seeked_execute_file() {
+                        Ok(f) => {
+                            list_file_position = checkpoint.executed_file_position.clone();
+                            list_file = Some(f);
                         }
-                    }
+                        Err(e) => {
+                            log::error!("{}", e);
+                            interrupt = true;
+                            return;
+                        }
+                    },
                     TransferStage::Increment => {
+                        // Todo 重新分析逻辑，需要再checkpoint中记录每次增量执行前的起始时间点
                         // 清理文件重新生成object list 文件需大于指定时间戳,并根据原始object list 删除位于目标端但源端不存在的文件
                         let timestamp = TryInto::<i64>::try_into(checkpoint.timestampe).unwrap();
                         let _ = fs::remove_file(&executed_file.path);
+
+                        let last_modify_filter = LastModifyFilter {
+                            filter_type: LastModifyFilterType::Greater,
+                            timestampe: i128::from(timestamp),
+                        };
                         match task
-                            .generate_execute_file(Some(timestamp), &executed_file.path)
+                            .generate_execute_file(Some(last_modify_filter), &executed_file.path)
                             .await
                         {
                             Ok(f) => {
@@ -398,6 +403,7 @@ impl TransferTask {
                         .records_excutor(
                             &mut execut_set,
                             vk,
+                            Arc::clone(&snapshot_stop_mark),
                             Arc::clone(&err_counter),
                             Arc::clone(&offset_map),
                             executed_file.path.clone(),
@@ -423,6 +429,7 @@ impl TransferTask {
                     .records_excutor(
                         &mut execut_set,
                         vk,
+                        Arc::clone(&snapshot_stop_mark),
                         Arc::clone(&err_counter),
                         Arc::clone(&offset_map),
                         executed_file.path.clone(),
@@ -462,6 +469,7 @@ impl TransferTask {
         //     super::TransferType::Stock => todo!(),
         //     super::TransferType::Increment => todo!(),
         // }
+
         // 增量逻辑
         if self.attributes.continuous {
             rt.block_on(async {

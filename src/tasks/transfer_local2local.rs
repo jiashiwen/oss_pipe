@@ -7,7 +7,7 @@ use crate::checkpoint::{get_task_checkpoint, FileDescription, ListedRecord};
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::commons::{
     analyze_folder_files_size, copy_file, json_to_struct, read_lines, scan_folder_files_to_file,
-    Modified, ModifyType, NotifyWatcher, PathType, RegexFilter,
+    LastModifyFilter, Modified, ModifyType, NotifyWatcher, PathType, RegexFilter,
 };
 use anyhow::anyhow;
 use anyhow::Result;
@@ -41,7 +41,11 @@ pub struct TransferLocal2Local {
 impl TransferTaskActions for TransferLocal2Local {
     async fn analyze_source(&self) -> Result<DashMap<String, i128>> {
         let filter = RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include)?;
-        analyze_folder_files_size(&self.source, None, Some(filter))
+        analyze_folder_files_size(
+            &self.source,
+            Some(filter),
+            self.attributes.last_modify_filter,
+        )
     }
 
     fn error_record_retry(&self) -> Result<()> {
@@ -103,11 +107,12 @@ impl TransferTaskActions for TransferLocal2Local {
         &self,
         joinset: &mut JoinSet<()>,
         records: Vec<ListedRecord>,
+        stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file: String,
     ) {
-        let copy = Local2LocalExecutor {
+        let local2local = Local2LocalExecutor {
             source: self.source.clone(),
             target: self.target.clone(),
             err_counter,
@@ -120,9 +125,8 @@ impl TransferTaskActions for TransferLocal2Local {
         };
 
         joinset.spawn(async move {
-            if let Err(e) = copy.exec_listed_records(records).await {
-                copy.err_counter
-                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if let Err(e) = local2local.exec_listed_records(records).await {
+                stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{}", e);
             };
         });
@@ -130,18 +134,10 @@ impl TransferTaskActions for TransferLocal2Local {
 
     async fn generate_execute_file(
         &self,
-        last_modify_timestamp: Option<i64>,
+        last_modify_filter: Option<LastModifyFilter>,
         object_list_file: &str,
     ) -> Result<FileDescription> {
-        let t = match last_modify_timestamp {
-            Some(t) => {
-                let u = TryInto::<u64>::try_into(t)?;
-                Some(u)
-            }
-            None => None,
-        };
-
-        scan_folder_files_to_file(self.source.as_str(), &object_list_file, t)
+        scan_folder_files_to_file(self.source.as_str(), &object_list_file, last_modify_filter)
     }
 
     async fn increment_prelude(&self, assistant: Arc<Mutex<IncrementAssistant>>) -> Result<()> {
@@ -206,7 +202,13 @@ impl TransferTaskActions for TransferLocal2Local {
         };
         let file_position = FilePosition::default();
 
-        let mut offset = TryInto::<u64>::try_into(file_position.offset).unwrap();
+        let mut offset = match TryInto::<u64>::try_into(file_position.offset) {
+            Ok(o) => o,
+            Err(e) => {
+                log::error!("{}", e);
+                return;
+            }
+        };
         let mut line_num = file_position.line_num;
 
         let subffix = offset.to_string();
@@ -272,12 +274,18 @@ impl TransferTaskActions for TransferLocal2Local {
                 continue;
             };
 
-            let mut error_file = OpenOptions::new()
+            let mut error_file = match OpenOptions::new()
                 .create(true)
                 .write(true)
                 .truncate(true)
                 .open(error_file_name.as_str())
-                .unwrap();
+            {
+                Ok(f) => f,
+                Err(e) => {
+                    log::error!("{}", e);
+                    return;
+                }
+            };
 
             let lines = BufReader::new(file).lines();
             let mut offset_usize: usize = TryInto::<usize>::try_into(offset).unwrap();
