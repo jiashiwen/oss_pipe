@@ -163,31 +163,6 @@ impl TransferTaskActions for TransferOss2Oss {
                 last_modify_filter,
             )
             .await
-
-        // 若为持续同步模式，且 last_modify_timestamp 大于 0，则将 last_modify 属性大于last_modify_timestamp变量的对象加入执行列表
-        // match last_modify_timestamp {
-        //     Some(t) => {
-        //         client_source
-        //             .append_last_modify_greater_object_to_file(
-        //                 self.source.bucket.clone(),
-        //                 self.source.prefix.clone(),
-        //                 self.attributes.bach_size,
-        //                 object_list_file,
-        //                 t,
-        //             )
-        //             .await
-        //     }
-        //     None => {
-        //         client_source
-        //             .append_all_object_list_to_file(
-        //                 self.source.bucket.clone(),
-        //                 self.source.prefix.clone(),
-        //                 self.attributes.bach_size,
-        //                 object_list_file,
-        //             )
-        //             .await
-        //     }
-        // }
     }
 
     async fn increment_prelude(&self, assistant: Arc<Mutex<IncrementAssistant>>) -> Result<()> {
@@ -245,11 +220,6 @@ impl TransferTaskActions for TransferOss2Oss {
                 .max_errors
                 .ge(&err_counter.load(std::sync::atomic::Ordering::SeqCst))
         {
-            // let (modified_desc, new_object_list_desc, exec_time) = self
-            //     .gen_changed_record_file(timestampe, &checkpoint.current_stock_object_list_file)
-            //     .await
-            //     .unwrap();
-
             let source_client = match self.source.gen_oss_client() {
                 Ok(client) => client,
                 Err(e) => {

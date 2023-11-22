@@ -254,12 +254,6 @@ impl TransferTaskActions for TransferOss2Local {
                 .max_errors
                 .ge(&err_counter.load(std::sync::atomic::Ordering::SeqCst))
         {
-            // let (modified_file, new_object_list_file, exec_time) = self
-            //     .gen_modified_record_file(timestampe, &checkpoint.current_stock_object_list_file)
-            //     .await
-            //     .unwrap();
-            // timestampe = exec_time;
-
             let source_client = match self.source.gen_oss_client() {
                 Ok(client) => client,
                 Err(e) => {
@@ -272,7 +266,6 @@ impl TransferTaskActions for TransferOss2Local {
                 .changed_object_capture(
                     &self.source.bucket,
                     self.source.prefix.clone(),
-                    // self.target.prefix.clone(),
                     None,
                     &self.attributes.meta_dir,
                     timestampe,
@@ -290,7 +283,9 @@ impl TransferTaskActions for TransferOss2Local {
             };
             timestampe = exec_time.clone();
 
+            let mut vec_keys = vec![];
             // 生成执行文件
+            let mut list_file_position = FilePosition::default();
             let modified_file = match File::open(&modified_desc.path) {
                 Ok(f) => f,
                 Err(e) => {
@@ -300,18 +295,6 @@ impl TransferTaskActions for TransferOss2Local {
                 }
             };
 
-            let mut vec_keys = vec![];
-            // 生成执行文件
-            let mut list_file_position = FilePosition::default();
-
-            let executed_file = match File::open(&modified_desc.path) {
-                Ok(f) => f,
-                Err(e) => {
-                    log::error!("{}", e);
-                    err_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    continue;
-                }
-            };
             let modified_file_is_empty = modified_file.metadata().unwrap().len().eq(&0);
 
             // 按列表传输object from source to target
