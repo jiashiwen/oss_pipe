@@ -2,10 +2,8 @@
 
 OSS PIPE 是一个用于 S3 兼容对象存储间进行文件迁移的工具。
 
-下载地址：
-<https://github.com/jiashiwen/oss_pipe/releases/download/0.1.0/oss_pipe_x86_64-apple-darwin>  
-
-<https://github.com/jiashiwen/oss_pipe/releases/download/0.1.0/oss_pipe_x86_64-linux>
+项目地址
+<https://github.com/jiashiwen/oss_pipe>
 
 ## 主要功能
 
@@ -35,12 +33,18 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 * 构建
 
 ```shell
+apt update
+apt install openssl
+apt install libssl1.1
+apt install libssl-dev
 apt install -y pkg-config
 ```
 
 ```shell
 git clone https://github.com/jiashiwen/oss_pipe.git
 cd oss_pipe
+git fetch origin
+git checkout -b 0.2.0 origin/0.2.0
 cargo build --release
 ```
 
@@ -60,7 +64,7 @@ oss_pipe parameters provider
 通过 oss_pipe template 命令生成模板
 
 ```shell
-oss_pipe template transfer /tmp/transfer.yml
+oss_pipe template transfer oss2oss /tmp/transfer.yml
 ```
 
 transfer.yml 文件内容
@@ -104,7 +108,7 @@ task_desc: !Transfer
 osstask 子命令用于执行任务
 
 ```shell
-oss_pipe osstask filepath/task.yml
+oss_pipe task exec filepath/task.yml
 ```
 
 ## 参考手册
@@ -518,3 +522,7 @@ task_desc: !OssCompare
   # 从checkpoint开始执行
   start_from_checkpoint: false
 ```
+
+## 同步任务流程
+
+![同步任务流程](./images/同步流程图-v3.png)

@@ -79,6 +79,7 @@ pub enum OssProvider {
     AWS,
     HUAWEI,
     COS,
+    MINIO,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -173,10 +174,27 @@ impl OSSDescription {
                 let jdclient = JRSSClient { client };
                 Ok(Box::new(jdclient))
             }
+            OssProvider::AWS => {
+                let shared_config = SdkConfig::builder()
+                    .credentials_provider(SharedCredentialsProvider::new(Credentials::new(
+                        self.access_key_id.clone(),
+                        self.secret_access_key.clone(),
+                        None,
+                        None,
+                        "Static",
+                    )))
+                    .endpoint_url(self.endpoint.clone())
+                    .region(Region::new(self.region.clone()))
+                    .build();
 
-            OssProvider::AWS => todo!(),
+                let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+                let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
+                let aws_client = OssJdClient { client };
+                Ok(Box::new(aws_client))
+            }
             OssProvider::HUAWEI => todo!(),
             OssProvider::COS => todo!(),
+            OssProvider::MINIO => todo!(),
         }
     }
 
@@ -274,6 +292,24 @@ impl OSSDescription {
             }
 
             OssProvider::COS => {
+                let shared_config = SdkConfig::builder()
+                    .credentials_provider(SharedCredentialsProvider::new(Credentials::new(
+                        self.access_key_id.clone(),
+                        self.secret_access_key.clone(),
+                        None,
+                        None,
+                        "Static",
+                    )))
+                    .endpoint_url(self.endpoint.clone())
+                    .region(Region::new(self.region.clone()))
+                    .build();
+                let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+                let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
+                let oss_client = OssClient { client };
+                Ok(oss_client)
+            }
+
+            OssProvider::MINIO => {
                 let shared_config = SdkConfig::builder()
                     .credentials_provider(SharedCredentialsProvider::new(Credentials::new(
                         self.access_key_id.clone(),

@@ -66,6 +66,7 @@
   - [ ] 为便于扩展，新增objectstorage enum，用来区分不同数据源
   - [x] 解决modify create modify重复问题
   - [x] 增量逻辑新增正则过滤
+  - [ ] 新增指定时间戳同步
   - [x] 将oss 增量代码归并至oss client
   - [ ] 适配七牛
   - [ ] 支持从指定时间戳同步
