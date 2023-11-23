@@ -1,18 +1,16 @@
-use bytes::Bytes;
-use infer::Infer;
-use std::fs::OpenOptions;
-use std::io::{LineWriter, Write};
-use std::path::Path;
-
+use super::OssProvider;
+use super::{OSSActions, OssObjectsList};
 use aliyun_oss_client::file::Files;
 use aliyun_oss_client::QueryKey;
 use aliyun_oss_client::{Client, Query};
 use anyhow::Result;
 use anyhow::{anyhow, Ok};
 use async_trait::async_trait;
-
-use super::OssProvider;
-use super::{OSSActions, OssObjectsList};
+use bytes::Bytes;
+use infer::Infer;
+use std::fs::OpenOptions;
+use std::io::{LineWriter, Write};
+use std::path::Path;
 
 pub struct OssAliClient {
     pub client: Client,

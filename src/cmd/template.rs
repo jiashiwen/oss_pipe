@@ -56,26 +56,6 @@ fn template_transfer_local2local() -> Command {
             .help("specific output file path")])
 }
 
-// fn template_upload() -> Command {
-//     clap::Command::new("upload")
-//         .about("generate oss task description template for upload task")
-//         .args(&[Arg::new("file")
-//             .value_name("file")
-//             .required(false)
-//             .index(1)
-//             .help("specific output file path")])
-// }
-
-// fn local_to_local() -> Command {
-//     clap::Command::new("localtolocal")
-//         .about("generate oss task description template for local to local task")
-//         .args(&[Arg::new("file")
-//             .value_name("file")
-//             .required(false)
-//             .index(1)
-//             .help("specific output file path")])
-// }
-
 fn truncate_bucket() -> Command {
     clap::Command::new("truncate_bucket")
         .about("generate oss task description template for local to local task")

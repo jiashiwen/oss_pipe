@@ -1,8 +1,7 @@
-use std::fs;
-
 use anyhow::Result;
 use serde::{de, Deserialize};
 use serde_json::from_str;
+use std::fs;
 
 #[allow(dead_code)]
 pub fn json_to_struct<'a, T>(content: &'a str) -> Result<T>

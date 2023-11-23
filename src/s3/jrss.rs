@@ -1,3 +1,5 @@
+use super::OSSActions;
+use super::{OssObjectsList, OssProvider};
 use anyhow::{Ok, Result};
 use async_trait::async_trait;
 use aws_sdk_s3::types::ByteStream;
@@ -6,9 +8,6 @@ use bytes::Bytes;
 use std::fs::OpenOptions;
 use std::io::{LineWriter, Write};
 use std::path::Path;
-
-use super::OSSActions;
-use super::{OssObjectsList, OssProvider};
 
 pub struct JRSSClient {
     pub client: Client,
