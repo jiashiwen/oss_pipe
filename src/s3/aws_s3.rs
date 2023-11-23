@@ -32,80 +32,6 @@ pub struct OssObjList {
 }
 
 impl OssClient {
-    /// 将bucket中需要迁移的文件写入文件列表
-    /// 返回写入文件的条数
-    // pub async fn append_all_object_list_to_file(
-    //     &self,
-    //     bucket: String,
-    //     prefix: Option<String>,
-    //     batch: i32,
-    //     file_path: &str,
-    // ) -> Result<FileDescription> {
-    //     let mut total_lines = 0;
-    //     let resp = self
-    //         .list_objects(bucket.clone(), prefix.clone(), batch, None)
-    //         .await?;
-    //     let mut token: Option<String> = resp.next_token;
-
-    //     let path = std::path::Path::new(file_path);
-    //     if let Some(p) = path.parent() {
-    //         std::fs::create_dir_all(p)?;
-    //     };
-
-    //     //写入文件
-    //     let file = OpenOptions::new()
-    //         .create(true)
-    //         .write(true)
-    //         .append(true)
-    //         .open(file_path)?;
-    //     let mut line_writer = LineWriter::new(&file);
-
-    //     if let Some(objects) = resp.object_list {
-    //         for item in objects.iter() {
-    //             match item.key() {
-    //                 Some(i) => {
-    //                     let _ = line_writer.write_all(i.as_bytes());
-    //                     let _ = line_writer.write_all("\n".as_bytes());
-    //                     total_lines += 1;
-    //                 }
-    //                 None => {}
-    //             }
-    //         }
-    //         line_writer.flush()?;
-    //     }
-
-    //     while token.is_some() {
-    //         let resp = self
-    //             .list_objects(bucket.clone(), prefix.clone(), batch, token.clone())
-    //             .await?;
-    //         if let Some(objects) = resp.object_list {
-    //             for item in objects.iter() {
-    //                 match item.key() {
-    //                     Some(i) => {
-    //                         let _ = line_writer.write_all(i.as_bytes());
-    //                         let _ = line_writer.write_all("\n".as_bytes());
-    //                         total_lines += 1;
-    //                     }
-    //                     None => {}
-    //                 }
-    //             }
-    //             line_writer.flush()?;
-    //         }
-    //         token = resp.next_token;
-    //     }
-    //     let size = file.metadata()?.len();
-    //     let exec_file = FileDescription {
-    //         path: file_path.to_string(),
-    //         size,
-    //         total_lines,
-    //     };
-    //     Ok(exec_file)
-    // }
-
-    // 将last_modify 大于某时间戳的object列表写入文件
-    // ToDo 为提高效率需进行多线程改造
-    // 并发写文件问题如何解决
-    // 返回值为写入条目
     pub async fn append_object_list_to_file(
         &self,
         bucket: String,
@@ -645,11 +571,6 @@ impl OssClient {
                 &removed_description.path,
                 multi_part_chunk,
             )?;
-            // merge_file(
-            //     &removed_description.path,
-            //     &modified_description.path,
-            //     multi_part_chunk,
-            // )?;
         }
 
         let timestampe = now.as_secs().try_into()?;
@@ -657,8 +578,6 @@ impl OssClient {
         modified_description.total_lines =
             modified_description.total_lines + removed_description.total_lines;
 
-        // let _ = fs::remove_file(&removed_description.path);
-        // let _ = fs::remove_file(&modified_description.path);
         fs::rename(&removed_description.path, &modified_description.path)?;
         Ok((modified_description, new_list_description, timestampe))
     }

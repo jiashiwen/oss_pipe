@@ -94,3 +94,7 @@ osstask 子命令用于执行任务
 ```shell
 oss_pipe task exec filepath/task.yml
 ```
+
+## 同步任务流程
+
+![同步任务流程](./images/同步流程图-v3.png)
