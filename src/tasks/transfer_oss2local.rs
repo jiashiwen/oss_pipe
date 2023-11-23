@@ -283,7 +283,6 @@ impl TransferTaskActions for TransferOss2Local {
                     return;
                 }
                 if let Result::Ok(line_str) = line {
-                    println!("{:?}", line_str);
                     let len = line_str.bytes().len() + "\n".bytes().len();
                     list_file_position.offset += len;
                     list_file_position.line_num += 1;
@@ -301,7 +300,6 @@ impl TransferTaskActions for TransferOss2Local {
                         let t_file_name =
                             gen_file_path(self.target.as_str(), &record.target_key, "");
                         record.target_key = t_file_name;
-                        println!("{:?}", record);
                         vec_keys.push(record);
                     }
                 };
