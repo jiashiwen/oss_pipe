@@ -359,7 +359,6 @@ impl TransferTaskActions for TransferOss2Oss {
 
             //递增等待时间
             if modified_file_is_empty {
-                tokio::time::sleep(tokio::time::Duration::from_secs(sleep_time)).await;
                 if sleep_time.ge(&300) {
                     sleep_time = 60;
                 } else {
@@ -368,6 +367,7 @@ impl TransferTaskActions for TransferOss2Oss {
             } else {
                 sleep_time = 5;
             }
+            tokio::time::sleep(tokio::time::Duration::from_secs(sleep_time)).await;
         }
         pd.finish();
     }

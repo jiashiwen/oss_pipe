@@ -140,30 +140,6 @@ impl TransferTaskActions for TransferOss2Local {
                 last_modify_filter,
             )
             .await
-
-        // match last_modify_timestamp {
-        //     Some(t) => {
-        //         client_source
-        //             .append_last_modify_greater_object_to_file(
-        //                 self.source.bucket.clone(),
-        //                 self.source.prefix.clone(),
-        //                 self.attributes.bach_size,
-        //                 object_list_file,
-        //                 t,
-        //             )
-        //             .await
-        //     }
-        //     None => {
-        //         client_source
-        //             .append_all_object_list_to_file(
-        //                 self.source.bucket.clone(),
-        //                 self.source.prefix.clone(),
-        //                 self.attributes.bach_size,
-        //                 object_list_file,
-        //             )
-        //             .await
-        //     }
-        // }
     }
 
     async fn records_excutor(
@@ -311,7 +287,7 @@ impl TransferTaskActions for TransferOss2Local {
                     list_file_position.offset += len;
                     list_file_position.line_num += 1;
 
-                    let record = match from_str::<RecordDescription>(&line_str) {
+                    let mut record = match from_str::<RecordDescription>(&line_str) {
                         Ok(r) => r,
                         Err(e) => {
                             log::error!("{}", e);
@@ -321,6 +297,10 @@ impl TransferTaskActions for TransferOss2Local {
                     };
 
                     if regex_filter.filter(&record.source_key) {
+                        let t_file_name =
+                            gen_file_path(self.target.as_str(), &record.target_key, "");
+                        record.target_key = t_file_name;
+                        println!("{:?}", record);
                         vec_keys.push(record);
                     }
                 };
@@ -383,6 +363,7 @@ impl TransferTaskActions for TransferOss2Local {
 
             let _ = fs::remove_file(&checkpoint.current_stock_object_list_file);
             let _ = fs::remove_file(&modified_desc.path);
+            println!("{}", &checkpoint.current_stock_object_list_file);
             checkpoint.executed_file_position = FilePosition {
                 offset: modified_desc.size.try_into().unwrap(),
                 line_num: modified_desc.total_lines,
@@ -390,10 +371,10 @@ impl TransferTaskActions for TransferOss2Local {
             checkpoint.executed_file = modified_desc.clone();
             checkpoint.current_stock_object_list_file = new_object_list_desc.path.clone();
             let _ = checkpoint.save_to(&checkpoint_path);
+            println!("{}", new_object_list_desc.path.clone());
 
             //递增等待时间
             if modified_file_is_empty {
-                tokio::time::sleep(tokio::time::Duration::from_secs(sleep_time)).await;
                 if sleep_time.ge(&300) {
                     sleep_time = 60;
                 } else {
@@ -402,6 +383,7 @@ impl TransferTaskActions for TransferOss2Local {
             } else {
                 sleep_time = 5;
             }
+            tokio::time::sleep(tokio::time::Duration::from_secs(sleep_time)).await;
         }
     }
 }
@@ -667,7 +649,9 @@ impl Oss2LocalListedRecordsExecutor {
                 )
                 .await?
             }
-            Opt::REMOVE => fs::remove_file(record.target_key.as_str())?,
+            Opt::REMOVE => {
+                let _ = fs::remove_file(record.target_key.as_str());
+            }
             Opt::UNKOWN => return Err(anyhow!("option unkown")),
         }
         Ok(())
