@@ -17,29 +17,25 @@ use crate::commons::RegexFilter;
 use crate::commons::{json_to_struct, read_lines, Modified, ModifyType, NotifyWatcher, PathType};
 use crate::s3::aws_s3::OssClient;
 use crate::{checkpoint::ListedRecord, s3::OSSDescription};
-use anyhow::anyhow;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use dashmap::DashMap;
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::from_str;
-use std::fs::File;
-use std::io::BufReader;
-use std::io::Seek;
-use std::io::{BufRead, SeekFrom};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
+use std::io::{BufRead, Seek, SeekFrom};
 use std::{
-    fs::{self, OpenOptions},
-    io::Write,
+    fs::{self, File, OpenOptions},
+    io::{BufReader, Write},
     path::Path,
     sync::{atomic::AtomicUsize, Arc},
+    time::UNIX_EPOCH,
 };
-use tokio::sync::Mutex;
-use tokio::task;
+use std::{
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
+    time::SystemTime,
+};
 use tokio::task::JoinSet;
+use tokio::{sync::Mutex, task};
 use walkdir::WalkDir;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

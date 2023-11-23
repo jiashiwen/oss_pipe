@@ -1,3 +1,9 @@
+use super::ObjectDiff;
+use super::{
+    gen_file_path, DateTime, DiffContent, DiffExpires, DiffLength, COMPARE_OBJECT_DIFF_PREFIX,
+    ERROR_RECORD_PREFIX,
+};
+use super::{DiffNotExists, OFFSET_PREFIX};
 use crate::{
     checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
     s3::{aws_s3::OssClient, OSSDescription},
@@ -11,13 +17,6 @@ use std::{
     sync::{atomic::AtomicUsize, Arc},
 };
 use tokio::io::AsyncReadExt;
-
-use super::ObjectDiff;
-use super::{
-    gen_file_path, DateTime, DiffContent, DiffExpires, DiffLength, COMPARE_OBJECT_DIFF_PREFIX,
-    ERROR_RECORD_PREFIX,
-};
-use super::{DiffNotExists, OFFSET_PREFIX};
 
 #[derive(Debug, Clone)]
 pub struct OssCompare {

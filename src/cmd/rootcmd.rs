@@ -1,5 +1,3 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use crate::cmd::gen_file_cmd::{new_gen_file_cmd, new_gen_files_cmd};
 use crate::cmd::taskcmd::new_task_cmd;
 use crate::cmd::{
@@ -15,6 +13,7 @@ use crate::commons::{struct_to_yaml_string, CommandCompleter};
 use crate::configure::{generate_default_config, set_config_file_path};
 use crate::configure::{get_config_file_path, get_current_config_yml, set_config};
 use crate::interact;
+use crate::interact::INTERACT_STATUS;
 use crate::s3::oss::OSSDescription;
 use crate::s3::oss::OssProvider;
 use crate::tasks::{
@@ -24,8 +23,7 @@ use crate::tasks::{
 use clap::{Arg, ArgMatches};
 use clap::{ArgAction, Command as Clap_Command};
 use lazy_static::lazy_static;
-
-use crate::interact::INTERACT_STATUS;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const APP_NAME: &'static str = "oss_pipe";
 

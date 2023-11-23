@@ -1,6 +1,5 @@
-use crate::checkpoint::FileDescription;
-
 use super::{rand_util::rand_string, size_distributed, LastModifyFilter, RegexFilter};
+use crate::checkpoint::FileDescription;
 use anyhow::Result;
 use dashmap::DashMap;
 use std::{

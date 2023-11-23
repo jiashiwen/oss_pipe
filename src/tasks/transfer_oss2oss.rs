@@ -138,9 +138,6 @@ impl TransferTaskActions for TransferOss2Oss {
 
         joinset.spawn(async move {
             if let Err(e) = transfer.exec_listed_records(records).await {
-                // transfer
-                //     .err_counter
-                //     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{}", e);
             };

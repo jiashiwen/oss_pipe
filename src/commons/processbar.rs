@@ -1,3 +1,4 @@
+use crate::checkpoint::FilePosition;
 use dashmap::DashMap;
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use std::{
@@ -7,8 +8,6 @@ use std::{
     time::Duration,
 };
 use tokio::task::yield_now;
-
-use crate::checkpoint::FilePosition;
 
 /// 进度条，使用时在主线程之外的线程使用
 pub async fn quantify_processbar(

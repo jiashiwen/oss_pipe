@@ -11,7 +11,6 @@ use crate::{
     checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
     s3::{aws_s3::OssClient, OSSDescription},
 };
-
 use anyhow::Result;
 use async_trait::async_trait;
 use aws_sdk_s3::{error::GetObjectErrorKind, output::GetObjectOutput};

@@ -1,3 +1,8 @@
+use crate::{
+    checkpoint::{FileDescription, FilePosition, Opt, RecordDescription},
+    commons::{merge_file, size_distributed, LastModifyFilter, RegexFilter},
+    tasks::{gen_file_path, MODIFIED_PREFIX, OBJECT_LIST_FILE_PREFIX, REMOVED_PREFIX},
+};
 use anyhow::{anyhow, Result};
 use aws_sdk_s3::{
     model::{CompletedMultipartUpload, CompletedPart, Delete, Object, ObjectIdentifier},
@@ -13,12 +18,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::io::AsyncReadExt;
-
-use crate::{
-    checkpoint::{FileDescription, FilePosition, Opt, RecordDescription},
-    commons::{merge_file, size_distributed, LastModifyFilter, RegexFilter},
-    tasks::{gen_file_path, MODIFIED_PREFIX, OBJECT_LIST_FILE_PREFIX, REMOVED_PREFIX},
-};
 
 #[derive(Debug, Clone)]
 pub struct OssClient {

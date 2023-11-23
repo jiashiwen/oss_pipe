@@ -1,13 +1,12 @@
+use anyhow::{Error, Result};
+use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
     io::Write,
     str::FromStr,
     sync::{atomic::AtomicUsize, Arc},
 };
-
-use anyhow::{Error, Result};
-use dashmap::DashMap;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ListedRecord {

@@ -1,8 +1,6 @@
-use std::fs;
-
-use anyhow::{anyhow, Result};
-
 use crate::configure::get_config;
+use anyhow::{anyhow, Result};
+use std::fs;
 
 //检查配置目录是否存在，不存在则创建
 #[allow(dead_code)]
