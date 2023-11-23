@@ -283,6 +283,7 @@ impl TransferTaskActions for TransferOss2Local {
                     return;
                 }
                 if let Result::Ok(line_str) = line {
+                    println!("{:?}", line_str);
                     let len = line_str.bytes().len() + "\n".bytes().len();
                     list_file_position.offset += len;
                     list_file_position.line_num += 1;
@@ -363,7 +364,7 @@ impl TransferTaskActions for TransferOss2Local {
 
             let _ = fs::remove_file(&checkpoint.current_stock_object_list_file);
             let _ = fs::remove_file(&modified_desc.path);
-            println!("{}", &checkpoint.current_stock_object_list_file);
+
             checkpoint.executed_file_position = FilePosition {
                 offset: modified_desc.size.try_into().unwrap(),
                 line_num: modified_desc.total_lines,
@@ -371,7 +372,6 @@ impl TransferTaskActions for TransferOss2Local {
             checkpoint.executed_file = modified_desc.clone();
             checkpoint.current_stock_object_list_file = new_object_list_desc.path.clone();
             let _ = checkpoint.save_to(&checkpoint_path);
-            println!("{}", new_object_list_desc.path.clone());
 
             //递增等待时间
             if modified_file_is_empty {
