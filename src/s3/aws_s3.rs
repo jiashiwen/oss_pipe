@@ -639,12 +639,17 @@ impl OssClient {
             .capture_removed_objects(bucket, target_prefix.clone(), list_file_path, &removed)
             .await?;
 
-        if removed_description.size.gt(&0) {
+        if modified_description.size.gt(&0) {
             merge_file(
-                &removed_description.path,
                 &modified_description.path,
+                &removed_description.path,
                 multi_part_chunk,
             )?;
+            // merge_file(
+            //     &removed_description.path,
+            //     &modified_description.path,
+            //     multi_part_chunk,
+            // )?;
         }
 
         let timestampe = now.as_secs().try_into()?;
@@ -652,7 +657,9 @@ impl OssClient {
         modified_description.total_lines =
             modified_description.total_lines + removed_description.total_lines;
 
-        let _ = fs::remove_file(&removed_description.path);
+        // let _ = fs::remove_file(&removed_description.path);
+        // let _ = fs::remove_file(&modified_description.path);
+        fs::rename(&removed_description.path, &modified_description.path)?;
         Ok((modified_description, new_list_description, timestampe))
     }
 
@@ -762,12 +769,12 @@ impl OssClient {
         let mut modified_total_lines = 0;
 
         if let Some(objects) = resp.object_list {
-            objects.iter().for_each(|o| match o.key() {
-                Some(key) => {
+            for obj in objects {
+                if let Some(key) = obj.key() {
                     let _ = new_list_file.write_all(key.as_bytes());
                     let _ = new_list_file.write_all("\n".as_bytes());
                     new_list_total_lines += 1;
-                    if let Some(d) = o.last_modified() {
+                    if let Some(d) = obj.last_modified() {
                         if d.secs().ge(&timestampe) {
                             // 填充变动对象文件
                             let mut target_key = match &target_prefix {
@@ -783,16 +790,16 @@ impl OssClient {
                                 list_file_position: FilePosition::default(),
                                 option: Opt::PUT,
                             };
-                            let _ = record.save_json_to_file(&mut modified_file);
+
+                            if let Err(e) = record.save_json_to_file(&modified_file) {
+                                log::error!("{}", e);
+                                continue;
+                            }
                             modified_total_lines += 1;
                         }
                     }
                 }
-                None => {}
-            });
-
-            modified_file.flush()?;
-            new_list_file.flush()?;
+            }
         }
 
         while token.is_some() {
@@ -800,12 +807,12 @@ impl OssClient {
                 .list_objects(bucket.to_string(), source_prefix.clone(), batch_size, token)
                 .await?;
             if let Some(objects) = resp.object_list {
-                objects.iter().for_each(|o| match o.key() {
-                    Some(key) => {
+                for obj in objects {
+                    if let Some(key) = obj.key() {
                         let _ = new_list_file.write_all(key.as_bytes());
                         let _ = new_list_file.write_all("\n".as_bytes());
                         new_list_total_lines += 1;
-                        if let Some(d) = o.last_modified() {
+                        if let Some(d) = obj.last_modified() {
                             if d.secs().ge(&timestampe) {
                                 // 填充变动对象文件
                                 let mut target_key = match &target_prefix {
@@ -813,6 +820,7 @@ impl OssClient {
                                     None => "".to_string(),
                                 };
                                 target_key.push_str(&key);
+
                                 let record = RecordDescription {
                                     source_key: key.to_string(),
                                     target_key,
@@ -820,19 +828,21 @@ impl OssClient {
                                     list_file_position: FilePosition::default(),
                                     option: Opt::PUT,
                                 };
-                                let _ = record.save_json_to_file(&mut modified_file);
+                                if let Err(e) = record.save_json_to_file(&modified_file) {
+                                    log::error!("{}", e);
+                                    continue;
+                                }
                                 modified_total_lines += 1;
                             }
                         }
                     }
-                    None => {}
-                });
-
-                modified_file.flush()?;
-                new_list_file.flush()?;
+                }
             }
             token = resp.next_token;
         }
+
+        modified_file.flush()?;
+        new_list_file.flush()?;
 
         let modified_size = modified_file.metadata()?.len();
         let new_list_size = new_list_file.metadata()?.len();
