@@ -623,10 +623,6 @@ impl OssClient {
             now.as_secs().to_string().as_str(),
         );
 
-        let removed_description = self
-            .capture_removed_objects(bucket, target_prefix.clone(), list_file_path, &removed)
-            .await?;
-
         let (mut modified_description, new_list_description) = self
             .capture_modified_objects(
                 bucket,
@@ -638,6 +634,11 @@ impl OssClient {
                 batch_size,
             )
             .await?;
+
+        let removed_description = self
+            .capture_removed_objects(bucket, target_prefix.clone(), list_file_path, &removed)
+            .await?;
+
         if removed_description.size.gt(&0) {
             merge_file(
                 &removed_description.path,
