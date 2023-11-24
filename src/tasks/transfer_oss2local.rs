@@ -149,6 +149,7 @@ impl TransferTaskActions for TransferOss2Local {
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
+        target_exist_skip: bool,
         list_file: String,
     ) {
         let oss2local = Oss2LocalListedRecordsExecutor {
@@ -157,7 +158,7 @@ impl TransferTaskActions for TransferOss2Local {
             err_counter,
             offset_map,
             meta_dir: self.attributes.meta_dir.clone(),
-            target_exist_skip: false,
+            target_exist_skip,
             large_file_size: self.attributes.large_file_size,
             multi_part_chunk: self.attributes.multi_part_chunk,
             list_file_path: list_file,
@@ -401,7 +402,7 @@ impl TransferOss2Local {
             err_counter,
             offset_map,
             meta_dir: self.attributes.meta_dir.clone(),
-            target_exist_skip: false,
+            target_exist_skip: self.attributes.target_exists_skip,
             large_file_size: self.attributes.large_file_size,
             multi_part_chunk: self.attributes.multi_part_chunk,
             list_file_path: list_file,

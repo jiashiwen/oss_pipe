@@ -406,6 +406,7 @@ impl TransferTask {
                             Arc::clone(&snapshot_stop_mark),
                             Arc::clone(&err_counter),
                             Arc::clone(&offset_map),
+                            self.attributes.target_exists_skip,
                             executed_file.path.clone(),
                         )
                         .await;
@@ -432,6 +433,7 @@ impl TransferTask {
                         Arc::clone(&snapshot_stop_mark),
                         Arc::clone(&err_counter),
                         Arc::clone(&offset_map),
+                        self.attributes.target_exists_skip,
                         executed_file.path.clone(),
                     )
                     .await;
