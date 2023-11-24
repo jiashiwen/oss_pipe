@@ -1,14 +1,16 @@
 use super::{osscompare::OssCompare, TaskStatusSaver, TransferTask};
 use crate::{
     checkpoint::{get_task_checkpoint, CheckPoint, FileDescription, FilePosition, ListedRecord},
-    commons::LastModifyFilter,
+    commons::{byte_size_str_to_usize, byte_size_usize_to_str, LastModifyFilter},
     s3::OSSDescription,
 };
 use anyhow::{anyhow, Result};
 use aws_sdk_s3::model::ObjectIdentifier;
-use core::result::Result::Ok;
 use dashmap::DashMap;
-use serde::{Deserialize, Serialize};
+use serde::{
+    de::{self},
+    Deserialize, Deserializer, Serialize, Serializer,
+};
 use snowflake::SnowflakeIdGenerator;
 use std::{
     fs::{self, File},
@@ -164,8 +166,12 @@ pub struct TransferTaskAttributes {
     #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
     pub start_from_checkpoint: bool,
     #[serde(default = "TaskDefaultParameters::large_file_size_default")]
+    #[serde(serialize_with = "se_usize_to_str")]
+    #[serde(deserialize_with = "de_usize_from_str")]
     pub large_file_size: usize,
     #[serde(default = "TaskDefaultParameters::multi_part_chunk_default")]
+    #[serde(serialize_with = "se_usize_to_str")]
+    #[serde(deserialize_with = "de_usize_from_str")]
     pub multi_part_chunk: usize,
     #[serde(default = "TaskDefaultParameters::filter_default")]
     pub exclude: Option<Vec<String>>,
@@ -197,6 +203,22 @@ impl Default for TransferTaskAttributes {
             last_modify_filter: TaskDefaultParameters::last_modify_filter_default(),
         }
     }
+}
+
+fn de_usize_from_str<'de, D>(deserializer: D) -> Result<usize, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    byte_size_str_to_usize(&s).map_err(de::Error::custom)
+}
+
+fn se_usize_to_str<S>(v: &usize, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let size = byte_size_usize_to_str(*v);
+    serializer.serialize_str(size.as_str())
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

@@ -6,7 +6,7 @@ use crate::cmd::{
 };
 use crate::commons::yamlutile::struct_to_yml_file;
 use crate::commons::{
-    byte_size_to_usize, generate_file, generate_files, read_yaml_file, LastModifyFilter,
+    byte_size_str_to_usize, generate_file, generate_files, read_yaml_file, LastModifyFilter,
     LastModifyFilterType, SubCmd,
 };
 use crate::commons::{struct_to_yaml_string, CommandCompleter};
@@ -510,7 +510,7 @@ fn cmd_match(matches: &ArgMatches) {
     if let Some(gen_file) = matches.subcommand_matches("gen_file") {
         let file_size = match gen_file.get_one::<String>("file_size") {
             Some(s) => {
-                let size = byte_size_to_usize(s);
+                let size = byte_size_str_to_usize(s);
                 match size {
                     Ok(s) => s,
                     Err(e) => {
@@ -558,7 +558,7 @@ fn cmd_match(matches: &ArgMatches) {
 
         let file_size = match gen_file.get_one::<String>("file_size") {
             Some(s) => {
-                let size = byte_size_to_usize(s);
+                let size = byte_size_str_to_usize(s);
                 match size {
                     Ok(s) => s,
                     Err(e) => {
