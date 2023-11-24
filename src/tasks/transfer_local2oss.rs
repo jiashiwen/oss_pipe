@@ -7,14 +7,13 @@ use super::TransferTaskAttributes;
 use super::NOTIFY_FILE_PREFIX;
 use super::OFFSET_PREFIX;
 use super::{gen_file_path, ERROR_RECORD_PREFIX};
-use crate::checkpoint::get_task_checkpoint;
-use crate::checkpoint::FileDescription;
-use crate::checkpoint::{FilePosition, Opt, RecordDescription};
-use crate::commons::analyze_folder_files_size;
-use crate::commons::scan_folder_files_to_file;
-use crate::commons::LastModifyFilter;
-use crate::commons::RegexFilter;
-use crate::commons::{json_to_struct, read_lines, Modified, ModifyType, NotifyWatcher, PathType};
+use crate::checkpoint::{
+    get_task_checkpoint, FileDescription, FilePosition, Opt, RecordDescription,
+};
+use crate::commons::{
+    analyze_folder_files_size, json_to_struct, read_lines, scan_folder_files_to_file,
+    LastModifyFilter, Modified, ModifyType, NotifyWatcher, PathType, RegexFilter,
+};
 use crate::s3::aws_s3::OssClient;
 use crate::{checkpoint::ListedRecord, s3::OSSDescription};
 use anyhow::{anyhow, Result};
@@ -27,12 +26,11 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{BufReader, Write},
     path::Path,
-    sync::{atomic::AtomicUsize, Arc},
-    time::UNIX_EPOCH,
-};
-use std::{
-    sync::atomic::{AtomicBool, AtomicU64, Ordering},
-    time::SystemTime,
+    sync::{
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+        Arc,
+    },
+    time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::task::JoinSet;
 use tokio::{sync::Mutex, task};
@@ -146,9 +144,6 @@ impl TransferTaskActions for TransferLocal2Oss {
 
         joinset.spawn(async move {
             if let Err(e) = local2oss.exec_listed_records(records).await {
-                // local2oss
-                //     .err_counter
-                //     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{}", e);
             };

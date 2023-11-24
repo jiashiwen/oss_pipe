@@ -1,5 +1,5 @@
-use crate::cmd::gen_file_cmd::{new_gen_file_cmd, new_gen_files_cmd};
-use crate::cmd::taskcmd::new_task_cmd;
+use crate::cmd::cmd_gen_file::{new_gen_file_cmd, new_gen_files_cmd};
+use crate::cmd::cmd_task::new_task_cmd;
 use crate::cmd::{
     new_command_tree_cmd, new_config_cmd, new_exit_cmd, new_osscfg_cmd, new_parameters_cmd,
     new_template,
@@ -20,8 +20,7 @@ use crate::tasks::{
     task_id_generator, ObjectStorage, Task, TaskDescription, TaskOssCompare, TaskTruncateBucket,
     TaskType, TransferTask,
 };
-use clap::{Arg, ArgMatches};
-use clap::{ArgAction, Command as Clap_Command};
+use clap::{Arg, ArgAction, ArgMatches, Command as Clap_Command};
 use lazy_static::lazy_static;
 use std::time::{SystemTime, UNIX_EPOCH};
 
