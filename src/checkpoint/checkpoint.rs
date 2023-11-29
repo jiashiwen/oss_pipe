@@ -77,7 +77,6 @@ impl CheckPoint {
     pub fn save_to(&mut self, path: &str) -> Result<()> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         self.timestamp = i128::from(now.as_secs());
-
         let mut file = OpenOptions::new()
             .create(true)
             .write(true)
@@ -89,7 +88,9 @@ impl CheckPoint {
         Ok(())
     }
 
-    pub fn save_to_file(&self, file: &mut File) -> Result<()> {
+    pub fn save_to_file(&mut self, file: &mut File) -> Result<()> {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        self.timestamp = i128::from(now.as_secs());
         let constent = struct_to_yaml_string(self)?;
         file.write_all(constent.as_bytes())?;
         file.flush()?;

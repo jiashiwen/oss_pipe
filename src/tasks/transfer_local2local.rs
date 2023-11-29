@@ -8,8 +8,8 @@ use crate::checkpoint::{get_task_checkpoint, FileDescription, ListedRecord};
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::commons::{
     analyze_folder_files_size, copy_file, json_to_struct, merge_file, read_lines,
-    scan_folder_files_to_file, LastModifyFilter, Modified, ModifyType, NotifyWatcher, PathType,
-    RegexFilter,
+    scan_folder_files_to_file, struct_to_json_string, LastModifyFilter, Modified, ModifyType,
+    NotifyWatcher, PathType, RegexFilter,
 };
 use anyhow::anyhow;
 use anyhow::Result;
@@ -105,7 +105,8 @@ impl TransferTaskActions for TransferLocal2Local {
 
         Ok(())
     }
-    async fn records_excutor(
+
+    async fn listed_records_excutor(
         &self,
         joinset: &mut JoinSet<()>,
         records: Vec<ListedRecord>,
@@ -129,6 +130,36 @@ impl TransferTaskActions for TransferLocal2Local {
 
         joinset.spawn(async move {
             if let Err(e) = local2local.exec_listed_records(records).await {
+                stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+                log::error!("{}", e);
+            };
+        });
+    }
+
+    async fn record_descriptions_excutor(
+        &self,
+        joinset: &mut JoinSet<()>,
+        records: Vec<RecordDescription>,
+        stop_mark: Arc<AtomicBool>,
+        err_counter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, FilePosition>>,
+        target_exist_skip: bool,
+        list_file: String,
+    ) {
+        let local2local = Local2LocalExecutor {
+            source: self.source.clone(),
+            target: self.target.clone(),
+            err_counter,
+            offset_map,
+            meta_dir: self.attributes.meta_dir.clone(),
+            target_exist_skip,
+            large_file_size: self.attributes.large_file_size,
+            multi_part_chunk: self.attributes.multi_part_chunk,
+            list_file_path: list_file,
+        };
+
+        joinset.spawn(async move {
+            if let Err(e) = local2local.exec_record_descriptions(records).await {
                 stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{}", e);
             };
@@ -170,12 +201,6 @@ impl TransferTaskActions for TransferLocal2Local {
             now.as_secs().to_string().as_str(),
         );
 
-        let target_object_list = gen_file_path(
-            &self.attributes.meta_dir,
-            OBJECT_LIST_FILE_PREFIX,
-            now.as_secs().to_string().as_str(),
-        );
-
         let mut removed_file = OpenOptions::new()
             .create(true)
             .truncate(true)
@@ -209,10 +234,37 @@ impl TransferTaskActions for TransferLocal2Local {
                 let source_key_str = gen_file_path(&self.source, key, "");
                 let source_path = Path::new(&source_key_str);
                 if !source_path.exists() {
-                    let _ = removed_file.write_all(key.as_bytes());
+                    let record = RecordDescription {
+                        source_key: source_key_str,
+                        target_key: p.to_string(),
+                        list_file_path: "".to_string(),
+                        list_file_position: FilePosition::default(),
+                        option: Opt::REMOVE,
+                    };
+                    let record_str = struct_to_json_string(&record)?;
+                    let _ = removed_file.write_all(record_str.as_bytes());
                     let _ = removed_file.write_all("\n".as_bytes());
                     removed_lines += 1;
                 }
+            };
+        }
+
+        for entry in WalkDir::new(&self.source)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|e| !e.file_type().is_dir())
+        {
+            if let Some(p) = entry.path().to_str() {
+                if p.eq(&self.source) {
+                    continue;
+                }
+
+                let key = match &self.source.ends_with("/") {
+                    true => &p[self.target.len()..],
+                    false => &p[self.target.len() + 1..],
+                };
+
+                let target_key_str = gen_file_path(&self.target, key, "");
 
                 let modified_time = entry
                     .metadata()?
@@ -220,7 +272,15 @@ impl TransferTaskActions for TransferLocal2Local {
                     .duration_since(UNIX_EPOCH)?
                     .as_secs();
                 if last_modify_filter.filter(i128::from(modified_time)) {
-                    let _ = modified_file.write_all(key.as_bytes());
+                    let record = RecordDescription {
+                        source_key: p.to_string(),
+                        target_key: target_key_str,
+                        list_file_path: "".to_string(),
+                        list_file_position: FilePosition::default(),
+                        option: Opt::PUT,
+                    };
+                    let record_str = struct_to_json_string(&record)?;
+                    let _ = modified_file.write_all(record_str.as_bytes());
                     let _ = modified_file.write_all("\n".as_bytes());
                     modified_lines += 1;
                 }
@@ -236,10 +296,10 @@ impl TransferTaskActions for TransferLocal2Local {
         let total_size = removed_size + modified_size;
         let total_lines = removed_lines + modified_lines;
 
-        fs::rename(&removed, &target_object_list)?;
-        fs::remove_file(&modified)?;
+        fs::rename(&removed, &modified)?;
+        // fs::remove_file(&modified)?;
         let file_desc = FileDescription {
-            path: target_object_list.to_string(),
+            path: modified.to_string(),
             size: total_size,
             total_lines,
         };

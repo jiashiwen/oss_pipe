@@ -143,7 +143,7 @@ pub fn scan_folder_files_to_file(
     let file = OpenOptions::new()
         .create(true)
         .write(true)
-        .append(true)
+        .truncate(true)
         .open(file_name)?;
     let mut line_writer = LineWriter::new(&file);
 
