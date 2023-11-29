@@ -8,7 +8,8 @@ use crate::{
         get_task_checkpoint, FileDescription, FilePosition, ListedRecord, Opt, RecordDescription,
     },
     commons::{
-        json_to_struct, merge_file, promote_processbar, read_lines, LastModifyFilter, RegexFilter,
+        json_to_struct, merge_file, promote_processbar, read_lines, struct_to_json_string,
+        LastModifyFilter, RegexFilter,
     },
     s3::{
         aws_s3::{download_object, OssClient},
@@ -212,28 +213,47 @@ impl TransferTaskActions for TransferOss2Local {
                 source_key.push_str(key);
 
                 if !source_client
-                    .object_exists(&self.source.bucket, source_key)
+                    .object_exists(&self.source.bucket, &source_key)
                     .await?
                 {
-                    let _ = removed_file.write_all(key.as_bytes());
+                    let record = RecordDescription {
+                        source_key,
+                        target_key: p.to_string(),
+                        list_file_path: "".to_string(),
+                        list_file_position: FilePosition::default(),
+                        option: Opt::REMOVE,
+                    };
+                    let record_str = struct_to_json_string(&record)?;
+                    let _ = removed_file.write_all(record_str.as_bytes());
                     let _ = removed_file.write_all("\n".as_bytes());
                     removed_lines += 1;
                 }
             };
         }
 
-        let mut process_source_objects = |objects: Vec<Object>| {
+        let mut process_source_objects = |objects: Vec<Object>| -> Result<()> {
             for obj in objects {
-                if let Some(key) = obj.key() {
+                if let Some(source_key) = obj.key() {
                     if let Some(d) = obj.last_modified() {
                         if last_modify_filter.filter(i128::from(d.secs())) {
-                            let _ = modified_file.write_all(key.as_bytes());
+                            let target_key_str = gen_file_path(&self.target, source_key, "");
+                            let record = RecordDescription {
+                                source_key: source_key.to_string(),
+                                target_key: target_key_str,
+                                list_file_path: "".to_string(),
+                                list_file_position: FilePosition::default(),
+                                option: Opt::PUT,
+                            };
+
+                            let record_str = struct_to_json_string(&record)?;
+                            let _ = modified_file.write_all(record_str.as_bytes());
                             let _ = modified_file.write_all("\n".as_bytes());
                             modified_lines += 1;
                         }
                     }
                 }
             }
+            Ok(())
         };
         let resp = source_client
             .list_objects(
@@ -245,7 +265,7 @@ impl TransferTaskActions for TransferOss2Local {
             .await?;
         let mut token = resp.next_token;
         if let Some(objects) = resp.object_list {
-            process_source_objects(objects);
+            process_source_objects(objects)?;
         }
 
         while token.is_some() {
@@ -258,7 +278,7 @@ impl TransferTaskActions for TransferOss2Local {
                 )
                 .await?;
             if let Some(objects) = resp.object_list {
-                process_source_objects(objects);
+                process_source_objects(objects)?;
             }
             token = resp.next_token;
         }
@@ -272,8 +292,8 @@ impl TransferTaskActions for TransferOss2Local {
         let total_size = removed_size + modified_size;
         let total_lines = removed_lines + modified_lines;
 
-        fs::rename(&removed, &target_object_list)?;
-        fs::remove_file(&modified)?;
+        fs::rename(&removed, &modified)?;
+        // fs::remove_file(&modified)?;
         let file_desc = FileDescription {
             path: target_object_list.to_string(),
             size: total_size,
@@ -283,7 +303,7 @@ impl TransferTaskActions for TransferOss2Local {
         Ok(file_desc)
     }
 
-    async fn records_excutor(
+    async fn listed_records_excutor(
         &self,
         joinset: &mut JoinSet<()>,
         records: Vec<ListedRecord>,
@@ -307,9 +327,36 @@ impl TransferTaskActions for TransferOss2Local {
 
         joinset.spawn(async move {
             if let Err(e) = oss2local.exec_listed_records(records).await {
-                // oss2local
-                //     .err_counter
-                //     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+                log::error!("{}", e);
+            };
+        });
+    }
+
+    async fn record_descriptions_excutor(
+        &self,
+        joinset: &mut JoinSet<()>,
+        records: Vec<RecordDescription>,
+        stop_mark: Arc<AtomicBool>,
+        err_counter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, FilePosition>>,
+        target_exist_skip: bool,
+        list_file: String,
+    ) {
+        let oss2local = Oss2LocalListedRecordsExecutor {
+            target: self.target.clone(),
+            source: self.source.clone(),
+            err_counter,
+            offset_map,
+            meta_dir: self.attributes.meta_dir.clone(),
+            target_exist_skip,
+            large_file_size: self.attributes.large_file_size,
+            multi_part_chunk: self.attributes.multi_part_chunk,
+            list_file_path: list_file,
+        };
+
+        joinset.spawn(async move {
+            if let Err(e) = oss2local.exec_record_descriptions(records).await {
                 stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{}", e);
             };
@@ -372,39 +419,21 @@ impl TransferTaskActions for TransferOss2Local {
                 .max_errors
                 .ge(&err_counter.load(std::sync::atomic::Ordering::SeqCst))
         {
-            let source_client = match self.source.gen_oss_client() {
-                Ok(client) => client,
-                Err(e) => {
-                    log::error!("{}", e);
-                    return;
-                }
-            };
-
-            let (modified_desc, new_object_list_desc, exec_time) = match source_client
-                .changed_object_capture(
-                    &self.source.bucket,
-                    self.source.prefix.clone(),
-                    None,
-                    &self.attributes.meta_dir,
-                    timestampe,
-                    &checkpoint.current_stock_object_list_file,
-                    self.attributes.bach_size,
-                    self.attributes.multi_part_chunk,
-                )
+            let modified = match self
+                .changed_object_capture_based_target(checkpoint.timestamp)
                 .await
             {
-                Ok((m, n, t)) => (m.clone(), n.clone(), t.clone()),
+                Ok(f) => f,
                 Err(e) => {
                     log::error!("{}", e);
                     return;
                 }
             };
-            timestampe = exec_time.clone();
 
             let mut vec_keys = vec![];
             // 生成执行文件
             let mut list_file_position = FilePosition::default();
-            let modified_file = match File::open(&modified_desc.path) {
+            let modified_file = match File::open(&modified.path) {
                 Ok(f) => f,
                 Err(e) => {
                     log::error!("{}", e);
@@ -460,7 +489,7 @@ impl TransferTaskActions for TransferOss2Local {
                         vk,
                         Arc::clone(&err_counter),
                         Arc::clone(&offset_map),
-                        modified_desc.path.clone(),
+                        modified.path.clone(),
                     )
                     .await;
 
@@ -484,7 +513,7 @@ impl TransferTaskActions for TransferOss2Local {
                     vk,
                     Arc::clone(&err_counter),
                     Arc::clone(&offset_map),
-                    modified_desc.path.clone(),
+                    modified.path.clone(),
                 )
                 .await;
             }
@@ -493,24 +522,24 @@ impl TransferTaskActions for TransferOss2Local {
                 execute_set.join_next().await;
             }
 
-            finished_total_objects += modified_desc.total_lines;
-            if !modified_desc.total_lines.eq(&0) {
+            finished_total_objects += modified.total_lines;
+            if !modified.total_lines.eq(&0) {
                 let msg = format!(
                     "executing transfer modified finished this batch {} total {};",
-                    modified_desc.total_lines, finished_total_objects
+                    modified.total_lines, finished_total_objects
                 );
                 pd.set_message(msg);
             }
 
-            let _ = fs::remove_file(&checkpoint.current_stock_object_list_file);
-            let _ = fs::remove_file(&modified_desc.path);
+            // let _ = fs::remove_file(&checkpoint.current_stock_object_list_file);
+            let _ = fs::remove_file(&modified.path);
 
             checkpoint.executed_file_position = FilePosition {
-                offset: modified_desc.size.try_into().unwrap(),
-                line_num: modified_desc.total_lines,
+                offset: modified.size.try_into().unwrap(),
+                line_num: modified.total_lines,
             };
-            checkpoint.executed_file = modified_desc.clone();
-            checkpoint.current_stock_object_list_file = new_object_list_desc.path.clone();
+            checkpoint.executed_file = modified.clone();
+            // checkpoint.current_stock_object_list_file = new_object_list_desc.path.clone();
             let _ = checkpoint.save_to(&checkpoint_path);
 
             //递增等待时间
@@ -526,6 +555,207 @@ impl TransferTaskActions for TransferOss2Local {
             tokio::time::sleep(tokio::time::Duration::from_secs(sleep_time)).await;
         }
     }
+
+    // async fn execute_increment(
+    //     &self,
+    //     mut execute_set: &mut JoinSet<()>,
+    //     assistant: Arc<Mutex<IncrementAssistant>>,
+    //     err_counter: Arc<AtomicUsize>,
+    //     offset_map: Arc<DashMap<String, FilePosition>>,
+    //     snapshot_stop_mark: Arc<AtomicBool>,
+    // ) {
+    //     // 循环执行获取lastmodify 大于checkpoint指定的时间戳的对象
+    //     let lock = assistant.lock().await;
+    //     let mut timestampe = match lock.last_modify_timestamp {
+    //         Some(t) => t,
+    //         None => {
+    //             return;
+    //         }
+    //     };
+    //     let checkpoint_path = lock.check_point_path.clone();
+    //     let mut checkpoint = match get_task_checkpoint(&lock.check_point_path) {
+    //         Ok(c) => c,
+    //         Err(e) => {
+    //             log::error!("{}", e);
+    //             return;
+    //         }
+    //     };
+    //     checkpoint.task_stage = TransferStage::Increment;
+    //     drop(lock);
+
+    //     let regex_filter =
+    //         match RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include) {
+    //             Ok(r) => r,
+    //             Err(e) => {
+    //                 log::error!("{}", e);
+    //                 return;
+    //             }
+    //         };
+
+    //     let mut sleep_time = 5;
+    //     let pd = promote_processbar("executing increment:waiting for data...");
+    //     let mut finished_total_objects = 0;
+
+    //     while !snapshot_stop_mark.load(std::sync::atomic::Ordering::SeqCst)
+    //         && self
+    //             .attributes
+    //             .max_errors
+    //             .ge(&err_counter.load(std::sync::atomic::Ordering::SeqCst))
+    //     {
+    //         let source_client = match self.source.gen_oss_client() {
+    //             Ok(client) => client,
+    //             Err(e) => {
+    //                 log::error!("{}", e);
+    //                 return;
+    //             }
+    //         };
+
+    //         let (modified_desc, new_object_list_desc, exec_time) = match source_client
+    //             .changed_object_capture(
+    //                 &self.source.bucket,
+    //                 self.source.prefix.clone(),
+    //                 None,
+    //                 &self.attributes.meta_dir,
+    //                 timestampe,
+    //                 &checkpoint.current_stock_object_list_file,
+    //                 self.attributes.bach_size,
+    //                 self.attributes.multi_part_chunk,
+    //             )
+    //             .await
+    //         {
+    //             Ok((m, n, t)) => (m.clone(), n.clone(), t.clone()),
+    //             Err(e) => {
+    //                 log::error!("{}", e);
+    //                 return;
+    //             }
+    //         };
+    //         timestampe = exec_time.clone();
+
+    //         let mut vec_keys = vec![];
+    //         // 生成执行文件
+    //         let mut list_file_position = FilePosition::default();
+    //         let modified_file = match File::open(&modified_desc.path) {
+    //             Ok(f) => f,
+    //             Err(e) => {
+    //                 log::error!("{}", e);
+    //                 err_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    //                 continue;
+    //             }
+    //         };
+
+    //         let modified_file_is_empty = modified_file.metadata().unwrap().len().eq(&0);
+
+    //         // 按列表传输object from source to target
+    //         let lines: io::Lines<io::BufReader<File>> = io::BufReader::new(modified_file).lines();
+    //         for line in lines {
+    //             // 若错误达到上限，则停止任务
+    //             if err_counter.load(std::sync::atomic::Ordering::SeqCst)
+    //                 >= self.attributes.max_errors
+    //             {
+    //                 return;
+    //             }
+    //             if let Result::Ok(line_str) = line {
+    //                 let len = line_str.bytes().len() + "\n".bytes().len();
+    //                 list_file_position.offset += len;
+    //                 list_file_position.line_num += 1;
+
+    //                 let mut record = match from_str::<RecordDescription>(&line_str) {
+    //                     Ok(r) => r,
+    //                     Err(e) => {
+    //                         log::error!("{}", e);
+    //                         err_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    //                         continue;
+    //                     }
+    //                 };
+
+    //                 if regex_filter.filter(&record.source_key) {
+    //                     let t_file_name =
+    //                         gen_file_path(self.target.as_str(), &record.target_key, "");
+    //                     record.target_key = t_file_name;
+    //                     vec_keys.push(record);
+    //                 }
+    //             };
+
+    //             if vec_keys
+    //                 .len()
+    //                 .to_string()
+    //                 .eq(&self.attributes.bach_size.to_string())
+    //             {
+    //                 while execute_set.len() >= self.attributes.task_threads {
+    //                     execute_set.join_next().await;
+    //                 }
+    //                 let vk = vec_keys.clone();
+    //                 self.record_discriptions_excutor(
+    //                     &mut execute_set,
+    //                     vk,
+    //                     Arc::clone(&err_counter),
+    //                     Arc::clone(&offset_map),
+    //                     modified_desc.path.clone(),
+    //                 )
+    //                 .await;
+
+    //                 // 清理临时key vec
+    //                 vec_keys.clear();
+    //             }
+    //         }
+
+    //         // 处理集合中的剩余数据，若错误达到上限，则不执行后续操作
+    //         if vec_keys.len() > 0
+    //             && err_counter.load(std::sync::atomic::Ordering::SeqCst)
+    //                 < self.attributes.max_errors
+    //         {
+    //             while execute_set.len() >= self.attributes.task_threads {
+    //                 execute_set.join_next().await;
+    //             }
+
+    //             let vk = vec_keys.clone();
+    //             self.record_discriptions_excutor(
+    //                 &mut execute_set,
+    //                 vk,
+    //                 Arc::clone(&err_counter),
+    //                 Arc::clone(&offset_map),
+    //                 modified_desc.path.clone(),
+    //             )
+    //             .await;
+    //         }
+
+    //         while execute_set.len() > 0 {
+    //             execute_set.join_next().await;
+    //         }
+
+    //         finished_total_objects += modified_desc.total_lines;
+    //         if !modified_desc.total_lines.eq(&0) {
+    //             let msg = format!(
+    //                 "executing transfer modified finished this batch {} total {};",
+    //                 modified_desc.total_lines, finished_total_objects
+    //             );
+    //             pd.set_message(msg);
+    //         }
+
+    //         let _ = fs::remove_file(&checkpoint.current_stock_object_list_file);
+    //         let _ = fs::remove_file(&modified_desc.path);
+
+    //         checkpoint.executed_file_position = FilePosition {
+    //             offset: modified_desc.size.try_into().unwrap(),
+    //             line_num: modified_desc.total_lines,
+    //         };
+    //         checkpoint.executed_file = modified_desc.clone();
+    //         checkpoint.current_stock_object_list_file = new_object_list_desc.path.clone();
+    //         let _ = checkpoint.save_to(&checkpoint_path);
+
+    //         //递增等待时间
+    //         if modified_file_is_empty {
+    //             if sleep_time.ge(&300) {
+    //                 sleep_time = 60;
+    //             } else {
+    //                 sleep_time += 5;
+    //             }
+    //         } else {
+    //             sleep_time = 5;
+    //         }
+    //         tokio::time::sleep(tokio::time::Duration::from_secs(sleep_time)).await;
+    //     }
+    // }
 }
 
 impl TransferOss2Local {

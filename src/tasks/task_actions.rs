@@ -1,6 +1,6 @@
 use super::IncrementAssistant;
 use crate::{
-    checkpoint::{FileDescription, FilePosition, ListedRecord},
+    checkpoint::{FileDescription, FilePosition, ListedRecord, RecordDescription},
     commons::LastModifyFilter,
 };
 use anyhow::Result;
@@ -21,11 +21,23 @@ pub trait TransferTaskActions {
     async fn analyze_source(&self) -> Result<DashMap<String, i128>>;
     // 错误记录重试
     fn error_record_retry(&self) -> Result<()>;
-    // 记录执行器
-    async fn records_excutor(
+    // 记录列表执行器
+    async fn listed_records_excutor(
         &self,
         execute_set: &mut JoinSet<()>,
         records: Vec<ListedRecord>,
+        stop_mark: Arc<AtomicBool>,
+        err_counter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, FilePosition>>,
+        target_exist_skip: bool,
+        list_file: String,
+    );
+
+    // 记录描述表执行器
+    async fn record_descriptions_excutor(
+        &self,
+        execute_set: &mut JoinSet<()>,
+        records: Vec<RecordDescription>,
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
