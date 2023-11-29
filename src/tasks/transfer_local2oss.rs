@@ -4,12 +4,16 @@ use super::LocalNotify;
 use super::TaskStatusSaver;
 use super::TransferStage;
 use super::TransferTaskAttributes;
+use super::MODIFIED_PREFIX;
 use super::NOTIFY_FILE_PREFIX;
+use super::OBJECT_LIST_FILE_PREFIX;
 use super::OFFSET_PREFIX;
+use super::REMOVED_PREFIX;
 use super::{gen_file_path, ERROR_RECORD_PREFIX};
 use crate::checkpoint::{
     get_task_checkpoint, FileDescription, FilePosition, Opt, RecordDescription,
 };
+use crate::commons::merge_file;
 use crate::commons::{
     analyze_folder_files_size, json_to_struct, read_lines, scan_folder_files_to_file,
     LastModifyFilter, Modified, ModifyType, NotifyWatcher, PathType, RegexFilter,
@@ -18,6 +22,7 @@ use crate::s3::aws_s3::OssClient;
 use crate::{checkpoint::ListedRecord, s3::OSSDescription};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use aws_sdk_s3::model::Object;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
@@ -152,12 +157,153 @@ impl TransferTaskActions for TransferLocal2Oss {
     }
 
     // 生成对象列表
-    async fn generate_execute_file(
+    async fn gen_execute_file(
         &self,
         last_modify_filter: Option<LastModifyFilter>,
         object_list_file: &str,
     ) -> Result<FileDescription> {
         scan_folder_files_to_file(self.source.as_str(), &object_list_file, last_modify_filter)
+    }
+
+    async fn changed_object_capture_based_target(
+        &self,
+        timestamp: i128,
+    ) -> Result<FileDescription> {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        let removed = gen_file_path(
+            &self.attributes.meta_dir,
+            REMOVED_PREFIX,
+            now.as_secs().to_string().as_str(),
+        );
+
+        let modified = gen_file_path(
+            &self.attributes.meta_dir,
+            MODIFIED_PREFIX,
+            now.as_secs().to_string().as_str(),
+        );
+
+        let target_object_list = gen_file_path(
+            &self.attributes.meta_dir,
+            OBJECT_LIST_FILE_PREFIX,
+            now.as_secs().to_string().as_str(),
+        );
+
+        let mut removed_file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&removed)?;
+
+        let mut modified_file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&modified)?;
+
+        let mut removed_lines = 0;
+        let mut modified_lines = 0;
+
+        let last_modify_filter = LastModifyFilter {
+            filter_type: crate::commons::LastModifyFilterType::Greater,
+            timestamp,
+        };
+
+        let mut process_target_objects = |objects: Vec<Object>| {
+            for obj in objects {
+                if let Some(mut key) = obj.key() {
+                    if let Some(p) = &self.target.prefix {
+                        key = match p.ends_with("/") {
+                            true => &p[p.len()..],
+                            false => &p[p.len() + 1..],
+                        };
+                    };
+
+                    let source_key_str = gen_file_path(&self.source, key, "");
+                    let source_path = Path::new(&source_key_str);
+                    if !source_path.exists() {
+                        let _ = removed_file.write_all(key.as_bytes());
+                        let _ = removed_file.write_all("\n".as_bytes());
+                        removed_lines += 1;
+                    }
+                }
+            }
+        };
+
+        let target_client = self.target.gen_oss_client()?;
+        let resp = target_client
+            .list_objects(
+                &self.target.bucket,
+                self.target.prefix.clone(),
+                self.attributes.bach_size,
+                None,
+            )
+            .await?;
+        let mut token = resp.next_token;
+        if let Some(objects) = resp.object_list {
+            process_target_objects(objects);
+        }
+
+        while token.is_some() {
+            let resp = target_client
+                .list_objects(
+                    &self.target.bucket,
+                    self.target.prefix.clone(),
+                    self.attributes.bach_size,
+                    None,
+                )
+                .await?;
+            if let Some(objects) = resp.object_list {
+                process_target_objects(objects);
+            }
+            token = resp.next_token;
+        }
+
+        for entry in WalkDir::new(&self.source)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|e| !e.file_type().is_dir())
+        {
+            if let Some(p) = entry.path().to_str() {
+                if p.eq(&self.source) {
+                    continue;
+                }
+
+                let key = match &self.source.ends_with("/") {
+                    true => &p[self.source.len()..],
+                    false => &p[self.source.len() + 1..],
+                };
+
+                let modified_time = entry
+                    .metadata()?
+                    .modified()?
+                    .duration_since(UNIX_EPOCH)?
+                    .as_secs();
+                if last_modify_filter.filter(i128::from(modified_time)) {
+                    let _ = modified_file.write_all(key.as_bytes());
+                    let _ = modified_file.write_all("\n".as_bytes());
+                    modified_lines += 1;
+                }
+            };
+        }
+
+        removed_file.flush()?;
+        modified_file.flush()?;
+        let modified_size = modified_file.metadata()?.len();
+        let removed_size = removed_file.metadata()?.len();
+
+        merge_file(&modified, &removed, self.attributes.multi_part_chunk)?;
+        let total_size = removed_size + modified_size;
+        let total_lines = removed_lines + modified_lines;
+
+        fs::rename(&removed, &target_object_list)?;
+        fs::remove_file(&modified)?;
+        let file_desc = FileDescription {
+            path: target_object_list.to_string(),
+            size: total_size,
+            total_lines,
+        };
+
+        Ok(file_desc)
     }
 
     async fn increment_prelude(&self, assistant: Arc<Mutex<IncrementAssistant>>) -> Result<()> {

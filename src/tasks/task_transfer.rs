@@ -6,7 +6,6 @@ use super::{
     task_actions::TransferTaskActions, IncrementAssistant, TransferLocal2Local, TransferLocal2Oss,
     TransferOss2Local, TransferOss2Oss, TransferTaskAttributes,
 };
-use crate::commons::{LastModifyFilter, LastModifyFilterType};
 use crate::{
     checkpoint::FileDescription,
     commons::{promote_processbar, RegexFilter},
@@ -256,15 +255,13 @@ impl TransferTask {
                     TransferStage::Increment => {
                         // Todo 重新分析逻辑，需要再checkpoint中记录每次增量执行前的起始时间点
                         // 清理文件重新生成object list 文件需大于指定时间戳,并根据原始object list 删除位于目标端但源端不存在的文件
-                        let timestamp = TryInto::<i64>::try_into(checkpoint.timestampe).unwrap();
+                        // 流程逻辑
+                        // 扫描target 文件list-> 抓取自扫描🕙开始，源端的变动数据 -> 生成objlist，action 新增target change capture
+                        let timestamp = TryInto::<i64>::try_into(checkpoint.timestamp).unwrap();
                         let _ = fs::remove_file(&executed_file.path);
 
-                        let last_modify_filter = LastModifyFilter {
-                            filter_type: LastModifyFilterType::Greater,
-                            timestampe: i128::from(timestamp),
-                        };
                         match task
-                            .generate_execute_file(Some(last_modify_filter), &executed_file.path)
+                            .changed_object_capture_based_target(timestamp.into())
                             .await
                         {
                             Ok(f) => {
@@ -282,7 +279,7 @@ impl TransferTask {
                 // 清理 meta 目录
                 // 重新生成object list file
                 let _ = fs::remove_dir_all(self.attributes.meta_dir.as_str());
-                match task.generate_execute_file(None, &executed_file.path).await {
+                match task.gen_execute_file(None, &executed_file.path).await {
                     Ok(f) => {
                         executed_file = f;
                     }
@@ -454,7 +451,7 @@ impl TransferTask {
                 executed_file_position: list_file_position.clone(),
                 file_for_notify: notify,
                 task_stage: TransferStage::Stock,
-                timestampe: 0,
+                timestamp: 0,
                 current_stock_object_list_file: executed_file.path.clone(),
             };
             if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
@@ -490,7 +487,6 @@ impl TransferTask {
                     .await;
                 // 配置停止 offset save 标识为 true
                 snapshot_stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
-                // pd.finish_with_message("Execut increment down");
             });
         }
 

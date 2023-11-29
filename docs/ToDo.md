@@ -41,7 +41,6 @@
 - [ ] 增加模板输出功能，增加文件名参数。
 - [ ] 新增precheck，并给出校验清单
   - [ ] 归档文件不能访问需提前校验
-- [ ] transfer 添加no_source_path 参数，用来在target只存文件命名
 - [ ] 支持last_modify_grater ,最后更改时间源端大于上次同步时获取object list 列表的初始时间戳,配置增量参数incremental，当该参数为真，在每次同步结束时获取本次同步起始时间戳，遍历源，生成时间戳大于该时间戳的的对象列表，执行同步任务，重复以上过程，直到object list内容为空
 - [ ] 编写makefile 实现交叉编译
 - [x] 进度展示
@@ -56,11 +55,11 @@
   - [ ] 定义增量记录文件，记录每次轮询的文件名及offset
   - [ ] 利用 tokio::sleep 减轻cpu负载
   - [ ] 定时器定时按记录文件的offset执行增量任务
-- [ ] 文件上传断点续传实现
+- [x] 文件上传断点续传实现
   - [ ] 实现机制：先开启notify记录变动文件；每次断点遍历上传文件目录，取last_modify 大于  checkpoint 记录时间戳的文件上传。需要考虑大量文件的遍历时间，需要做相关实验验证
-  - [ ] 兼容minio
-    - [ ] minio 环境部署
-    - [ ] 适配minio
+  - [x] 兼容minio
+    - [x] minio 环境部署
+    - [x] 适配minio
   - [ ] 设计多任务snapshot，统一管理任务状态
     - [ ] 任务相关状态字段定义，任务checkpoint，任务错误数，任务offset map，停止标识
   - [ ] 为便于扩展，新增objectstorage enum，用来区分不同数据源
@@ -69,7 +68,10 @@
   - [ ] 新增指定时间戳同步
   - [x] 将oss 增量代码归并至oss client
   - [ ] 适配七牛
-  - [ ] 支持从指定时间戳同步
+  - [x] 支持从指定时间戳同步
+  - [ ] prefix map,将源prefix 映射到目标的另一个prefx
+  - [ ] 全量、存量、增量分处理
+  - [ ] 修改源为oss的同步机制，base taget 计算removed 和 modified objects
 
 ## 校验项
 
