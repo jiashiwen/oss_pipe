@@ -1,13 +1,15 @@
 use super::task_actions::TransferTaskActions;
 use super::{
     gen_file_path, IncrementAssistant, LocalNotify, TaskStatusSaver, TransferStage,
-    TransferTaskAttributes, ERROR_RECORD_PREFIX, NOTIFY_FILE_PREFIX, OFFSET_PREFIX,
+    TransferTaskAttributes, ERROR_RECORD_PREFIX, MODIFIED_PREFIX, NOTIFY_FILE_PREFIX,
+    OBJECT_LIST_FILE_PREFIX, OFFSET_PREFIX, REMOVED_PREFIX,
 };
 use crate::checkpoint::{get_task_checkpoint, FileDescription, ListedRecord};
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::commons::{
-    analyze_folder_files_size, copy_file, json_to_struct, read_lines, scan_folder_files_to_file,
-    LastModifyFilter, Modified, ModifyType, NotifyWatcher, PathType, RegexFilter,
+    analyze_folder_files_size, copy_file, json_to_struct, merge_file, read_lines,
+    scan_folder_files_to_file, LastModifyFilter, Modified, ModifyType, NotifyWatcher, PathType,
+    RegexFilter,
 };
 use anyhow::anyhow;
 use anyhow::Result;
@@ -119,7 +121,7 @@ impl TransferTaskActions for TransferLocal2Local {
             err_counter,
             offset_map,
             meta_dir: self.attributes.meta_dir.clone(),
-            target_exist_skip: target_exist_skip,
+            target_exist_skip,
             large_file_size: self.attributes.large_file_size,
             multi_part_chunk: self.attributes.multi_part_chunk,
             list_file_path: list_file,
@@ -133,12 +135,116 @@ impl TransferTaskActions for TransferLocal2Local {
         });
     }
 
-    async fn generate_execute_file(
+    async fn gen_execute_file(
         &self,
         last_modify_filter: Option<LastModifyFilter>,
         object_list_file: &str,
     ) -> Result<FileDescription> {
         scan_folder_files_to_file(self.source.as_str(), &object_list_file, last_modify_filter)
+    }
+
+    async fn changed_object_capture_based_target(
+        &self,
+        timestamp: i128,
+    ) -> Result<FileDescription> {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        // 获取target object 列表 和removed 列表
+        // 根据时间戳生成增量列表
+        // 合并删除及新增列表
+
+        let last_modify_filter = LastModifyFilter {
+            filter_type: crate::commons::LastModifyFilterType::Greater,
+            timestamp,
+        };
+        // let regex_filter =
+        //     RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include)?;
+        let removed = gen_file_path(
+            &self.attributes.meta_dir,
+            REMOVED_PREFIX,
+            now.as_secs().to_string().as_str(),
+        );
+
+        let modified = gen_file_path(
+            &self.attributes.meta_dir,
+            MODIFIED_PREFIX,
+            now.as_secs().to_string().as_str(),
+        );
+
+        let target_object_list = gen_file_path(
+            &self.attributes.meta_dir,
+            OBJECT_LIST_FILE_PREFIX,
+            now.as_secs().to_string().as_str(),
+        );
+
+        let mut removed_file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&removed)?;
+
+        let mut modified_file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&modified)?;
+
+        let mut removed_lines = 0;
+        let mut modified_lines = 0;
+
+        for entry in WalkDir::new(&self.target)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|e| !e.file_type().is_dir())
+        {
+            if let Some(p) = entry.path().to_str() {
+                if p.eq(&self.target) {
+                    continue;
+                }
+
+                let key = match &self.target.ends_with("/") {
+                    true => &p[self.target.len()..],
+                    false => &p[self.target.len() + 1..],
+                };
+
+                let source_key_str = gen_file_path(&self.source, key, "");
+                let source_path = Path::new(&source_key_str);
+                if !source_path.exists() {
+                    let _ = removed_file.write_all(key.as_bytes());
+                    let _ = removed_file.write_all("\n".as_bytes());
+                    removed_lines += 1;
+                }
+
+                let modified_time = entry
+                    .metadata()?
+                    .modified()?
+                    .duration_since(UNIX_EPOCH)?
+                    .as_secs();
+                if last_modify_filter.filter(i128::from(modified_time)) {
+                    let _ = modified_file.write_all(key.as_bytes());
+                    let _ = modified_file.write_all("\n".as_bytes());
+                    modified_lines += 1;
+                }
+            };
+        }
+
+        removed_file.flush()?;
+        modified_file.flush()?;
+        let modified_size = modified_file.metadata()?.len();
+        let removed_size = removed_file.metadata()?.len();
+
+        merge_file(&modified, &removed, self.attributes.multi_part_chunk)?;
+        let total_size = removed_size + modified_size;
+        let total_lines = removed_lines + modified_lines;
+
+        fs::rename(&removed, &target_object_list)?;
+        fs::remove_file(&modified)?;
+        let file_desc = FileDescription {
+            path: target_object_list.to_string(),
+            size: total_size,
+            total_lines,
+        };
+
+        Ok(file_desc)
     }
 
     async fn increment_prelude(&self, assistant: Arc<Mutex<IncrementAssistant>>) -> Result<()> {

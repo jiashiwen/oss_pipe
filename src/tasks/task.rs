@@ -48,11 +48,35 @@ pub enum TransferType {
     Increment,
 }
 
+impl TransferType {
+    pub fn is_full(&self) -> bool {
+        match self {
+            TransferType::Full => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_stock(&self) -> bool {
+        match self {
+            TransferType::Stock => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_increment(&self) -> bool {
+        match self {
+            TransferType::Increment => true,
+            _ => false,
+        }
+    }
+}
+
 /// 任务类别，根据传输方式划分
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub enum TaskType {
     Transfer,
     TruncateBucket,
+    Compare,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -606,7 +630,7 @@ impl TaskOssCompare {
                     offset: file_position,
                     line_num,
                 },
-                timestampe: 0,
+                timestamp: 0,
                 current_stock_object_list_file: executed_file.path.clone(),
             };
             if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {

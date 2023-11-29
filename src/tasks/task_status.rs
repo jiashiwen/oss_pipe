@@ -25,7 +25,7 @@ impl TaskStatusSaver {
             },
             file_for_notify: self.file_for_notify.clone(),
             task_stage: self.task_stage,
-            timestampe: 0,
+            timestamp: 0,
             current_stock_object_list_file: self.current_stock_object_list_file.clone(),
         };
         let _ = checkpoint.save_to(&self.check_point_path);

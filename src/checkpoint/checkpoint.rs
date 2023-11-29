@@ -40,7 +40,7 @@ pub struct CheckPoint {
     pub file_for_notify: Option<String>,
     pub task_stage: TransferStage,
     // 记录 checkpoint 时点的时间戳
-    pub timestampe: u128,
+    pub timestamp: i128,
 }
 
 impl Default for CheckPoint {
@@ -53,7 +53,7 @@ impl Default for CheckPoint {
             },
             file_for_notify: Default::default(),
             task_stage: TransferStage::Stock,
-            timestampe: 0,
+            timestamp: 0,
             current_stock_object_list_file: "".to_string(),
         }
     }
@@ -76,7 +76,7 @@ impl CheckPoint {
     }
     pub fn save_to(&mut self, path: &str) -> Result<()> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
-        self.timestampe = u128::from(now.as_secs());
+        self.timestamp = i128::from(now.as_secs());
 
         let mut file = OpenOptions::new()
             .create(true)
@@ -158,7 +158,7 @@ mod test {
                     executed_file_position: file_position,
                     file_for_notify: None,
                     task_stage: crate::tasks::TransferStage::Stock,
-                    timestampe: u128::from(now.as_secs()),
+                    timestamp: i128::from(now.as_secs()),
                     current_stock_object_list_file: path.to_string(),
                 };
 

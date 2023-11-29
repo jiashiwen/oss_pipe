@@ -175,7 +175,7 @@ impl OssClient {
 
     pub async fn list_objects(
         &self,
-        bucket: String,
+        bucket: impl Into<std::string::String>,
         prefix: Option<String>,
         max_keys: i32,
         token: Option<String>,
@@ -686,7 +686,7 @@ impl OssClient {
         let mut new_list_total_lines = 0;
         let mut modified_total_lines = 0;
 
-        if let Some(objects) = resp.object_list {
+        let mut process_objects = |objects: Vec<Object>| {
             for obj in objects {
                 if let Some(key) = obj.key() {
                     let _ = new_list_file.write_all(key.as_bytes());
@@ -718,6 +718,40 @@ impl OssClient {
                     }
                 }
             }
+        };
+        if let Some(objects) = resp.object_list {
+            process_objects(objects);
+            // for obj in objects {
+            //     if let Some(key) = obj.key() {
+            //         let _ = new_list_file.write_all(key.as_bytes());
+            //         let _ = new_list_file.write_all("\n".as_bytes());
+            //         new_list_total_lines += 1;
+            //         if let Some(d) = obj.last_modified() {
+            //             if d.secs().ge(&timestampe) {
+            //                 // 填充变动对象文件
+            //                 let mut target_key = match &target_prefix {
+            //                     Some(s) => s.to_string(),
+            //                     None => "".to_string(),
+            //                 };
+            //                 target_key.push_str(&key);
+
+            //                 let record = RecordDescription {
+            //                     source_key: key.to_string(),
+            //                     target_key,
+            //                     list_file_path: "".to_string(),
+            //                     list_file_position: FilePosition::default(),
+            //                     option: Opt::PUT,
+            //                 };
+
+            //                 if let Err(e) = record.save_json_to_file(&modified_file) {
+            //                     log::error!("{}", e);
+            //                     continue;
+            //                 }
+            //                 modified_total_lines += 1;
+            //             }
+            //         }
+            //     }
+            // }
         }
 
         while token.is_some() {
@@ -725,36 +759,37 @@ impl OssClient {
                 .list_objects(bucket.to_string(), source_prefix.clone(), batch_size, token)
                 .await?;
             if let Some(objects) = resp.object_list {
-                for obj in objects {
-                    if let Some(key) = obj.key() {
-                        let _ = new_list_file.write_all(key.as_bytes());
-                        let _ = new_list_file.write_all("\n".as_bytes());
-                        new_list_total_lines += 1;
-                        if let Some(d) = obj.last_modified() {
-                            if d.secs().ge(&timestampe) {
-                                // 填充变动对象文件
-                                let mut target_key = match &target_prefix {
-                                    Some(s) => s.to_string(),
-                                    None => "".to_string(),
-                                };
-                                target_key.push_str(&key);
+                process_objects(objects);
+                // for obj in objects {
+                //     if let Some(key) = obj.key() {
+                //         let _ = new_list_file.write_all(key.as_bytes());
+                //         let _ = new_list_file.write_all("\n".as_bytes());
+                //         new_list_total_lines += 1;
+                //         if let Some(d) = obj.last_modified() {
+                //             if d.secs().ge(&timestampe) {
+                //                 // 填充变动对象文件
+                //                 let mut target_key = match &target_prefix {
+                //                     Some(s) => s.to_string(),
+                //                     None => "".to_string(),
+                //                 };
+                //                 target_key.push_str(&key);
 
-                                let record = RecordDescription {
-                                    source_key: key.to_string(),
-                                    target_key,
-                                    list_file_path: "".to_string(),
-                                    list_file_position: FilePosition::default(),
-                                    option: Opt::PUT,
-                                };
-                                if let Err(e) = record.save_json_to_file(&modified_file) {
-                                    log::error!("{}", e);
-                                    continue;
-                                }
-                                modified_total_lines += 1;
-                            }
-                        }
-                    }
-                }
+                //                 let record = RecordDescription {
+                //                     source_key: key.to_string(),
+                //                     target_key,
+                //                     list_file_path: "".to_string(),
+                //                     list_file_position: FilePosition::default(),
+                //                     option: Opt::PUT,
+                //                 };
+                //                 if let Err(e) = record.save_json_to_file(&modified_file) {
+                //                     log::error!("{}", e);
+                //                     continue;
+                //                 }
+                //                 modified_total_lines += 1;
+                //             }
+                //         }
+                //     }
+                // }
             }
             token = resp.next_token;
         }
