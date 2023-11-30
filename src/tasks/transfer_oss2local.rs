@@ -1,7 +1,7 @@
 use super::{
     gen_file_path, task_actions::TransferTaskActions, IncrementAssistant, TransferStage,
-    TransferTaskAttributes, ERROR_RECORD_PREFIX, MODIFIED_PREFIX, OBJECT_LIST_FILE_PREFIX,
-    OFFSET_PREFIX, REMOVED_PREFIX,
+    TransferTaskAttributes, MODIFIED_PREFIX, OBJECT_LIST_FILE_PREFIX, OFFSET_PREFIX,
+    REMOVED_PREFIX, TRANSFER_ERROR_RECORD_PREFIX,
 };
 use crate::{
     checkpoint::{
@@ -84,7 +84,7 @@ impl TransferTaskActions for TransferOss2Local {
                 }
             };
 
-            if !file_name.starts_with(ERROR_RECORD_PREFIX) {
+            if !file_name.starts_with(TRANSFER_ERROR_RECORD_PREFIX) {
                 continue;
             };
 
@@ -383,12 +383,6 @@ impl TransferTaskActions for TransferOss2Local {
     ) {
         // 循环执行获取lastmodify 大于checkpoint指定的时间戳的对象
         let lock = assistant.lock().await;
-        let mut timestampe = match lock.last_modify_timestamp {
-            Some(t) => t,
-            None => {
-                return;
-            }
-        };
         let checkpoint_path = lock.check_point_path.clone();
         let mut checkpoint = match get_task_checkpoint(&lock.check_point_path) {
             Ok(c) => c,
@@ -808,7 +802,7 @@ impl Oss2LocalListedRecordsExecutor {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
-        let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
+        let error_file_name = gen_file_path(&self.meta_dir, TRANSFER_ERROR_RECORD_PREFIX, &subffix);
 
         let mut error_file = OpenOptions::new()
             .create(true)
@@ -927,7 +921,7 @@ impl Oss2LocalListedRecordsExecutor {
         subffix.push_str("_");
         subffix.push_str(now.as_secs().to_string().as_str());
 
-        let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
+        let error_file_name = gen_file_path(&self.meta_dir, TRANSFER_ERROR_RECORD_PREFIX, &subffix);
 
         let mut error_file = OpenOptions::new()
             .create(true)

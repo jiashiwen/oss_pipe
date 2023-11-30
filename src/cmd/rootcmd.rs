@@ -17,7 +17,7 @@ use crate::interact::INTERACT_STATUS;
 use crate::s3::oss::OSSDescription;
 use crate::s3::oss::OssProvider;
 use crate::tasks::{
-    task_id_generator, ObjectStorage, Task, TaskDescription, TaskOssCompare, TaskTruncateBucket,
+    task_id_generator, CompareTask, ObjectStorage, Task, TaskDescription, TaskTruncateBucket,
     TaskType, TransferTask,
 };
 use clap::{Arg, ArgAction, ArgMatches, Command as Clap_Command};
@@ -438,15 +438,15 @@ fn cmd_match(matches: &ArgMatches) {
             };
         }
 
-        if let Some(oss_compare) = template.subcommand_matches("oss_compare") {
-            let file = oss_compare.get_one::<String>("file");
-            let mut task_oss_compare = TaskOssCompare::default();
-            task_oss_compare.source.provider = OssProvider::ALI;
-            task_oss_compare.source.endpoint = "http://oss-cn-beijing.aliyuncs.com".to_string();
+        if let Some(compare) = template.subcommand_matches("compare") {
+            let file = compare.get_one::<String>("file");
+            let mut task_compare = CompareTask::default();
+            // task_compare.source.provider = OssProvider::ALI;
+            // task_compare.source.endpoint = "http://oss-cn-beijing.aliyuncs.com".to_string();
             let task = Task {
                 task_id: task_id.to_string(),
-                name: "oss compare task".to_string(),
-                task_desc: TaskDescription::OssCompare(task_oss_compare),
+                name: "compare task".to_string(),
+                task_desc: TaskDescription::Compare(task_compare),
             };
             match file {
                 Some(f) => {

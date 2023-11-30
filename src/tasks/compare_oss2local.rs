@@ -33,15 +33,15 @@ use tokio::task::JoinSet;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
-pub struct CompareOss2Oss {
+pub struct CompareOss2Local {
     pub source: OSSDescription,
-    pub target: OSSDescription,
+    pub target: String,
     pub check_option: CompareCheckOption,
     pub attributes: CompareTaskAttributes,
 }
 
 #[async_trait]
-impl CompareTaskActions for CompareOss2Oss {
+impl CompareTaskActions for CompareOss2Local {
     async fn gen_list_file(
         &self,
         last_modify_filter: Option<LastModifyFilter>,
@@ -70,26 +70,26 @@ impl CompareTaskActions for CompareOss2Oss {
         list_file: String,
         check_option: CompareCheckOption,
     ) -> Result<()> {
-        let comparator = Oss2OssRecordsComparator {
-            source: self.source.clone(),
-            target: self.target.clone(),
-            err_counter,
-            offset_map,
-            meta_dir: self.attributes.meta_dir.clone(),
-            target_exist_skip,
-            large_file_size: self.attributes.large_file_size,
-            multi_part_chunk: self.attributes.multi_part_chunk,
-            exprirs_diff_scope: self.attributes.exprirs_diff_scope,
-            check_option,
-            list_file_path: list_file,
-        };
+        // let comparator = Oss2OssRecordsComparator {
+        //     source: self.source.clone(),
+        //     target: self.target.clone(),
+        //     err_counter,
+        //     offset_map,
+        //     meta_dir: self.attributes.meta_dir.clone(),
+        //     target_exist_skip,
+        //     large_file_size: self.attributes.large_file_size,
+        //     multi_part_chunk: self.attributes.multi_part_chunk,
+        //     exprirs_diff_scope: self.attributes.exprirs_diff_scope,
+        //     check_option,
+        //     list_file_path: list_file,
+        // };
 
-        joinset.spawn(async move {
-            if let Err(e) = comparator.compare_listed_records(records).await {
-                stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{}", e);
-            };
-        });
+        // joinset.spawn(async move {
+        //     if let Err(e) = comparator.compare_listed_records(records).await {
+        //         stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+        //         log::error!("{}", e);
+        //     };
+        // });
 
         Ok(())
     }
