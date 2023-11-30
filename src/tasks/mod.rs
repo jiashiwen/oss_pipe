@@ -1,6 +1,8 @@
+mod compare_local2local;
+mod compare_local2oss;
+mod compare_oss2local;
 mod compare_oss2oss;
 mod execute_task;
-mod osscompare;
 mod task;
 mod task_actions;
 mod task_compare;
@@ -11,9 +13,11 @@ mod transfer_local2oss;
 mod transfer_oss2local;
 mod transfer_oss2oss;
 
+pub use compare_local2local::*;
+pub use compare_local2oss::*;
+pub use compare_oss2local::*;
 pub use compare_oss2oss::*;
 pub use execute_task::*;
-pub use osscompare::*;
 pub use task::*;
 pub use task_compare::*;
 pub use task_status::*;

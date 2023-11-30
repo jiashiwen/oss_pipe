@@ -1,16 +1,25 @@
+use super::task_actions::CompareTaskActions;
+use super::CompareCheckOption;
+use super::CompareTaskAttributes;
+use super::DiffNotExists;
 use super::ObjectDiff;
+use super::OFFSET_PREFIX;
 use super::{
     gen_file_path, DateTime, DiffContent, DiffExpires, DiffLength, COMPARE_OBJECT_DIFF_PREFIX,
     ERROR_RECORD_PREFIX,
 };
-use super::{DiffNotExists, OFFSET_PREFIX};
+use crate::checkpoint::FileDescription;
+use crate::commons::LastModifyFilter;
 use crate::{
     checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
     s3::{aws_s3::OssClient, OSSDescription},
 };
 use anyhow::Result;
+use async_trait::async_trait;
 use aws_sdk_s3::{error::GetObjectErrorKind, output::GetObjectOutput};
 use dashmap::DashMap;
+use serde::Deserialize;
+use serde::Serialize;
 use std::{
     fs::{self, OpenOptions},
     io::Write,
@@ -18,8 +27,17 @@ use std::{
 };
 use tokio::io::AsyncReadExt;
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "lowercase")]
+pub struct CompareOss2Oss {
+    pub source: String,
+    pub target: String,
+    pub check_option: CompareCheckOption,
+    pub attributes: CompareTaskAttributes,
+}
+
 #[derive(Debug, Clone)]
-pub struct OssCompare {
+pub struct Compare_Oss2Oss {
     pub source: OSSDescription,
     pub target: OSSDescription,
     pub err_conter: Arc<AtomicUsize>,
@@ -27,10 +45,29 @@ pub struct OssCompare {
     pub meta_dir: String,
     pub exprirs_diff_scope: i64,
     pub list_file_path: String,
+    pub check_option: CompareCheckOption,
 }
 
-impl OssCompare {
-    pub async fn compare(&self, records: Vec<ListedRecord>) -> Result<()> {
+#[async_trait]
+impl CompareTaskActions for Compare_Oss2Oss {
+    async fn gen_list_file(
+        &self,
+        last_modify_filter: Option<LastModifyFilter>,
+        object_list_file: &str,
+    ) -> Result<FileDescription> {
+        let client_source = self.source.gen_oss_client()?;
+        // 若为持续同步模式，且 last_modify_timestamp 大于 0，则将 last_modify 属性大于last_modify_timestamp变量的对象加入执行列表
+        client_source
+            .append_object_list_to_file(
+                self.source.bucket.clone(),
+                self.source.prefix.clone(),
+                object_list_file,
+                last_modify_filter,
+            )
+            .await
+    }
+
+    async fn compare_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
@@ -73,7 +110,6 @@ impl OssCompare {
                         option: Opt::PUT,
                     };
                     recorddesc.handle_error(
-                        // anyhow!("{}", e),
                         &self.err_conter,
                         &self.offset_map,
                         &mut error_file,
@@ -112,7 +148,9 @@ impl OssCompare {
 
         Ok(())
     }
+}
 
+impl Compare_Oss2Oss {
     async fn compare_listed_record(
         &self,
         record: &ListedRecord,
@@ -242,8 +280,15 @@ impl OssCompare {
             };
 
             if s_date.is_none() || t_date.is_none() {
+                let mut target = "".to_string();
+                if let Some(p) = &self.target.prefix {
+                    target.push_str(&p);
+                }
+                target.push_str(&record.key);
+
                 let diff = ObjectDiff::ExpiresDiff(DiffExpires {
-                    key: record.key.to_string(),
+                    source: record.key.to_string(),
+                    target,
                     source_expires: s_date,
                     target_expires: t_date,
                 });
@@ -251,8 +296,14 @@ impl OssCompare {
             }
 
             if i64::abs(s_second - t_second) > self.exprirs_diff_scope {
+                let mut target = "".to_string();
+                if let Some(p) = &self.target.prefix {
+                    target.push_str(&p);
+                }
+                target.push_str(&record.key);
                 let diff = ObjectDiff::ExpiresDiff(DiffExpires {
-                    key: record.key.to_string(),
+                    source: record.key.to_string(),
+                    target,
                     source_expires: s_date,
                     target_expires: t_date,
                 });
@@ -303,108 +354,5 @@ impl OssCompare {
             }
         }
         Ok(None)
-    }
-}
-
-#[cfg(test)]
-mod test {
-
-    use std::{fs::File, io::Read};
-    use tokio::io::AsyncReadExt;
-
-    use crate::{
-        commons::struct_to_json_string,
-        s3::OSSDescription,
-        tasks::osscompare::{DateTime, DiffExpires, ObjectDiff},
-    };
-
-    //cargo test osstask::osscompare::test::test_object_diff -- --nocapture
-    #[test]
-    fn test_object_diff() {
-        let abs = i64::abs(990 - 870);
-        println!("{}", abs);
-
-        let expires_diff = DiffExpires {
-            key: "abc".to_string(),
-            source_expires: Some(DateTime {
-                seconds: 1212139921,
-                subsecond_nanos: 132132,
-            }),
-            target_expires: Some(DateTime {
-                seconds: 1212138821,
-                subsecond_nanos: 132132,
-            }),
-        };
-        let diff = ObjectDiff::ExpiresDiff(expires_diff);
-        let diff_str = struct_to_json_string(&diff);
-        println!("{}", diff_str.unwrap());
-
-        let v_a = vec![1, 2, 3];
-        let v_b = vec![1, 4, 3];
-
-        for (idx, byte) in v_a.iter().enumerate() {
-            if !byte.eq(&v_b[idx]) {
-                println!("{}", idx);
-            }
-        }
-    }
-
-    //cargo test osstask::osscompare::test::test_compare_oss_local_by_stream -- --nocapture
-    #[test]
-    fn test_compare_oss_local_by_stream() {
-        // 获取oss连接参数
-        let vec_oss = crate::commons::read_yaml_file::<Vec<OSSDescription>>("osscfg.yml").unwrap();
-        let oss_desc = vec_oss[0].clone();
-        let jd_client = oss_desc.gen_oss_client().unwrap();
-        let rt = tokio::runtime::Runtime::new().unwrap();
-
-        // let key = "hW*P1696820575919885000";
-        // let path = "/tmp/files/hW*P1696820575919885000";
-
-        let key = "Bn##1696829067656579000";
-        let path = "/tmp/files/Bn##1696829067656579000";
-        let local_file = "/tmp/files/Bn##1696829067656579000.local";
-
-        rt.block_on(async {
-            // 上传本地文件
-            let _ = jd_client
-                .upload("jsw-bucket-1", key, path, 209715200, 10485760)
-                .await;
-
-            // let byte_stream = jd_client
-            //     .get_object_bytes("jsw-bucket-1", key)
-            //     .await
-            //     .unwrap();
-
-            let resp = jd_client.get_object("jsw-bucket-1", key).await.unwrap();
-            // let mut read = byte_stream.into_async_read();
-            let mut obj_len = TryInto::<usize>::try_into(resp.content_length()).unwrap();
-            let mut read = resp.body.into_async_read();
-            let buffer_size = 1048577;
-            let mut file = File::open(local_file).unwrap();
-
-            loop {
-                if obj_len > buffer_size {
-                    let mut oss_buffer = vec![0; buffer_size];
-                    let mut file_buffer = vec![0; buffer_size];
-                    let size = read.read_exact(&mut oss_buffer).await.unwrap();
-                    let _read_count = file.read(&mut file_buffer).unwrap();
-                    obj_len -= buffer_size;
-                    println!("{}", oss_buffer.eq(&file_buffer));
-                    println!("size: {:?}", size);
-                    continue;
-                } else {
-                    let mut oss_buffer = vec![0; obj_len];
-                    let mut file_buffer = vec![0; obj_len];
-                    let size = read.read_exact(&mut oss_buffer).await.unwrap();
-                    let _read_count = file.read(&mut file_buffer).unwrap();
-                    println!("{}", oss_buffer.eq(&file_buffer));
-                    println!("size: {:?}", size);
-                    break;
-                }
-            }
-
-            // let buf = BufReader::new(byte_stream.into_async_read()).read_line(buf);
-        });
     }
 }

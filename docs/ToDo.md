@@ -130,3 +130,9 @@
 ## 分布式改造
 
 git log --since=2023-11-06 --until=2023-11-10 --pretty=tformat: --numstat | awk '{ add += $1; subs += $2; loc += $1 - $2 } END { printf "added lines: %s, removed lines: %s, total lines: %s\n", add, subs, loc }'
+
+
+## 记事本
+
+11月9
+改进增量断点续传方案，抓取target 的 remove 和  modify，执行完成后，执行增量逻辑

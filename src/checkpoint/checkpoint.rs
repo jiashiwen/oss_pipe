@@ -32,7 +32,7 @@ impl Default for FileDescription {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckPoint {
     //当前全量对象列表
-    pub current_stock_object_list_file: String,
+    // pub current_stock_object_list_file: String,
     // 对象列表命名规则：OBJECT_LIST_FILE_PREFIX+秒级unix 时间戳 'objeclt_list_unixtimestampe'
     pub executed_file: FileDescription,
     // 文件执行位置，既执行到的offset，用于断点续传
@@ -54,7 +54,7 @@ impl Default for CheckPoint {
             file_for_notify: Default::default(),
             task_stage: TransferStage::Stock,
             timestamp: 0,
-            current_stock_object_list_file: "".to_string(),
+            // current_stock_object_list_file: "".to_string(),
         }
     }
 }
@@ -160,7 +160,7 @@ mod test {
                     file_for_notify: None,
                     task_stage: crate::tasks::TransferStage::Stock,
                     timestamp: i128::from(now.as_secs()),
-                    current_stock_object_list_file: path.to_string(),
+                    // current_stock_object_list_file: path.to_string(),
                 };
 
                 let _ = checkpoint.save_to(save_path);

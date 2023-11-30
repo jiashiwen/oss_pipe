@@ -6,13 +6,10 @@ use super::TransferStage;
 use super::TransferTaskAttributes;
 use super::MODIFIED_PREFIX;
 use super::NOTIFY_FILE_PREFIX;
-use super::OBJECT_LIST_FILE_PREFIX;
 use super::OFFSET_PREFIX;
 use super::REMOVED_PREFIX;
-use super::{gen_file_path, ERROR_RECORD_PREFIX};
-use crate::checkpoint::{
-    get_task_checkpoint, FileDescription, FilePosition, Opt, RecordDescription,
-};
+use super::{gen_file_path, TRANSFER_ERROR_RECORD_PREFIX};
+use crate::checkpoint::{FileDescription, FilePosition, Opt, RecordDescription};
 use crate::commons::merge_file;
 use crate::commons::struct_to_json_string;
 use crate::commons::{
@@ -85,7 +82,7 @@ impl TransferTaskActions for TransferLocal2Oss {
                 }
             };
 
-            if !file_name.starts_with(ERROR_RECORD_PREFIX) {
+            if !file_name.starts_with(TRANSFER_ERROR_RECORD_PREFIX) {
                 continue;
             };
 
@@ -211,12 +208,6 @@ impl TransferTaskActions for TransferLocal2Oss {
         let modified = gen_file_path(
             &self.attributes.meta_dir,
             MODIFIED_PREFIX,
-            now.as_secs().to_string().as_str(),
-        );
-
-        let target_object_list = gen_file_path(
-            &self.attributes.meta_dir,
-            OBJECT_LIST_FILE_PREFIX,
             now.as_secs().to_string().as_str(),
         );
 
@@ -362,7 +353,6 @@ impl TransferTaskActions for TransferLocal2Oss {
         let total_lines = removed_lines + modified_lines;
 
         fs::rename(&removed, &modified)?;
-        // fs::remove_file(&modified)?;
         let file_desc = FileDescription {
             path: modified.to_string(),
             size: total_size,
@@ -420,13 +410,6 @@ impl TransferTaskActions for TransferLocal2Oss {
                 return;
             }
         };
-        let checkpoint = match get_task_checkpoint(&lock.check_point_path) {
-            Ok(c) => c,
-            Err(e) => {
-                log::error!("{}", e);
-                return;
-            }
-        };
         drop(lock);
 
         let mut offset = 0;
@@ -444,7 +427,6 @@ impl TransferTaskActions for TransferLocal2Oss {
 
         let task_status_saver = TaskStatusSaver {
             check_point_path: assistant.lock().await.check_point_path.clone(),
-            current_stock_object_list_file: checkpoint.current_stock_object_list_file.clone(),
             executed_file,
             stop_mark: Arc::clone(&snapshot_stop_mark),
             list_file_positon_map: Arc::clone(&offset_map),
@@ -457,8 +439,11 @@ impl TransferTaskActions for TransferLocal2Oss {
             task_status_saver.snapshot_to_file().await;
         });
 
-        let error_file_name =
-            gen_file_path(&self.attributes.meta_dir, ERROR_RECORD_PREFIX, &subffix);
+        let error_file_name = gen_file_path(
+            &self.attributes.meta_dir,
+            TRANSFER_ERROR_RECORD_PREFIX,
+            &subffix,
+        );
 
         let regex_filter =
             match RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include) {
@@ -678,7 +663,7 @@ impl Local2OssExecuter {
         // 若第一行出错则整组record写入错误记录，若错误记录文件打开报错则停止任务
         let error_file_name = gen_file_path(
             &self.meta_dir,
-            ERROR_RECORD_PREFIX,
+            TRANSFER_ERROR_RECORD_PREFIX,
             &records[0].offset.to_string(),
         );
 
@@ -787,7 +772,7 @@ impl Local2OssExecuter {
         subffix.push_str("_");
         subffix.push_str(now.as_secs().to_string().as_str());
 
-        let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
+        let error_file_name = gen_file_path(&self.meta_dir, TRANSFER_ERROR_RECORD_PREFIX, &subffix);
 
         let mut error_file = OpenOptions::new()
             .create(true)

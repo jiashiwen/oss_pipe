@@ -6,7 +6,6 @@ use tokio::task::yield_now;
 
 pub struct TaskStatusSaver {
     pub check_point_path: String,
-    pub current_stock_object_list_file: String,
     pub executed_file: FileDescription,
     pub stop_mark: Arc<AtomicBool>,
     pub list_file_positon_map: Arc<DashMap<String, FilePosition>>,
@@ -26,7 +25,6 @@ impl TaskStatusSaver {
             file_for_notify: self.file_for_notify.clone(),
             task_stage: self.task_stage,
             timestamp: 0,
-            current_stock_object_list_file: self.current_stock_object_list_file.clone(),
         };
         let _ = checkpoint.save_to(&self.check_point_path);
 

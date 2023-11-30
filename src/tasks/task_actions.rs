@@ -1,4 +1,4 @@
-use super::IncrementAssistant;
+use super::{CompareCheckOption, IncrementAssistant};
 use crate::{
     checkpoint::{FileDescription, FilePosition, ListedRecord, RecordDescription},
     commons::LastModifyFilter,
@@ -74,24 +74,21 @@ pub trait TransferTaskActions {
 
 #[async_trait]
 pub trait CompareTaskActions {
-    async fn compare_listed_records(&self, records: Vec<ListedRecord>) -> Result<()>;
-    // // 错误记录重试
-    // fn error_record_retry(&self) -> Result<()>;
-    // // 记录执行器
-    // async fn records_excutor(
-    //     &self,
-    //     joinset: &mut JoinSet<()>,
-    //     records: Vec<ListedRecord>,
-    //     err_counter: Arc<AtomicUsize>,
-    //     offset_map: Arc<DashMap<String, FilePosition>>,
-    //     list_file: String,
-    // );
+    async fn gen_list_file(
+        &self,
+        last_modify_filter: Option<LastModifyFilter>,
+        object_list_file: &str,
+    ) -> Result<FileDescription>;
 
-    // // 生成对象列表
-    // fn generate_object_list(
-    //     &self,
-    //     rt: &Runtime,
-    //     _last_modify_timestamp: i64,
-    //     object_list_file: &str,
-    // ) -> Result<usize>;
+    async fn listed_records_comparator(
+        &self,
+        joinset: &mut JoinSet<()>,
+        records: Vec<ListedRecord>,
+        stop_mark: Arc<AtomicBool>,
+        err_counter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, FilePosition>>,
+        target_exist_skip: bool,
+        list_file: String,
+        check_option: CompareCheckOption,
+    ) -> Result<()>;
 }

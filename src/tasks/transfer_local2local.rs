@@ -1,10 +1,10 @@
 use super::task_actions::TransferTaskActions;
 use super::{
     gen_file_path, IncrementAssistant, LocalNotify, TaskStatusSaver, TransferStage,
-    TransferTaskAttributes, ERROR_RECORD_PREFIX, MODIFIED_PREFIX, NOTIFY_FILE_PREFIX,
-    OBJECT_LIST_FILE_PREFIX, OFFSET_PREFIX, REMOVED_PREFIX,
+    TransferTaskAttributes, MODIFIED_PREFIX, NOTIFY_FILE_PREFIX, OFFSET_PREFIX, REMOVED_PREFIX,
+    TRANSFER_ERROR_RECORD_PREFIX,
 };
-use crate::checkpoint::{get_task_checkpoint, FileDescription, ListedRecord};
+use crate::checkpoint::{FileDescription, ListedRecord};
 use crate::checkpoint::{FilePosition, Opt, RecordDescription};
 use crate::commons::{
     analyze_folder_files_size, copy_file, json_to_struct, merge_file, read_lines,
@@ -64,7 +64,7 @@ impl TransferTaskActions for TransferLocal2Local {
                 }
             };
 
-            if !file_name.starts_with(ERROR_RECORD_PREFIX) {
+            if !file_name.starts_with(TRANSFER_ERROR_RECORD_PREFIX) {
                 continue;
             };
 
@@ -353,13 +353,6 @@ impl TransferTaskActions for TransferLocal2Local {
             Some(n) => n,
             None => return,
         };
-        let checkpoint = match get_task_checkpoint(&lock.check_point_path) {
-            Ok(c) => c,
-            Err(e) => {
-                log::error!("{}", e);
-                return;
-            }
-        };
         drop(lock);
 
         let executed_file = FileDescription {
@@ -385,7 +378,6 @@ impl TransferTaskActions for TransferLocal2Local {
         // 启动 checkpoint 记录器
         let task_status_saver = TaskStatusSaver {
             check_point_path: assistant.lock().await.check_point_path.clone(),
-            current_stock_object_list_file: checkpoint.current_stock_object_list_file.clone(),
             executed_file,
             stop_mark: Arc::clone(&snapshot_stop_mark),
             list_file_positon_map: Arc::clone(&offset_map),
@@ -398,8 +390,11 @@ impl TransferTaskActions for TransferLocal2Local {
             task_status_saver.snapshot_to_file().await;
         });
 
-        let error_file_name =
-            gen_file_path(&self.attributes.meta_dir, ERROR_RECORD_PREFIX, &subffix);
+        let error_file_name = gen_file_path(
+            &self.attributes.meta_dir,
+            TRANSFER_ERROR_RECORD_PREFIX,
+            &subffix,
+        );
 
         let regex_filter =
             match RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include) {
@@ -615,7 +610,7 @@ impl Local2LocalExecutor {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
-        let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
+        let error_file_name = gen_file_path(&self.meta_dir, TRANSFER_ERROR_RECORD_PREFIX, &subffix);
 
         let mut error_file = OpenOptions::new()
             .create(true)
@@ -711,7 +706,7 @@ impl Local2LocalExecutor {
         subffix.push_str("_");
         subffix.push_str(now.as_secs().to_string().as_str());
 
-        let error_file_name = gen_file_path(&self.meta_dir, ERROR_RECORD_PREFIX, &subffix);
+        let error_file_name = gen_file_path(&self.meta_dir, TRANSFER_ERROR_RECORD_PREFIX, &subffix);
 
         let mut error_file = OpenOptions::new()
             .create(true)

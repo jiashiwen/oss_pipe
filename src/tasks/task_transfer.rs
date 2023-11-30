@@ -1,6 +1,6 @@
 use super::{
-    execute_task, gen_file_path, TaskStatusSaver, TransferStage, CHECK_POINT_FILE_NAME,
-    OBJECT_LIST_FILE_PREFIX, OFFSET_PREFIX,
+    gen_file_path, TaskStatusSaver, TransferStage, CHECK_POINT_FILE_NAME, OBJECT_LIST_FILE_PREFIX,
+    OFFSET_PREFIX,
 };
 use super::{
     task_actions::TransferTaskActions, IncrementAssistant, TransferLocal2Local, TransferLocal2Oss,
@@ -21,7 +21,6 @@ use crate::{
 use anyhow::{anyhow, Result};
 use dashmap::DashMap;
 use rust_decimal::prelude::*;
-use serde::de::value::SeqDeserializer;
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File},
@@ -262,9 +261,6 @@ impl TransferTask {
                         // 清理文件重新生成object list 文件需大于指定时间戳,并根据原始object list 删除位于目标端但源端不存在的文件
                         // 流程逻辑
                         // 扫描target 文件list-> 抓取自扫描🕙开始，源端的变动数据 -> 生成objlist，action 新增target change capture
-                        // let timestamp = TryInto::<i64>::try_into(checkpoint.timestamp).unwrap();
-                        // let _ = fs::remove_file(&executed_file.path);
-
                         let modified = match task
                             .changed_object_capture_based_target(checkpoint.timestamp)
                             .await
@@ -287,23 +283,6 @@ impl TransferTask {
                         }
 
                         exec_modified = true;
-
-                        // Todo
-                        // 执行modified文件
-
-                        // match task
-                        //     .changed_object_capture_based_target(timestamp.into())
-                        //     .await
-                        // {
-                        //     Ok(f) => {
-                        //         executed_file = f;
-                        //     }
-                        //     Err(e) => {
-                        //         log::error!("{}", e);
-                        //         interrupt = true;
-                        //         return;
-                        //     }
-                        // };
                     }
                 }
             } else {
@@ -366,28 +345,6 @@ impl TransferTask {
             }
 
             if exec_modified {
-                // 启动checkpoint记录线程
-                // let stock_status_saver = TaskStatusSaver {
-                //     check_point_path: check_point_file.clone(),
-                //     executed_file: executed_file.clone(),
-                //     stop_mark: Arc::clone(&snapshot_stop_mark),
-                //     list_file_positon_map: Arc::clone(&offset_map),
-                //     file_for_notify,
-                //     task_stage: TransferStage::Stock,
-                //     interval: 3,
-                //     current_stock_object_list_file: executed_file.path.clone(),
-                // };
-                // sys_set.spawn(async move {
-                //     stock_status_saver.snapshot_to_file().await;
-                // });
-
-                // 启动进度条线程
-                // let map = Arc::clone(&offset_map);
-                // let stop_mark = Arc::clone(&snapshot_stop_mark);
-                // let total = executed_file.total_lines;
-                // sys_set.spawn(async move {
-                //     quantify_processbar(total, stop_mark, map, OFFSET_PREFIX).await;
-                // });
                 let task_modify = self.gen_transfer_actions();
                 let mut vec_keys: Vec<RecordDescription> = vec![];
                 // 按列表传输object from source to target
@@ -470,7 +427,6 @@ impl TransferTask {
                     file_for_notify,
                     task_stage: TransferStage::Stock,
                     interval: 3,
-                    current_stock_object_list_file: executed_file.path.clone(),
                 };
                 sys_set.spawn(async move {
                     stock_status_saver.snapshot_to_file().await;
@@ -580,7 +536,7 @@ impl TransferTask {
                 file_for_notify: notify,
                 task_stage: TransferStage::Stock,
                 timestamp: 0,
-                current_stock_object_list_file: executed_file.path.clone(),
+                // current_stock_object_list_file: executed_file.path.clone(),
             };
             if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
                 log::error!("{}", e);
