@@ -1,6 +1,6 @@
 use super::{
-    gen_file_path, TaskStatusSaver, TransferStage, CHECK_POINT_FILE_NAME, OBJECT_LIST_FILE_PREFIX,
-    OFFSET_PREFIX,
+    gen_file_path, TaskStatusSaver, TransferStage, OFFSET_PREFIX, TRANSFER_CHECK_POINT_FILE,
+    TRANSFER_OBJECT_LIST_FILE_PREFIX,
 };
 use super::{
     task_actions::TransferTaskActions, IncrementAssistant, TransferLocal2Local, TransferLocal2Oss,
@@ -180,15 +180,18 @@ impl TransferTask {
         let mut executed_file = FileDescription {
             path: gen_file_path(
                 self.attributes.meta_dir.as_str(),
-                OBJECT_LIST_FILE_PREFIX,
+                TRANSFER_OBJECT_LIST_FILE_PREFIX,
                 now.as_secs().to_string().as_str(),
             ),
             size: 0,
             total_lines: 0,
         };
 
-        let check_point_file =
-            gen_file_path(self.attributes.meta_dir.as_str(), CHECK_POINT_FILE_NAME, "");
+        let check_point_file = gen_file_path(
+            self.attributes.meta_dir.as_str(),
+            TRANSFER_CHECK_POINT_FILE,
+            "",
+        );
 
         let mut assistant = IncrementAssistant::default();
         assistant.check_point_path = check_point_file.clone();
@@ -289,7 +292,10 @@ impl TransferTask {
                 // 清理 meta 目录
                 // 重新生成object list file
                 let _ = fs::remove_dir_all(self.attributes.meta_dir.as_str());
-                match task.gen_execute_file(None, &executed_file.path).await {
+                match task
+                    .gen_source_object_list_file(None, &executed_file.path)
+                    .await
+                {
                     Ok(f) => {
                         executed_file = f;
                     }
@@ -311,7 +317,7 @@ impl TransferTask {
         // sys_set 用于执行checkpoint、notify等辅助任务
         let mut sys_set = JoinSet::new();
         // execut_set 用于执行任务
-        let mut execut_set: JoinSet<()> = JoinSet::new();
+        let mut execut_set = JoinSet::new();
 
         let object_list_file = match list_file {
             Some(f) => f,
@@ -379,13 +385,12 @@ impl TransferTask {
                         }
                         let vk = vec_keys.clone();
                         task_modify
-                            .record_descriptions_excutor(
+                            .record_descriptions_transfor(
                                 &mut execut_set,
                                 vk,
                                 Arc::clone(&snapshot_stop_mark),
                                 Arc::clone(&err_counter),
                                 Arc::clone(&offset_map),
-                                self.attributes.target_exists_skip,
                                 executed_file.path.clone(),
                             )
                             .await;
@@ -406,13 +411,12 @@ impl TransferTask {
 
                     let vk = vec_keys.clone();
                     task_modify
-                        .record_descriptions_excutor(
+                        .record_descriptions_transfor(
                             &mut execut_set,
                             vk,
                             Arc::clone(&snapshot_stop_mark),
                             Arc::clone(&err_counter),
                             Arc::clone(&offset_map),
-                            self.attributes.target_exists_skip,
                             executed_file.path.clone(),
                         )
                         .await;
@@ -480,13 +484,12 @@ impl TransferTask {
                         }
                         let vk = vec_keys.clone();
                         task_stock
-                            .listed_records_excutor(
+                            .listed_records_transfor(
                                 &mut execut_set,
                                 vk,
                                 Arc::clone(&snapshot_stop_mark),
                                 Arc::clone(&err_counter),
                                 Arc::clone(&offset_map),
-                                self.attributes.target_exists_skip,
                                 executed_file.path.clone(),
                             )
                             .await;
@@ -507,13 +510,12 @@ impl TransferTask {
 
                     let vk = vec_keys.clone();
                     task_stock
-                        .listed_records_excutor(
+                        .listed_records_transfor(
                             &mut execut_set,
                             vk,
                             Arc::clone(&snapshot_stop_mark),
                             Arc::clone(&err_counter),
                             Arc::clone(&offset_map),
-                            self.attributes.target_exists_skip,
                             executed_file.path.clone(),
                         )
                         .await;

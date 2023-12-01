@@ -66,21 +66,16 @@ impl CompareTaskActions for CompareOss2Oss {
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
-        target_exist_skip: bool,
         list_file: String,
-        check_option: CompareCheckOption,
-    ) -> Result<()> {
+    ) {
         let comparator = Oss2OssRecordsComparator {
             source: self.source.clone(),
             target: self.target.clone(),
             err_counter,
             offset_map,
-            meta_dir: self.attributes.meta_dir.clone(),
-            target_exist_skip,
-            large_file_size: self.attributes.large_file_size,
-            multi_part_chunk: self.attributes.multi_part_chunk,
-            exprirs_diff_scope: self.attributes.exprirs_diff_scope,
-            check_option,
+            stop_mark: Arc::clone(&stop_mark),
+            check_option: self.check_option.clone(),
+            attributes: self.attributes.clone(),
             list_file_path: list_file,
         };
 
@@ -90,8 +85,6 @@ impl CompareTaskActions for CompareOss2Oss {
                 log::error!("{}", e);
             };
         });
-
-        Ok(())
     }
 }
 
@@ -101,12 +94,9 @@ pub struct Oss2OssRecordsComparator {
     pub target: OSSDescription,
     pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
-    pub meta_dir: String,
-    pub target_exist_skip: bool,
-    pub large_file_size: usize,
-    pub multi_part_chunk: usize,
-    pub exprirs_diff_scope: i64,
+    pub stop_mark: Arc<AtomicBool>,
     pub check_option: CompareCheckOption,
+    pub attributes: CompareTaskAttributes,
     pub list_file_path: String,
 }
 
@@ -116,9 +106,13 @@ impl Oss2OssRecordsComparator {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
-        let error_file_name = gen_file_path(&self.meta_dir, COMPARE_ERROR_RECORD_PREFIX, &subffix);
+        let error_file_name = gen_file_path(
+            &self.attributes.meta_dir,
+            COMPARE_ERROR_RECORD_PREFIX,
+            &subffix,
+        );
         let compare_result_file_name =
-            gen_file_path(&self.meta_dir, COMPARE_RESULT_PREFIX, &subffix);
+            gen_file_path(&self.attributes.meta_dir, COMPARE_RESULT_PREFIX, &subffix);
 
         let mut error_file = OpenOptions::new()
             .create(true)
@@ -345,7 +339,7 @@ impl Oss2OssRecordsComparator {
             None => None,
         };
 
-        if i64::abs(s_second - t_second) > self.exprirs_diff_scope {
+        if i64::abs(s_second - t_second) > self.attributes.exprirs_diff_scope {
             let diff = ObjectDiff {
                 source: record.key.to_string(),
                 target: target_key.to_string(),

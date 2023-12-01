@@ -19,8 +19,10 @@ use tokio::{
     task::JoinSet,
 };
 
-pub const OBJECT_LIST_FILE_PREFIX: &'static str = "objlist_";
-pub const CHECK_POINT_FILE_NAME: &'static str = "checkpoint.yml";
+pub const TRANSFER_OBJECT_LIST_FILE_PREFIX: &'static str = "transfer_objects_list_";
+pub const COMPARE_SOURCE_OBJECT_LIST_FILE_PREFIX: &'static str = "compare_source_list_";
+pub const TRANSFER_CHECK_POINT_FILE: &'static str = "checkpoint_transfer.yml";
+pub const COMPARE_CHECK_POINT_FILE: &'static str = "checkpoint_compare.yml";
 pub const TRANSFER_ERROR_RECORD_PREFIX: &'static str = "transfer_error_record_";
 pub const COMPARE_ERROR_RECORD_PREFIX: &'static str = "compare_error_record_";
 pub const COMPARE_RESULT_PREFIX: &'static str = "compare_result_";
@@ -268,7 +270,8 @@ impl Default for TaskTruncateBucket {
 }
 impl TaskTruncateBucket {
     pub fn exec_multi_threads(&self) -> Result<()> {
-        let object_list_file = gen_file_path(self.meta_dir.as_str(), OBJECT_LIST_FILE_PREFIX, "");
+        let object_list_file =
+            gen_file_path(self.meta_dir.as_str(), TRANSFER_OBJECT_LIST_FILE_PREFIX, "");
         let rt = runtime::Builder::new_multi_thread()
             .worker_threads(num_cpus::get())
             .enable_all()

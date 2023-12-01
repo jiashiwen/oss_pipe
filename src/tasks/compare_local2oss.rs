@@ -58,10 +58,8 @@ impl CompareTaskActions for CompareLocal2Oss {
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
-        target_exist_skip: bool,
         list_file: String,
-        check_option: CompareCheckOption,
-    ) -> Result<()> {
+    ) {
         // let comparator = Oss2OssRecordsComparator {
         //     source: self.source.clone(),
         //     target: self.target.clone(),
@@ -82,8 +80,6 @@ impl CompareTaskActions for CompareLocal2Oss {
         //         log::error!("{}", e);
         //     };
         // });
-
-        Ok(())
     }
 }
 

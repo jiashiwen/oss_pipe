@@ -440,7 +440,7 @@ fn cmd_match(matches: &ArgMatches) {
 
         if let Some(compare) = template.subcommand_matches("compare") {
             let file = compare.get_one::<String>("file");
-            let mut task_compare = CompareTask::default();
+            let task_compare = CompareTask::default();
             // task_compare.source.provider = OssProvider::ALI;
             // task_compare.source.endpoint = "http://oss-cn-beijing.aliyuncs.com".to_string();
             let task = Task {

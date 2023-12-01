@@ -90,10 +90,7 @@ impl TransferTaskActions for TransferLocal2Local {
                             target: self.target.clone(),
                             err_counter: Arc::new(AtomicUsize::new(0)),
                             offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
-                            meta_dir: self.attributes.meta_dir.clone(),
-                            target_exist_skip: self.attributes.target_exists_skip,
-                            large_file_size: self.attributes.large_file_size,
-                            multi_part_chunk: self.attributes.multi_part_chunk,
+                            attributes: self.attributes.clone(),
                             list_file_path: p.to_string(),
                         };
                         let _ = local2local.exec_record_descriptions(record_vec);
@@ -106,14 +103,13 @@ impl TransferTaskActions for TransferLocal2Local {
         Ok(())
     }
 
-    async fn listed_records_excutor(
+    async fn listed_records_transfor(
         &self,
         joinset: &mut JoinSet<()>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
-        target_exist_skip: bool,
         list_file: String,
     ) {
         let local2local = Local2LocalExecutor {
@@ -121,10 +117,7 @@ impl TransferTaskActions for TransferLocal2Local {
             target: self.target.clone(),
             err_counter,
             offset_map,
-            meta_dir: self.attributes.meta_dir.clone(),
-            target_exist_skip,
-            large_file_size: self.attributes.large_file_size,
-            multi_part_chunk: self.attributes.multi_part_chunk,
+            attributes: self.attributes.clone(),
             list_file_path: list_file,
         };
 
@@ -136,14 +129,13 @@ impl TransferTaskActions for TransferLocal2Local {
         });
     }
 
-    async fn record_descriptions_excutor(
+    async fn record_descriptions_transfor(
         &self,
         joinset: &mut JoinSet<()>,
         records: Vec<RecordDescription>,
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
-        target_exist_skip: bool,
         list_file: String,
     ) {
         let local2local = Local2LocalExecutor {
@@ -151,10 +143,7 @@ impl TransferTaskActions for TransferLocal2Local {
             target: self.target.clone(),
             err_counter,
             offset_map,
-            meta_dir: self.attributes.meta_dir.clone(),
-            target_exist_skip,
-            large_file_size: self.attributes.large_file_size,
-            multi_part_chunk: self.attributes.multi_part_chunk,
+            attributes: self.attributes.clone(),
             list_file_path: list_file,
         };
 
@@ -166,7 +155,7 @@ impl TransferTaskActions for TransferLocal2Local {
         });
     }
 
-    async fn gen_execute_file(
+    async fn gen_source_object_list_file(
         &self,
         last_modify_filter: Option<LastModifyFilter>,
         object_list_file: &str,
@@ -501,10 +490,7 @@ impl TransferTaskActions for TransferLocal2Local {
                     target: self.target.clone(),
                     err_counter: Arc::clone(&err_counter),
                     offset_map: Arc::clone(&offset_map),
-                    meta_dir: self.attributes.meta_dir.clone(),
-                    target_exist_skip: self.attributes.target_exists_skip,
-                    large_file_size: self.attributes.large_file_size,
-                    multi_part_chunk: self.attributes.multi_part_chunk,
+                    attributes: self.attributes.clone(),
                     list_file_path: local_notify.notify_file_path.clone(),
                 };
                 let _ = copy.exec_record_descriptions(records).await;
@@ -596,10 +582,7 @@ pub struct Local2LocalExecutor {
     pub target: String,
     pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
-    pub meta_dir: String,
-    pub target_exist_skip: bool,
-    pub large_file_size: usize,
-    pub multi_part_chunk: usize,
+    pub attributes: TransferTaskAttributes,
     pub list_file_path: String,
 }
 
@@ -610,7 +593,11 @@ impl Local2LocalExecutor {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
-        let error_file_name = gen_file_path(&self.meta_dir, TRANSFER_ERROR_RECORD_PREFIX, &subffix);
+        let error_file_name = gen_file_path(
+            &self.attributes.meta_dir,
+            TRANSFER_ERROR_RECORD_PREFIX,
+            &subffix,
+        );
 
         let mut error_file = OpenOptions::new()
             .create(true)
@@ -683,7 +670,7 @@ impl Local2LocalExecutor {
         };
 
         // 目标object存在则不推送
-        if self.target_exist_skip {
+        if self.attributes.target_exists_skip {
             if t_path.exists() {
                 return Ok(());
             }
@@ -692,8 +679,8 @@ impl Local2LocalExecutor {
         copy_file(
             source_file,
             target_file,
-            self.large_file_size,
-            self.multi_part_chunk,
+            self.attributes.large_file_size,
+            self.attributes.multi_part_chunk,
         )
     }
 
@@ -706,7 +693,11 @@ impl Local2LocalExecutor {
         subffix.push_str("_");
         subffix.push_str(now.as_secs().to_string().as_str());
 
-        let error_file_name = gen_file_path(&self.meta_dir, TRANSFER_ERROR_RECORD_PREFIX, &subffix);
+        let error_file_name = gen_file_path(
+            &self.attributes.meta_dir,
+            TRANSFER_ERROR_RECORD_PREFIX,
+            &subffix,
+        );
 
         let mut error_file = OpenOptions::new()
             .create(true)
@@ -745,8 +736,8 @@ impl Local2LocalExecutor {
                 copy_file(
                     &record.source_key,
                     &record.target_key,
-                    self.large_file_size,
-                    self.multi_part_chunk,
+                    self.attributes.large_file_size,
+                    self.attributes.multi_part_chunk,
                 )?;
             }
             Opt::REMOVE => fs::remove_file(record.target_key.as_str())?,
