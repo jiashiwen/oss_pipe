@@ -22,31 +22,29 @@ pub trait TransferTaskActions {
     // 错误记录重试
     fn error_record_retry(&self) -> Result<()>;
     // 记录列表执行器
-    async fn listed_records_excutor(
+    async fn listed_records_transfor(
         &self,
         execute_set: &mut JoinSet<()>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
-        target_exist_skip: bool,
         list_file: String,
     );
 
     // 记录描述表执行器
-    async fn record_descriptions_excutor(
+    async fn record_descriptions_transfor(
         &self,
         execute_set: &mut JoinSet<()>,
         records: Vec<RecordDescription>,
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
-        target_exist_skip: bool,
         list_file: String,
     );
 
     // 生成对象列表
-    async fn gen_execute_file(
+    async fn gen_source_object_list_file(
         &self,
         last_modify_filter: Option<LastModifyFilter>,
         object_list_file: &str,
@@ -87,8 +85,6 @@ pub trait CompareTaskActions {
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
-        target_exist_skip: bool,
-        list_file: String,
-        check_option: CompareCheckOption,
-    ) -> Result<()>;
+        source_objects_list_file: String,
+    );
 }

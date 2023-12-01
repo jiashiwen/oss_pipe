@@ -1,7 +1,7 @@
 use crate::{
     checkpoint::{FileDescription, FilePosition, Opt, RecordDescription},
     commons::{merge_file, size_distributed, LastModifyFilter, RegexFilter},
-    tasks::{gen_file_path, MODIFIED_PREFIX, OBJECT_LIST_FILE_PREFIX, REMOVED_PREFIX},
+    tasks::{gen_file_path, MODIFIED_PREFIX, REMOVED_PREFIX, TRANSFER_OBJECT_LIST_FILE_PREFIX},
 };
 use anyhow::{anyhow, Result};
 use aws_sdk_s3::{
@@ -533,7 +533,7 @@ impl OssClient {
 
         let new_object_list = gen_file_path(
             out_put_dir,
-            OBJECT_LIST_FILE_PREFIX,
+            TRANSFER_OBJECT_LIST_FILE_PREFIX,
             now.as_secs().to_string().as_str(),
         );
 
