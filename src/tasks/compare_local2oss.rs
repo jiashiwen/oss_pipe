@@ -3,12 +3,11 @@ use super::CompareCheckOption;
 use super::CompareTaskAttributes;
 use super::Diff;
 use super::DiffExists;
-use super::DiffMeta;
 use super::ObjectDiff;
 use super::COMPARE_ERROR_RECORD_PREFIX;
 use super::COMPARE_RESULT_PREFIX;
 use super::OFFSET_PREFIX;
-use super::{gen_file_path, DateTime, DiffContent, DiffExpires, DiffLength};
+use super::{gen_file_path, DiffContent, DiffLength};
 use crate::checkpoint::FileDescription;
 use crate::commons::scan_folder_files_to_file;
 use crate::commons::LastModifyFilter;
@@ -22,6 +21,9 @@ use aws_sdk_s3::{error::GetObjectErrorKind, output::GetObjectOutput};
 use dashmap::DashMap;
 use serde::Deserialize;
 use serde::Serialize;
+use std::fs::File;
+use std::io::Read;
+use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
@@ -58,55 +60,51 @@ impl CompareTaskActions for CompareLocal2Oss {
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
-        list_file: String,
+        source_objects_list_file: String,
     ) {
-        // let comparator = Oss2OssRecordsComparator {
-        //     source: self.source.clone(),
-        //     target: self.target.clone(),
-        //     err_counter,
-        //     offset_map,
-        //     meta_dir: self.attributes.meta_dir.clone(),
-        //     target_exist_skip,
-        //     large_file_size: self.attributes.large_file_size,
-        //     multi_part_chunk: self.attributes.multi_part_chunk,
-        //     exprirs_diff_scope: self.attributes.exprirs_diff_scope,
-        //     check_option,
-        //     list_file_path: list_file,
-        // };
+        let comparator = Local2OssRecordsComparator {
+            source: self.source.clone(),
+            target: self.target.clone(),
+            err_counter,
+            offset_map,
+            check_option: self.check_option.clone(),
+            attributes: self.attributes.clone(),
+            list_file_path: source_objects_list_file,
+        };
 
-        // joinset.spawn(async move {
-        //     if let Err(e) = comparator.compare_listed_records(records).await {
-        //         stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-        //         log::error!("{}", e);
-        //     };
-        // });
+        joinset.spawn(async move {
+            if let Err(e) = comparator.compare_listed_records(records).await {
+                stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+                log::error!("{}", e);
+            };
+        });
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Oss2OssRecordsComparator {
-    pub source: OSSDescription,
+pub struct Local2OssRecordsComparator {
+    pub source: String,
     pub target: OSSDescription,
     pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
-    pub meta_dir: String,
-    pub target_exist_skip: bool,
-    pub large_file_size: usize,
-    pub multi_part_chunk: usize,
-    pub exprirs_diff_scope: i64,
     pub check_option: CompareCheckOption,
+    pub attributes: CompareTaskAttributes,
     pub list_file_path: String,
 }
 
-impl Oss2OssRecordsComparator {
+impl Local2OssRecordsComparator {
     pub async fn compare_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
         // let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
-        let error_file_name = gen_file_path(&self.meta_dir, COMPARE_ERROR_RECORD_PREFIX, &subffix);
+        let error_file_name = gen_file_path(
+            &self.attributes.meta_dir,
+            COMPARE_ERROR_RECORD_PREFIX,
+            &subffix,
+        );
         let compare_result_file_name =
-            gen_file_path(&self.meta_dir, COMPARE_RESULT_PREFIX, &subffix);
+            gen_file_path(&self.attributes.meta_dir, COMPARE_RESULT_PREFIX, &subffix);
 
         let mut error_file = OpenOptions::new()
             .create(true)
@@ -119,7 +117,6 @@ impl Oss2OssRecordsComparator {
             .truncate(true)
             .open(compare_result_file_name.as_str())?;
 
-        let c_s = self.source.gen_oss_client()?;
         let c_t = self.target.gen_oss_client()?;
 
         for record in records {
@@ -131,6 +128,9 @@ impl Oss2OssRecordsComparator {
                 },
             );
 
+            let mut s_key = self.source.clone();
+            s_key.push_str(&record.key);
+
             let mut target_key = match self.target.prefix.clone() {
                 Some(s) => s,
                 None => "".to_string(),
@@ -138,7 +138,7 @@ impl Oss2OssRecordsComparator {
             target_key.push_str(&record.key);
 
             match self
-                .compare_listed_record(&record, &c_s, &c_t, &target_key)
+                .compare_listed_record(&record, &s_key, &target_key, &c_t)
                 .await
             {
                 Ok(r) => {
@@ -188,30 +188,15 @@ impl Oss2OssRecordsComparator {
     async fn compare_listed_record(
         &self,
         record: &ListedRecord,
-        source: &OssClient,
-        target: &OssClient,
+        source_key: &str,
         target_key: &str,
+        target: &OssClient,
     ) -> Result<Option<ObjectDiff>> {
-        let mut s_exists = false;
+        let s_path = Path::new(source_key);
+        let s_exists = s_path.exists();
+
         let mut t_exists = false;
-        let mut obj_s = GetObjectOutput::builder().build();
         let mut obj_t = GetObjectOutput::builder().build();
-        match source
-            .get_object(&self.source.bucket.as_str(), record.key.as_str())
-            .await
-        {
-            core::result::Result::Ok(o) => {
-                s_exists = true;
-                obj_s = o;
-            }
-            Err(e) => {
-                let service_err = e.into_service_error();
-                match service_err.kind {
-                    GetObjectErrorKind::NoSuchKey(_) => {}
-                    _ => return Err(service_err.into()),
-                }
-            }
-        };
 
         match target
             .get_object(&self.target.bucket.as_str(), &target_key)
@@ -249,25 +234,14 @@ impl Oss2OssRecordsComparator {
         }
 
         if self.check_option.check_content_length() {
-            if let Some(diff) = self.compare_content_len(record, &obj_s, &obj_t, &target_key) {
-                return Ok(Some(diff));
-            }
-        }
-        if self.check_option.check_expires() {
-            if let Some(diff) = self.compare_expires(record, &obj_s, &obj_t, &target_key) {
-                return Ok(Some(diff));
-            }
-        }
-
-        if self.check_option.check_meta_data() {
-            if let Some(diff) = self.compare_meta_data(record, &obj_s, &obj_t, &target_key) {
+            if let Some(diff) = self.compare_content_len(record, source_key, &obj_t, &target_key)? {
                 return Ok(Some(diff));
             }
         }
 
         if self.check_option.check_content() {
             if let Some(diff) = self
-                .compare_content(record, obj_s, obj_t, &target_key)
+                .compare_content(record, source_key, obj_t, &target_key)
                 .await?
             {
                 return Ok(Some(diff));
@@ -280,12 +254,14 @@ impl Oss2OssRecordsComparator {
     fn compare_content_len(
         &self,
         record: &ListedRecord,
-        s_obj: &GetObjectOutput,
+        source_key: &str,
         t_obj: &GetObjectOutput,
         target_key: &str,
-    ) -> Option<ObjectDiff> {
-        let len_s = i128::from(s_obj.content_length());
+    ) -> Result<Option<ObjectDiff>> {
+        let s_file = File::open(source_key)?;
+        let len_s = i128::from(s_file.metadata()?.len());
         let len_t = i128::from(t_obj.content_length());
+
         if !len_s.eq(&len_t) {
             let diff = ObjectDiff {
                 source: record.key.clone(),
@@ -295,83 +271,36 @@ impl Oss2OssRecordsComparator {
                     target_content_len: len_t,
                 }),
             };
-            return Some(diff);
+            return Ok(Some(diff));
         }
-        None
-    }
-
-    fn compare_expires(
-        &self,
-        record: &ListedRecord,
-        s_obj: &GetObjectOutput,
-        t_obj: &GetObjectOutput,
-        target_key: &str,
-    ) -> Option<ObjectDiff> {
-        let mut s_second = 0;
-        let mut t_second = 0;
-        let expr_s = match s_obj.expires() {
-            Some(d) => {
-                s_second = d.secs();
-                let datetime = DateTime {
-                    seconds: d.secs(),
-                    subsecond_nanos: d.subsec_nanos(),
-                };
-                Some(datetime)
-            }
-            None => None,
-        };
-
-        let expr_t = match t_obj.expires() {
-            Some(d) => {
-                t_second = d.secs();
-                let datetime = DateTime {
-                    seconds: d.secs(),
-                    subsecond_nanos: d.subsec_nanos(),
-                };
-                Some(datetime)
-            }
-            None => None,
-        };
-
-        if i64::abs(s_second - t_second) > self.exprirs_diff_scope {
-            let diff = ObjectDiff {
-                source: record.key.to_string(),
-                target: target_key.to_string(),
-                diff: Diff::ExpiresDiff(DiffExpires {
-                    source_expires: expr_s,
-                    target_expires: expr_t,
-                }),
-            };
-
-            return Some(diff);
-        };
-        None
+        Ok(None)
     }
 
     async fn compare_content(
         &self,
         record: &ListedRecord,
-        s_obj: GetObjectOutput,
+        source_key: &str,
         t_obj: GetObjectOutput,
         target_key: &str,
     ) -> Result<Option<ObjectDiff>> {
         let buffer_size = 1048577;
-        let obj_len = TryInto::<usize>::try_into(s_obj.content_length())?;
-        let mut left = obj_len.clone();
-        let mut reader_s = s_obj.body.into_async_read();
+        let mut s_file = File::open(source_key)?;
+        let s_len = TryInto::<usize>::try_into(s_file.metadata()?.len())?;
+        let mut left = s_len;
+
         let mut reader_t = t_obj.body.into_async_read();
 
         loop {
             let mut buf_s = vec![0; buffer_size];
             let mut buf_t = vec![0; buffer_size];
             if left > buffer_size {
-                let _ = reader_s.read_exact(&mut buf_s).await?;
+                let _ = s_file.read(&mut buf_s)?;
                 let _ = reader_t.read_exact(&mut buf_t).await?;
                 left -= buffer_size;
             } else {
                 buf_s = vec![0; left];
                 buf_t = vec![0; left];
-                let _ = reader_s.read_exact(&mut buf_s).await?;
+                let _ = s_file.read(&mut buf_s)?;
                 let _ = reader_t.read_exact(&mut buf_t).await?;
                 break;
             }
@@ -379,7 +308,7 @@ impl Oss2OssRecordsComparator {
                 for (idx, byte) in buf_s.iter().enumerate() {
                     if !byte.eq(&buf_t[idx]) {
                         let diff = DiffContent {
-                            stream_position: obj_len - left + idx,
+                            stream_position: s_len - left + idx,
                             source_byte: *byte,
                             target_byte: buf_t[idx],
                         };
@@ -396,242 +325,4 @@ impl Oss2OssRecordsComparator {
         }
         Ok(None)
     }
-
-    fn compare_meta_data(
-        &self,
-        record: &ListedRecord,
-        s_obj: &GetObjectOutput,
-        t_obj: &GetObjectOutput,
-        target_key: &str,
-    ) -> Option<ObjectDiff> {
-        let s_meta = match s_obj.metadata() {
-            Some(m) => Some(m.clone()),
-            None => None,
-        };
-
-        let t_meta = match t_obj.metadata() {
-            Some(m) => Some(m.clone()),
-            None => None,
-        };
-        if !s_meta.eq(&s_meta) {
-            let diff_meta = DiffMeta {
-                source_meta: s_meta,
-                target_meta: t_meta,
-            };
-            let obj_diff = ObjectDiff {
-                source: record.key.clone(),
-                target: target_key.to_string(),
-                diff: Diff::MetaDiff(diff_meta),
-            };
-            return Some(obj_diff);
-        }
-        None
-    }
 }
-
-// impl CompareOss2Oss {
-//     async fn compare_listed_record(
-//         &self,
-//         record: &ListedRecord,
-//         source: &OssClient,
-//         target: &OssClient,
-//     ) -> Result<Option<ObjectDiff>> {
-//         let mut s_exists = false;
-//         let mut t_exists = false;
-//         let mut obj_s = GetObjectOutput::builder().build();
-//         let mut obj_t = GetObjectOutput::builder().build();
-//         match source
-//             .get_object(&self.source.bucket.as_str(), record.key.as_str())
-//             .await
-//         {
-//             core::result::Result::Ok(o) => {
-//                 s_exists = true;
-//                 obj_s = o;
-//             }
-//             Err(e) => {
-//                 let service_err = e.into_service_error();
-//                 match service_err.kind {
-//                     GetObjectErrorKind::NoSuchKey(_) => {}
-//                     _ => return Err(service_err.into()),
-//                 }
-//             }
-//         };
-
-//         match target
-//             .get_object(&self.target.bucket.as_str(), record.key.as_str())
-//             .await
-//         {
-//             core::result::Result::Ok(o) => {
-//                 t_exists = true;
-//                 obj_t = o;
-//             }
-//             Err(e) => {
-//                 // 源端文件不存在按传输成功处理
-//                 let service_err = e.into_service_error();
-//                 match service_err.kind {
-//                     GetObjectErrorKind::NoSuchKey(_) => {}
-//                     _ => return Err(service_err.into()),
-//                 }
-//             }
-//         };
-
-//         if !s_exists.eq(&t_exists) {
-//             let diff = ObjectDiff::NotExists(DiffNotExists {
-//                 key: record.key.to_string(),
-//                 source_exists: s_exists,
-//                 target_exists: t_exists,
-//             });
-//             return Ok(Some(diff));
-//         }
-
-//         if !s_exists && !t_exists {
-//             return Ok(None);
-//         }
-
-//         if let Some(diff) = self.compare_content_len(record, &obj_s, &obj_t) {
-//             return Ok(Some(diff));
-//         }
-
-//         if let Some(diff) = self.compare_expires(record, &obj_s, &obj_t) {
-//             return Ok(Some(diff));
-//         }
-
-//         Ok(None)
-//     }
-
-//     fn compare_content_len(
-//         &self,
-//         record: &ListedRecord,
-//         s_obj: &GetObjectOutput,
-//         t_obj: &GetObjectOutput,
-//     ) -> Option<ObjectDiff> {
-//         let len_s = s_obj.content_length();
-//         let len_t = t_obj.content_length();
-//         if !len_s.eq(&len_t) {
-//             let diff = ObjectDiff::ContentLenthDiff(DiffLength {
-//                 key: record.key.to_string(),
-//                 source_content_len: len_s,
-//                 target_content_len: len_t,
-//             });
-//             return Some(diff);
-//         }
-//         None
-//     }
-
-//     fn compare_expires(
-//         &self,
-//         record: &ListedRecord,
-//         s_obj: &GetObjectOutput,
-//         t_obj: &GetObjectOutput,
-//     ) -> Option<ObjectDiff> {
-//         let expr_s = match s_obj.expires() {
-//             Some(datetime) => Some(*datetime),
-//             None => None,
-//         };
-
-//         let expr_t = match t_obj.expires() {
-//             Some(datetime) => Some(*datetime),
-//             None => None,
-//         };
-
-//         if !expr_s.eq(&expr_t) {
-//             let mut s_second = 0;
-//             let mut t_second = 0;
-//             let s_date = match expr_s {
-//                 Some(d) => {
-//                     s_second = d.secs();
-//                     Some(DateTime {
-//                         seconds: d.secs(),
-//                         subsecond_nanos: d.subsec_nanos(),
-//                     })
-//                 }
-//                 None => None,
-//             };
-//             let t_date = match expr_t {
-//                 Some(d) => {
-//                     t_second = d.secs();
-//                     Some(DateTime {
-//                         seconds: d.secs(),
-//                         subsecond_nanos: d.subsec_nanos(),
-//                     })
-//                 }
-//                 None => None,
-//             };
-
-//             if s_date.is_none() || t_date.is_none() {
-//                 let mut target = "".to_string();
-//                 if let Some(p) = &self.target.prefix {
-//                     target.push_str(&p);
-//                 }
-//                 target.push_str(&record.key);
-
-//                 let diff = ObjectDiff::ExpiresDiff(DiffExpires {
-//                     source: record.key.to_string(),
-//                     target,
-//                     source_expires: s_date,
-//                     target_expires: t_date,
-//                 });
-//                 return Some(diff);
-//             }
-
-//             if i64::abs(s_second - t_second) > self.exprirs_diff_scope {
-//                 let mut target = "".to_string();
-//                 if let Some(p) = &self.target.prefix {
-//                     target.push_str(&p);
-//                 }
-//                 target.push_str(&record.key);
-//                 let diff = ObjectDiff::ExpiresDiff(DiffExpires {
-//                     source: record.key.to_string(),
-//                     target,
-//                     source_expires: s_date,
-//                     target_expires: t_date,
-//                 });
-//                 return Some(diff);
-//             };
-//         }
-//         None
-//     }
-
-//     async fn compare_content(
-//         &self,
-//         record: &ListedRecord,
-//         s_obj: GetObjectOutput,
-//         t_obj: GetObjectOutput,
-//     ) -> Result<Option<ObjectDiff>> {
-//         let buffer_size = 1048577;
-//         let obj_len = TryInto::<usize>::try_into(s_obj.content_length())?;
-//         let mut left = obj_len.clone();
-//         let mut reader_s = s_obj.body.into_async_read();
-//         let mut reader_t = t_obj.body.into_async_read();
-
-//         loop {
-//             let mut buf_s = vec![0; buffer_size];
-//             let mut buf_t = vec![0; buffer_size];
-//             if left > buffer_size {
-//                 let _ = reader_s.read_exact(&mut buf_s).await?;
-//                 let _ = reader_t.read_exact(&mut buf_t).await?;
-//                 left -= buffer_size;
-//             } else {
-//                 buf_s = vec![0; left];
-//                 buf_t = vec![0; left];
-//                 let _ = reader_s.read_exact(&mut buf_s).await?;
-//                 let _ = reader_t.read_exact(&mut buf_t).await?;
-//                 break;
-//             }
-//             if !buf_s.eq(&buf_t) {
-//                 for (idx, byte) in buf_s.iter().enumerate() {
-//                     if !byte.eq(&buf_t[idx]) {
-//                         let diff = DiffContent {
-//                             key: record.key.to_string(),
-//                             stream_position: obj_len - left + idx,
-//                             source_byte: *byte,
-//                             target_byte: buf_t[idx],
-//                         };
-//                         return Ok(Some(ObjectDiff::ContentDiff(diff)));
-//                     }
-//                 }
-//             }
-//         }
-//         Ok(None)
-//     }
-// }
