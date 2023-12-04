@@ -1,11 +1,14 @@
 use super::{
     gen_file_path, task_actions::CompareTaskActions, CompareLocal2Local, CompareLocal2Oss,
     CompareOss2Local, CompareOss2Oss, ObjectStorage, TaskDefaultParameters, TaskStatusSaver,
-    TransferStage, COMPARE_CHECK_POINT_FILE, COMPARE_SOURCE_OBJECT_LIST_FILE_PREFIX, OFFSET_PREFIX,
+    TransferStage, COMPARE_CHECK_POINT_FILE, COMPARE_RESULT_PREFIX,
+    COMPARE_SOURCE_OBJECT_LIST_FILE_PREFIX, OFFSET_PREFIX,
 };
 use crate::{
     checkpoint::{get_task_checkpoint, CheckPoint, FileDescription, FilePosition, ListedRecord},
-    commons::{promote_processbar, quantify_processbar, LastModifyFilter, RegexFilter},
+    commons::{
+        json_to_struct, promote_processbar, quantify_processbar, LastModifyFilter, RegexFilter,
+    },
 };
 use anyhow::anyhow;
 use anyhow::Result;
@@ -13,6 +16,7 @@ use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
+    fmt::{self},
     fs::{self, File},
     io::{BufRead, BufReader, Lines, Write},
     sync::{
@@ -21,7 +25,9 @@ use std::{
     },
     time::{SystemTime, UNIX_EPOCH},
 };
+use tabled::builder::Builder;
 use tokio::{runtime, task::JoinSet};
+use walkdir::WalkDir;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ObjectDiff {
@@ -33,10 +39,48 @@ pub struct ObjectDiff {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum Diff {
     ExistsDiff(DiffExists),
-    LenthDiff(DiffLength),
+    LengthDiff(DiffLength),
     ExpiresDiff(DiffExpires),
     ContentDiff(DiffContent),
     MetaDiff(DiffMeta),
+}
+
+impl Diff {
+    pub fn name(&self) -> String {
+        match self {
+            Diff::ExistsDiff(_) => "exists_diff".to_string(),
+            Diff::LengthDiff(_) => "length_diff".to_string(),
+            Diff::ExpiresDiff(_) => "exprires_diff".to_string(),
+            Diff::ContentDiff(_) => "content_diff".to_string(),
+            Diff::MetaDiff(_) => "meta_data_diff".to_string(),
+        }
+    }
+}
+
+impl fmt::Display for Diff {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Diff::ExistsDiff(d) => {
+                write!(f, "{};{}", d.source_exists, d.target_exists)
+            }
+            Diff::LengthDiff(d) => {
+                write!(f, "{};{}", d.source_content_len, d.target_content_len)
+            }
+            Diff::ExpiresDiff(d) => {
+                write!(f, "{:?};{:?}", d.source_expires, d.target_expires)
+            }
+            Diff::ContentDiff(d) => {
+                write!(
+                    f,
+                    "{};{};{}",
+                    d.stream_position, d.source_byte, d.target_byte
+                )
+            }
+            Diff::MetaDiff(d) => {
+                write!(f, "{:?};{:?}", d.source_meta, d.target_meta)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -58,8 +102,8 @@ pub struct DateTime {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DiffLength {
-    pub source_content_len: i64,
-    pub target_content_len: i64,
+    pub source_content_len: i128,
+    pub target_content_len: i128,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -499,6 +543,52 @@ impl CompareTask {
             // });
         }
 
+        for entry in WalkDir::new(&self.attributes.meta_dir)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|e| !e.file_type().is_dir())
+        {
+            if let Some(p) = entry.path().to_str() {
+                if p.eq(&self.attributes.meta_dir) {
+                    continue;
+                }
+
+                let key = match &self.attributes.meta_dir.ends_with("/") {
+                    true => &p[self.attributes.meta_dir.len()..],
+                    false => &p[self.attributes.meta_dir.len() + 1..],
+                };
+
+                if key.starts_with(&COMPARE_RESULT_PREFIX) {
+                    let result_file = gen_file_path(&self.attributes.meta_dir, key, "");
+                    let _ = show_compare_result(&result_file);
+                }
+            };
+        }
         Ok(())
     }
+}
+
+pub fn show_compare_result(result_file: &str) -> Result<()> {
+    let file = File::open(result_file)?;
+    let lines: Lines<BufReader<File>> = BufReader::new(file).lines();
+    let mut builder = Builder::default();
+    for line in lines {
+        if let Ok(str) = line {
+            let result = json_to_struct::<ObjectDiff>(&str)?;
+            let source = result.source;
+            let target = result.target;
+            let diff = result.diff;
+
+            let raw = vec![source, target, diff.name(), diff.to_string()];
+            builder.push_record(raw);
+        }
+    }
+
+    let header = vec!["source", "target", "diff_type", "diff"];
+    builder.set_header(header);
+
+    let table = builder.build();
+    // table.with(Style::ascii_rounded());
+    println!("{}", table);
+    Ok(())
 }

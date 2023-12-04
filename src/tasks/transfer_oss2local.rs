@@ -1011,7 +1011,7 @@ impl Oss2LocalListedRecordsExecutor {
             Opt::REMOVE => {
                 let _ = fs::remove_file(record.target_key.as_str());
             }
-            Opt::UNKOWN => return Err(anyhow!("option unkown")),
+            _ => return Err(anyhow!("option unkown")),
         }
         Ok(())
     }
