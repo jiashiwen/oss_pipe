@@ -827,7 +827,7 @@ impl Local2OssExecuter {
                         Err(e) => Err(anyhow!("{}", e)),
                     }
                 }
-                Opt::UNKOWN => Err(anyhow!("option unkown")),
+                _ => Err(anyhow!("option unkown")),
             } {
                 record.handle_error(
                     &self.err_counter,

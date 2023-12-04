@@ -292,13 +292,13 @@ impl Oss2OssRecordsComparator {
         t_obj: &GetObjectOutput,
         target_key: &str,
     ) -> Option<ObjectDiff> {
-        let len_s = s_obj.content_length();
-        let len_t = t_obj.content_length();
+        let len_s = i128::from(s_obj.content_length());
+        let len_t = i128::from(t_obj.content_length());
         if !len_s.eq(&len_t) {
             let diff = ObjectDiff {
                 source: record.key.clone(),
                 target: target_key.to_string(),
-                diff: Diff::LenthDiff(DiffLength {
+                diff: Diff::LengthDiff(DiffLength {
                     source_content_len: len_s,
                     target_content_len: len_t,
                 }),

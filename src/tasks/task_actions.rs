@@ -1,4 +1,4 @@
-use super::{CompareCheckOption, IncrementAssistant};
+use super::IncrementAssistant;
 use crate::{
     checkpoint::{FileDescription, FilePosition, ListedRecord, RecordDescription},
     commons::LastModifyFilter,

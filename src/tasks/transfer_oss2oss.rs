@@ -850,7 +850,7 @@ impl TransferOss2OssRecordsExecutor {
                     .remove_object(&self.target.bucket, &record.target_key)
                     .await?;
             }
-            Opt::UNKOWN => return Err(anyhow!("option unkown")),
+            _ => return Err(anyhow!("option unkown")),
         }
         Ok(())
     }

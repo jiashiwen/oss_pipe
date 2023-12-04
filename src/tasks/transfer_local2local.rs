@@ -741,7 +741,7 @@ impl Local2LocalExecutor {
                 )?;
             }
             Opt::REMOVE => fs::remove_file(record.target_key.as_str())?,
-            Opt::UNKOWN => return Err(anyhow!("unknow option")),
+            _ => return Err(anyhow!("unknow option")),
         };
         Ok(())
     }

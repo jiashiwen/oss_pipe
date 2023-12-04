@@ -136,3 +136,5 @@ git log --since=2023-11-06 --until=2023-11-10 --pretty=tformat: --numstat | awk 
 
 11月9
 改进增量断点续传方案，抓取target 的 remove 和  modify，执行完成后，执行增量逻辑
+12月1
+完成校验框架

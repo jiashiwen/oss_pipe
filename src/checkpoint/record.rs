@@ -37,6 +37,7 @@ impl ListedRecord {
 pub enum Opt {
     PUT,
     REMOVE,
+    COMPARE,
     UNKOWN,
 }
 
