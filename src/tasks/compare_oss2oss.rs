@@ -66,7 +66,7 @@ impl CompareTaskActions for CompareOss2Oss {
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
-        list_file: String,
+        source_objects_list_file: String,
     ) {
         let comparator = Oss2OssRecordsComparator {
             source: self.source.clone(),
@@ -76,7 +76,7 @@ impl CompareTaskActions for CompareOss2Oss {
             stop_mark: Arc::clone(&stop_mark),
             check_option: self.check_option.clone(),
             attributes: self.attributes.clone(),
-            list_file_path: list_file,
+            list_file_path: source_objects_list_file,
         };
 
         joinset.spawn(async move {
