@@ -24,9 +24,8 @@ pub fn check_local_desc_path() -> Result<()> {
 
 #[cfg(test)]
 mod test {
-    use crate::configure::set_config;
-
     use super::*;
+    use crate::configure::set_config;
 
     //cargo test checkers::init_check::test::test_check_local_desc_path -- --nocapture
     #[test]
