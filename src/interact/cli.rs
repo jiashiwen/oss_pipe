@@ -6,7 +6,7 @@ use rustyline::error::ReadlineError;
 use rustyline::highlight::{Highlighter, MatchingBracketHighlighter};
 use rustyline::hint::{Hinter, HistoryHinter};
 use rustyline::validate::{MatchingBracketValidator, Validator};
-use rustyline::{validate, CompletionType, Config, Context, Editor, OutputStreamType};
+use rustyline::{validate, CompletionType, Config, Context, Editor};
 use rustyline_derive::Helper;
 use shellwords::split;
 use std::borrow::Cow::{self, Borrowed, Owned};
@@ -16,7 +16,6 @@ pub static INTERACT_STATUS: AtomicBool = AtomicBool::new(false);
 
 #[derive(Helper)]
 struct MyHelper {
-    // completer: FileCompleter,
     completer: CommandCompleter,
     highlighter: MatchingBracketHighlighter,
     validator: MatchingBracketValidator,
@@ -66,8 +65,8 @@ impl Highlighter for MyHelper {
         self.highlighter.highlight(line, pos)
     }
 
-    fn highlight_char(&self, line: &str, pos: usize) -> bool {
-        self.highlighter.highlight_char(line, pos)
+    fn highlight_char(&self, line: &str, pos: usize, forced: bool) -> bool {
+        self.highlighter.highlight_char(line, pos, forced)
     }
 }
 
@@ -88,7 +87,6 @@ pub fn run() {
     let config = Config::builder()
         .history_ignore_space(true)
         .completion_type(CompletionType::List)
-        .output_stream(OutputStreamType::Stdout)
         .build();
 
     let h = MyHelper {
@@ -99,7 +97,14 @@ pub fn run() {
         validator: MatchingBracketValidator::new(),
     };
 
-    let mut rl = Editor::with_config(config);
+    let mut rl = match Editor::with_config(config) {
+        Ok(rl) => rl,
+        Err(e) => {
+            log::error!("{}", e);
+            return;
+        }
+    };
+
     rl.set_helper(Some(h));
 
     if rl.load_history("./.history").is_err() {
@@ -118,7 +123,7 @@ pub fn run() {
                     continue;
                 }
 
-                rl.add_history_entry(line.as_str());
+                let _ = rl.add_history_entry(line.as_str());
                 match split(line.as_str()).as_mut() {
                     Ok(arg) => {
                         if arg[0] == "exit" {
