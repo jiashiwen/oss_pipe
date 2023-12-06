@@ -24,24 +24,26 @@ dependencies = [
 
 [[package]]
 name = "aliyun-oss-client"
-version = "0.11.1"
+version = "0.12.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9311f9fc716de53a4603b5fdda37fa3e8dd9f10c2de4e97ab2e74c17f8c1fd1"
+checksum = "9a8bf8e013b1e9b682c5d35521feb5ae9e6257e5023d1651f63b35e338857459"
 dependencies = [
  "async-stream",
  "async-trait",
- "base64 0.20.0",
+ "base64",
  "chrono",
  "futures",
  "futures-core",
  "hmac",
  "http",
- "infer 0.11.0",
+ "infer 0.14.0",
  "oss_derive",
+ "percent-encoding",
  "quick-xml",
  "reqwest",
  "sha1",
  "thiserror",
+ "url",
 ]
 
 [[package]]
@@ -475,12 +477,6 @@ dependencies = [
  "rustc_version",
  "tracing",
 ]
-
-[[package]]
-name = "base64"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ea22880d78093b0cbe17c89f64a7d457941e65759157ec6cb31a31d652b05e5"
 
 [[package]]
 name = "base64"
@@ -1436,18 +1432,18 @@ dependencies = [
 
 [[package]]
 name = "infer"
-version = "0.11.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a6c16b11a665b26aeeb9b1d7f954cdeb034be38dd00adab4f2ae921a8fee804"
+checksum = "f551f8c3a39f68f986517db0d1759de85881894fdc7db798bd2a9df9cb04b7fc"
 dependencies = [
  "cfb",
 ]
 
 [[package]]
 name = "infer"
-version = "0.13.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f551f8c3a39f68f986517db0d1759de85881894fdc7db798bd2a9df9cb04b7fc"
+checksum = "bbb78f4c4a058ef30a9ff77322e758f7e60f871274b602d7fdc1b0956b0cb88e"
 dependencies = [
  "cfb",
 ]
@@ -1855,9 +1851,9 @@ checksum = "8e22443d1643a904602595ba1cd8f7d896afe56d26712531c5ff73a15b2fbf64"
 
 [[package]]
 name = "oss_derive"
-version = "0.9.7"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b9cd8bf024e919445a21bf6611c7248a981b170a7d8d4591b4271456bed820e"
+checksum = "8f3e5eab112f3adb129844260460da809a51443fe0be1febb39041e39ce8af9b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2090,9 +2086,9 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.27.1"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ffc053f057dd768a56f62cd7e434c42c831d296968997e9ac1f76ea7c2d14c41"
+checksum = "81b9228215d82c7b61490fec1de287136b5de6f5700f6e58ea9ad61a7964ca51"
 dependencies = [
  "memchr",
 ]
@@ -2291,7 +2287,7 @@ version = "0.11.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "21eed90ec8570952d53b772ecf8f206aa1ec9a3d76b2521c56c42973f2d91ee9"
 dependencies = [
- "base64 0.21.0",
+ "base64",
  "bytes",
  "encoding_rs",
  "futures-core",
@@ -2492,7 +2488,7 @@ version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d194b56d58803a43635bdc398cd17e383d6f71f9182b9a192c127ca42494a59b"
 dependencies = [
- "base64 0.21.0",
+ "base64",
 ]
 
 [[package]]
