@@ -147,9 +147,6 @@ impl NotifyWatcher {
                 }
                 Err(_) => {}
             };
-
-            // tmp_modified = modified;
-
             yield_now().await;
         }
     }

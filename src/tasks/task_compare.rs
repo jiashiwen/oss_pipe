@@ -1,8 +1,8 @@
 use super::{
-    gen_file_path, task_actions::CompareTaskActions, CompareLocal2Local, CompareLocal2Oss,
-    CompareOss2Local, CompareOss2Oss, ObjectStorage, TaskDefaultParameters, TaskStatusSaver,
-    TransferStage, COMPARE_CHECK_POINT_FILE, COMPARE_RESULT_PREFIX,
-    COMPARE_SOURCE_OBJECT_LIST_FILE_PREFIX, OFFSET_PREFIX,
+    de_usize_from_str, gen_file_path, se_usize_to_str, task_actions::CompareTaskActions,
+    CompareLocal2Local, CompareLocal2Oss, CompareOss2Local, CompareOss2Oss, ObjectStorage,
+    TaskDefaultParameters, TaskStatusSaver, TransferStage, COMPARE_CHECK_POINT_FILE,
+    COMPARE_RESULT_PREFIX, COMPARE_SOURCE_OBJECT_LIST_FILE_PREFIX, OFFSET_PREFIX,
 };
 use crate::{
     checkpoint::{get_task_checkpoint, CheckPoint, FileDescription, FilePosition, ListedRecord},
@@ -143,8 +143,12 @@ pub struct CompareTaskAttributes {
     #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
     pub start_from_checkpoint: bool,
     #[serde(default = "TaskDefaultParameters::large_file_size_default")]
+    #[serde(serialize_with = "se_usize_to_str")]
+    #[serde(deserialize_with = "de_usize_from_str")]
     pub large_file_size: usize,
     #[serde(default = "TaskDefaultParameters::multi_part_chunk_default")]
+    #[serde(serialize_with = "se_usize_to_str")]
+    #[serde(deserialize_with = "de_usize_from_str")]
     pub multi_part_chunk: usize,
     #[serde(default = "TaskDefaultParameters::filter_default")]
     pub exclude: Option<Vec<String>>,
@@ -357,19 +361,9 @@ impl CompareTask {
                     }
                 }
 
-                // 执行error retry
-                // match task.error_record_retry() {
-                //     Ok(_) => {}
-                //     Err(e) => {
-                //         log::error!("{}", e);
-                //         interrupt = true;
-                //         return;
-                //     }
-                // };
                 compare_source_list = checkpoint.executed_file.clone();
             } else {
                 // 清理 meta 目录
-                // 重新生成object list file
                 let _ = fs::remove_dir_all(self.attributes.meta_dir.as_str());
                 match task.gen_list_file(None, &compare_source_list.path).await {
                     Ok(f) => {
@@ -522,26 +516,9 @@ impl CompareTask {
             }
         });
 
-        // 增量逻辑
-        if self.attributes.continuous {
-            // rt.block_on(async {
-            //     let stop_mark = Arc::new(AtomicBool::new(false));
-            //     let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
-            //     let task_increment = self.gen_transfer_actions();
-
-            //     let _ = task_increment
-            //         .execute_increment(
-            //             &mut execut_set,
-            //             Arc::clone(&increment_assistant),
-            //             Arc::clone(&err_counter),
-            //             Arc::clone(&offset_map),
-            //             Arc::clone(&stop_mark),
-            //         )
-            //         .await;
-            //     // 配置停止 offset save 标识为 true
-            //     snapshot_stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
-            // });
-        }
+        // Todo
+        // 持续同步逻辑，循环比较不相等记录，并指定校验次数
+        if self.attributes.continuous {}
 
         for entry in WalkDir::new(&self.attributes.meta_dir)
             .into_iter()
