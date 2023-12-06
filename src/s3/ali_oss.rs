@@ -33,11 +33,11 @@ impl OSSActions for OssAliClient {
         q.insert("max-keys", max_keys.to_string());
 
         if let Some(p) = prefix {
-            q.insert(QueryKey::Prefix, p);
+            q.insert(QueryKey::PREFIX, p);
         };
 
         if let Some(t) = token {
-            q.insert(QueryKey::ContinuationToken, t);
+            q.insert(QueryKey::CONTINUATION_TOKEN, t);
         };
 
         let list = self
@@ -48,7 +48,11 @@ impl OSSActions for OssAliClient {
             .map_err(|e| anyhow!(e.to_string()))
             .unwrap();
 
-        let token = list.next_continuation_token().clone();
+        // let token = list.next_continuation_token().clone();
+        let token = match list.next_continuation_token_str().eq(&"") {
+            true => None,
+            false => Some(list.next_continuation_token_str().to_string()),
+        };
 
         let mut obj_list = None;
 
@@ -79,11 +83,11 @@ impl OSSActions for OssAliClient {
         q.insert("max-keys", batch.to_string());
 
         if let Some(p) = prefix {
-            q.insert(QueryKey::Prefix, p);
+            q.insert(QueryKey::PREFIX, p);
         };
 
         if let Some(t) = token {
-            q.insert(QueryKey::ContinuationToken, t);
+            q.insert(QueryKey::CONTINUATION_TOKEN, t);
         };
 
         let list = self
@@ -93,7 +97,10 @@ impl OSSActions for OssAliClient {
             .await
             .map_err(|e| anyhow!(e.to_string()))?;
 
-        let token = list.next_continuation_token().clone();
+        let token = match list.next_continuation_token_str().eq(&"") {
+            true => None,
+            false => Some(list.next_continuation_token_str().to_string()),
+        };
 
         let store_path = Path::new(file_path.as_str());
         let path = std::path::Path::new(store_path);
