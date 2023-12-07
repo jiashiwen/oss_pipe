@@ -1,4 +1,4 @@
-use super::{CompareTask, TransferTask};
+use super::{CompareTask, TransferTask, TransferType};
 use crate::{
     commons::{byte_size_str_to_usize, byte_size_usize_to_str, LastModifyFilter},
     s3::OSSDescription,
@@ -31,41 +31,16 @@ pub const NOTIFY_FILE_PREFIX: &'static str = "notify_";
 pub const REMOVED_PREFIX: &'static str = "removed_";
 pub const MODIFIED_PREFIX: &'static str = "modified_";
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+pub struct AnalyzedResult {
+    pub max: i128,
+    pub min: i128,
+}
 /// 任务阶段，包括存量曾量全量
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub enum TransferStage {
     Stock,
     Increment,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
-pub enum TransferType {
-    Full,
-    Stock,
-    Increment,
-}
-
-impl TransferType {
-    pub fn is_full(&self) -> bool {
-        match self {
-            TransferType::Full => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_stock(&self) -> bool {
-        match self {
-            TransferType::Stock => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_increment(&self) -> bool {
-        match self {
-            TransferType::Increment => true,
-            _ => false,
-        }
-    }
 }
 
 /// 任务类别，根据传输方式划分
@@ -133,8 +108,8 @@ impl TaskDefaultParameters {
         false
     }
     pub fn large_file_size_default() -> usize {
-        // 100M
-        104857600
+        // 50M
+        10485760 * 5
     }
     pub fn multi_part_chunk_default() -> usize {
         // 10M
@@ -170,60 +145,6 @@ pub struct Task {
     #[serde(default = "TaskDefaultParameters::name_default")]
     pub name: String,
     pub task_desc: TaskDescription,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct TransferTaskAttributes {
-    #[serde(default = "TaskDefaultParameters::batch_size_default")]
-    pub bach_size: i32,
-    #[serde(default = "TaskDefaultParameters::task_threads_default")]
-    pub task_threads: usize,
-    #[serde(default = "TaskDefaultParameters::max_errors_default")]
-    pub max_errors: usize,
-    #[serde(default = "TaskDefaultParameters::meta_dir_default")]
-    pub meta_dir: String,
-    #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
-    pub target_exists_skip: bool,
-    #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
-    pub start_from_checkpoint: bool,
-    #[serde(default = "TaskDefaultParameters::large_file_size_default")]
-    #[serde(serialize_with = "se_usize_to_str")]
-    #[serde(deserialize_with = "de_usize_from_str")]
-    pub large_file_size: usize,
-    #[serde(default = "TaskDefaultParameters::multi_part_chunk_default")]
-    #[serde(serialize_with = "se_usize_to_str")]
-    #[serde(deserialize_with = "de_usize_from_str")]
-    pub multi_part_chunk: usize,
-    #[serde(default = "TaskDefaultParameters::filter_default")]
-    pub exclude: Option<Vec<String>>,
-    #[serde(default = "TaskDefaultParameters::filter_default")]
-    pub include: Option<Vec<String>>,
-    #[serde(default = "TaskDefaultParameters::continuous_default")]
-    pub continuous: bool,
-    #[serde(default = "TaskDefaultParameters::transfer_type_default")]
-    pub transfer_type: TransferType,
-    #[serde(default = "TaskDefaultParameters::last_modify_filter_default")]
-    pub last_modify_filter: Option<LastModifyFilter>,
-}
-
-impl Default for TransferTaskAttributes {
-    fn default() -> Self {
-        Self {
-            bach_size: TaskDefaultParameters::batch_size_default(),
-            task_threads: TaskDefaultParameters::task_threads_default(),
-            max_errors: TaskDefaultParameters::max_errors_default(),
-            meta_dir: TaskDefaultParameters::meta_dir_default(),
-            target_exists_skip: TaskDefaultParameters::target_exists_skip_default(),
-            start_from_checkpoint: TaskDefaultParameters::target_exists_skip_default(),
-            large_file_size: TaskDefaultParameters::large_file_size_default(),
-            multi_part_chunk: TaskDefaultParameters::multi_part_chunk_default(),
-            exclude: TaskDefaultParameters::filter_default(),
-            include: TaskDefaultParameters::filter_default(),
-            continuous: TaskDefaultParameters::continuous_default(),
-            transfer_type: TaskDefaultParameters::transfer_type_default(),
-            last_modify_filter: TaskDefaultParameters::last_modify_filter_default(),
-        }
-    }
 }
 
 pub fn de_usize_from_str<'de, D>(deserializer: D) -> Result<usize, D::Error>

@@ -135,7 +135,7 @@ pub struct CompareTaskAttributes {
     #[serde(default = "TaskDefaultParameters::batch_size_default")]
     pub bach_size: i32,
     #[serde(default = "TaskDefaultParameters::task_threads_default")]
-    pub task_threads: usize,
+    pub task_parallelism: usize,
     #[serde(default = "TaskDefaultParameters::max_errors_default")]
     pub max_errors: usize,
     #[serde(default = "TaskDefaultParameters::meta_dir_default")]
@@ -166,7 +166,7 @@ impl Default for CompareTaskAttributes {
     fn default() -> Self {
         Self {
             bach_size: TaskDefaultParameters::batch_size_default(),
-            task_threads: TaskDefaultParameters::task_threads_default(),
+            task_parallelism: TaskDefaultParameters::task_threads_default(),
             max_errors: TaskDefaultParameters::max_errors_default(),
             meta_dir: TaskDefaultParameters::meta_dir_default(),
             start_from_checkpoint: TaskDefaultParameters::target_exists_skip_default(),
@@ -322,7 +322,7 @@ impl CompareTask {
         let rt = runtime::Builder::new_multi_thread()
             .worker_threads(num_cpus::get())
             .enable_all()
-            .max_io_events_per_tick(self.attributes.task_threads)
+            .max_io_events_per_tick(self.attributes.task_parallelism)
             .build()?;
 
         let mut compare_source_list = FileDescription {
@@ -451,7 +451,7 @@ impl CompareTask {
                     .to_string()
                     .eq(&self.attributes.bach_size.to_string())
                 {
-                    while execut_set.len() >= self.attributes.task_threads {
+                    while execut_set.len() >= self.attributes.task_parallelism {
                         execut_set.join_next().await;
                     }
                     let vk = vec_keys.clone();
@@ -476,7 +476,7 @@ impl CompareTask {
                 && err_counter.load(std::sync::atomic::Ordering::SeqCst)
                     < self.attributes.max_errors
             {
-                while execut_set.len() >= self.attributes.task_threads {
+                while execut_set.len() >= self.attributes.task_parallelism {
                     execut_set.join_next().await;
                 }
 

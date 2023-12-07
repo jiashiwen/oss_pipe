@@ -1,13 +1,13 @@
 use super::{
-    gen_file_path, TaskStatusSaver, TransferStage, OFFSET_PREFIX, TRANSFER_CHECK_POINT_FILE,
-    TRANSFER_OBJECT_LIST_FILE_PREFIX,
+    de_usize_from_str, gen_file_path, se_usize_to_str, TaskDefaultParameters, TaskStatusSaver,
+    TransferStage, OFFSET_PREFIX, TRANSFER_CHECK_POINT_FILE, TRANSFER_OBJECT_LIST_FILE_PREFIX,
 };
 use super::{
     task_actions::TransferTaskActions, IncrementAssistant, TransferLocal2Local, TransferLocal2Oss,
-    TransferOss2Local, TransferOss2Oss, TransferTaskAttributes,
+    TransferOss2Local, TransferOss2Oss,
 };
 use crate::checkpoint::RecordDescription;
-use crate::commons::json_to_struct;
+use crate::commons::{json_to_struct, LastModifyFilter};
 use crate::{
     checkpoint::FileDescription,
     commons::{promote_processbar, RegexFilter},
@@ -46,6 +46,36 @@ pub struct AnalyzedResult {
     pub total_objects: i128,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+pub enum TransferType {
+    Full,
+    Stock,
+    Increment,
+}
+
+impl TransferType {
+    pub fn is_full(&self) -> bool {
+        match self {
+            TransferType::Full => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_stock(&self) -> bool {
+        match self {
+            TransferType::Stock => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_increment(&self) -> bool {
+        match self {
+            TransferType::Increment => true,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 #[serde(rename_all = "lowercase")]
@@ -58,6 +88,60 @@ pub enum ObjectStorage {
 impl Default for ObjectStorage {
     fn default() -> Self {
         ObjectStorage::OSS(OSSDescription::default())
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TransferTaskAttributes {
+    #[serde(default = "TaskDefaultParameters::batch_size_default")]
+    pub bach_size: i32,
+    #[serde(default = "TaskDefaultParameters::task_threads_default")]
+    pub task_parallelism: usize,
+    #[serde(default = "TaskDefaultParameters::max_errors_default")]
+    pub max_errors: usize,
+    #[serde(default = "TaskDefaultParameters::meta_dir_default")]
+    pub meta_dir: String,
+    #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
+    pub target_exists_skip: bool,
+    #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
+    pub start_from_checkpoint: bool,
+    #[serde(default = "TaskDefaultParameters::large_file_size_default")]
+    #[serde(serialize_with = "se_usize_to_str")]
+    #[serde(deserialize_with = "de_usize_from_str")]
+    pub large_file_size: usize,
+    #[serde(default = "TaskDefaultParameters::multi_part_chunk_default")]
+    #[serde(serialize_with = "se_usize_to_str")]
+    #[serde(deserialize_with = "de_usize_from_str")]
+    pub multi_part_chunk: usize,
+    #[serde(default = "TaskDefaultParameters::filter_default")]
+    pub exclude: Option<Vec<String>>,
+    #[serde(default = "TaskDefaultParameters::filter_default")]
+    pub include: Option<Vec<String>>,
+    #[serde(default = "TaskDefaultParameters::continuous_default")]
+    pub continuous: bool,
+    #[serde(default = "TaskDefaultParameters::transfer_type_default")]
+    pub transfer_type: TransferType,
+    #[serde(default = "TaskDefaultParameters::last_modify_filter_default")]
+    pub last_modify_filter: Option<LastModifyFilter>,
+}
+
+impl Default for TransferTaskAttributes {
+    fn default() -> Self {
+        Self {
+            bach_size: TaskDefaultParameters::batch_size_default(),
+            task_parallelism: TaskDefaultParameters::task_threads_default(),
+            max_errors: TaskDefaultParameters::max_errors_default(),
+            meta_dir: TaskDefaultParameters::meta_dir_default(),
+            target_exists_skip: TaskDefaultParameters::target_exists_skip_default(),
+            start_from_checkpoint: TaskDefaultParameters::target_exists_skip_default(),
+            large_file_size: TaskDefaultParameters::large_file_size_default(),
+            multi_part_chunk: TaskDefaultParameters::multi_part_chunk_default(),
+            exclude: TaskDefaultParameters::filter_default(),
+            include: TaskDefaultParameters::filter_default(),
+            continuous: TaskDefaultParameters::continuous_default(),
+            transfer_type: TaskDefaultParameters::transfer_type_default(),
+            last_modify_filter: TaskDefaultParameters::last_modify_filter_default(),
+        }
     }
 }
 
@@ -126,7 +210,7 @@ impl TransferTask {
         let rt = runtime::Builder::new_multi_thread()
             .worker_threads(num_cpus::get())
             .enable_all()
-            .max_io_events_per_tick(self.attributes.task_threads)
+            .max_io_events_per_tick(self.attributes.task_parallelism)
             .build()?;
 
         rt.block_on(async {
@@ -206,7 +290,7 @@ impl TransferTask {
         let rt = runtime::Builder::new_multi_thread()
             .worker_threads(num_cpus::get())
             .enable_all()
-            .max_io_events_per_tick(self.attributes.task_threads)
+            .max_io_events_per_tick(self.attributes.task_parallelism)
             .build()?;
 
         let pd = promote_processbar("Generating object list ...");
@@ -380,7 +464,7 @@ impl TransferTask {
                         .to_string()
                         .eq(&self.attributes.bach_size.to_string())
                     {
-                        while execut_set.len() >= self.attributes.task_threads {
+                        while execut_set.len() >= self.attributes.task_parallelism {
                             execut_set.join_next().await;
                         }
                         let vk = vec_keys.clone();
@@ -405,7 +489,7 @@ impl TransferTask {
                     && err_counter.load(std::sync::atomic::Ordering::SeqCst)
                         < self.attributes.max_errors
                 {
-                    while execut_set.len() >= self.attributes.task_threads {
+                    while execut_set.len() >= self.attributes.task_parallelism {
                         execut_set.join_next().await;
                     }
 
@@ -479,7 +563,7 @@ impl TransferTask {
                         .to_string()
                         .eq(&self.attributes.bach_size.to_string())
                     {
-                        while execut_set.len() >= self.attributes.task_threads {
+                        while execut_set.len() >= self.attributes.task_parallelism {
                             execut_set.join_next().await;
                         }
                         let vk = vec_keys.clone();
@@ -504,7 +588,7 @@ impl TransferTask {
                     && err_counter.load(std::sync::atomic::Ordering::SeqCst)
                         < self.attributes.max_errors
                 {
-                    while execut_set.len() >= self.attributes.task_threads {
+                    while execut_set.len() >= self.attributes.task_parallelism {
                         execut_set.join_next().await;
                     }
 
