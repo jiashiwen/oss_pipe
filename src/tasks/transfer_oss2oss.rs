@@ -501,7 +501,7 @@ impl TransferTaskActions for TransferOss2Oss {
                     .to_string()
                     .eq(&self.attributes.bach_size.to_string())
                 {
-                    while execute_set.len() >= self.attributes.task_threads {
+                    while execute_set.len() >= self.attributes.task_parallelism {
                         execute_set.join_next().await;
                     }
                     let vk = vec_keys.clone();
@@ -524,7 +524,7 @@ impl TransferTaskActions for TransferOss2Oss {
                 && err_counter.load(std::sync::atomic::Ordering::SeqCst)
                     < self.attributes.max_errors
             {
-                while execute_set.len() >= self.attributes.task_threads {
+                while execute_set.len() >= self.attributes.task_parallelism {
                     execute_set.join_next().await;
                 }
 
