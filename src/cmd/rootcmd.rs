@@ -472,11 +472,13 @@ fn cmd_match(matches: &ArgMatches) {
 
     if let Some(parameters) = matches.subcommand_matches("parameters") {
         if let Some(_) = parameters.subcommand_matches("provider") {
-            println!("{:?}", OssProvider::AWS);
-            println!("{:?}", OssProvider::ALI);
             println!("{:?}", OssProvider::JD);
             println!("{:?}", OssProvider::JRSS);
+            println!("{:?}", OssProvider::ALI);
+            println!("{:?}", OssProvider::AWS);
             println!("{:?}", OssProvider::HUAWEI);
+            println!("{:?}", OssProvider::COS);
+            println!("{:?}", OssProvider::MINIO);
         }
 
         if let Some(_) = parameters.subcommand_matches("task_type") {

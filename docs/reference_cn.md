@@ -91,9 +91,9 @@ oss_pipe 同时支持命令行模式和交互模式 oss_pipe -i 进入交互模�
 
 ## 任务类型
 
-### Transfer
+#### Transfer
 
-#### oss2local
+##### oss2local
 
 ```yml
 # 任务id，非必填
@@ -150,7 +150,7 @@ task_desc:
     continuous: false
 ```
 
-#### oss2oss
+##### oss2oss
 
 ```yml
 # 任务id，非必填
@@ -222,7 +222,7 @@ task_desc:
     continuous: false
 ```
 
-#### local2oss
+##### local2oss
   
 ```yml
 # 任务id，非必填
@@ -320,7 +320,7 @@ task_desc:
     continuous: false
 ```
 
-### TruncateBucket  
+#### TruncateBucket  
   
 ```yml
 # 任务id，非必填
@@ -355,7 +355,7 @@ task_desc: !TruncateBucket
   meta_dir: /tmp/meta_dir
 ```
   
-### OssCompare
+#### OssCompare
   
 ```yml
 # 任务id，非必填
@@ -363,7 +363,8 @@ task_id: '7064090414587973633'
 # 任务名称，非必填  
 name: oss compare task
 # 任务描述，支持的任务可以通过 oss_pipe parameters task_type 查找 
-task_desc: !OssCompare
+task_desc:
+  type: compare
   # 源对象存储
   source:
     # 对象存储供应商，支持的供应商可以通过 oss_pipe  parameters provider 查找
