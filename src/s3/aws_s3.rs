@@ -119,7 +119,7 @@ impl OssClient {
             .client
             .get_object()
             .bucket(bucket)
-            .key(key.clone())
+            .key(key)
             .send()
             .await?;
         std::result::Result::Ok(resp)
@@ -137,7 +137,7 @@ impl OssClient {
             .client
             .delete_object()
             .bucket(bucket)
-            .key(key.clone())
+            .key(key)
             .send()
             .await?;
         std::result::Result::Ok(resp)

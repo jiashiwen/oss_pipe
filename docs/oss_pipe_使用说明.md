@@ -1,9 +1,42 @@
-# OSS PIPE
-
-OSS PIPE 是一个用于 S3 兼容对象存储间进行文件迁移的工具。
+# OSS PIPE V 0.2.0
 
 项目地址
 <https://github.com/jiashiwen/oss_pipe>
+
+oss_pipe 是rust编写的文件迁移工具，旨在支撑大规模的文件迁移场景。相比java 或 golang 构建的同类型产品，借助rust语言的优势，oss_pipe具备无GC、高并发、部署便利、OOM风险低等优势。
+
+## 主要功能
+
+### transfer 
+文件迁移，包括oss 间文件迁移和本地到oss的文件迁移
+
+* 主要功能
+  * 全量迁移
+  * 存量迁移
+  * 增量迁移
+  * 断点续传
+  * 大文件拆分上传
+  * 正则表达式过滤
+  * 线程数与上传快大小组合控制带宽
+
+* 存储适配及支持列表
+  * 京东云对象存储
+  * 阿里云对象存储
+  * 腾讯云对象存储
+  * 华为云对象存储
+  * AWS对象存储
+  * Minio
+  * 本地
+
+### compare 
+文件校验，检查源文件与迁移完成后目标文件的差异
+
+* 主要功能
+  * 存在性校验
+  * 文件长度校验
+  * meta数据校验
+  * 过期时间校验
+  * 全字节流校验
 
 ## Getting Stated
 
@@ -55,9 +88,10 @@ oss_pipe template transfer oss2oss /tmp/transfer.yml
 transfer.yml 文件内容
 
 ```yml
-task_id: '7071651847576096769'
-name: transfer task
-task_desc: !Transfer
+task_id: '7143131817338605569'
+name: transfer oss to oss
+task_desc:
+  type: transfer
   source:
     provider: ALI
     access_key_id: access_key_id
@@ -74,16 +108,26 @@ task_desc: !Transfer
     region: cn-north-1
     bucket: bucket_name
     prefix: test/samples/
-  bach_size: 100
-  task_threads: 12
-  max_errors: 1
-  meta_dir: /tmp/meta_dir
-  target_exists_skip: false
-  start_from_checkpoint: false
-  large_file_size: 104857600
-  multi_part_chunk: 10485760
-  exclude: null
-  include: null
+  attributes:
+    bach_size: 100
+    task_parallelism: 12
+    max_errors: 1
+    meta_dir: /tmp/meta_dir
+    target_exists_skip: false
+    start_from_checkpoint: false
+    large_file_size: 50m
+    multi_part_chunk: 10m
+    exclude:
+    - test/t3/*
+    - test/t4/*
+    include:
+    - test/t1/*
+    - test/t2/*
+    continuous: false
+    transfer_type: Stock
+    last_modify_filter:
+      filter_type: Greater
+      timestamp: 1703055338
 ```
 
 修改 access_key_id secret_access_key 等参数，适配自己的任务。template 命令按照任务类型创建模版,模板描述请参考[参考手册](reference_cn.md)。parameters 支持参数查询，包括支持的provider 以及 任务类型
@@ -426,7 +470,8 @@ task_id: '7064088180835880961'
 # 任务名称，非必填  
 name: truncate bucket task
 # 任务描述，支持的任务可以通过 oss_pipe parameters task_type 查找 
-task_desc: !TruncateBucket
+task_desc:
+  type: truncatebucket
   # 要清理的bucket描述
   oss:
     # 对象存储供应商，支持的供应商可以通过 oss_pipe  parameters provider 找
@@ -461,7 +506,8 @@ task_id: '7064090414587973633'
 # 任务名称，非必填  
 name: oss compare task
 # 任务描述，支持的任务可以通过 oss_pipe parameters task_type 查找 
-task_desc: !OssCompare
+task_desc:
+  type: compare
   # 源对象存储
   source:
     # 对象存储供应商，支持的供应商可以通过 oss_pipe  parameters provider 查找
@@ -494,18 +540,34 @@ task_desc: !OssCompare
     bucket: bucket_name
     # 对象存储prefix
     prefix: test/samples/
-  # 批次大小，既每批下载文件数据量
-  bach_size: 100
-  # 并发数量
-  task_threads: 12
-  # 任务允许的最大错误数，达到最大错误数量则任务停止
-  max_errors: 1
-  # 任务元数据存储位置
-  meta_dir: /tmp/meta_dir
-  # 对象过期时间差，当差值小于指定值时被视为过期时间一至
-  exprirs_diff_scope: 10
-  # 从checkpoint开始执行
-  start_from_checkpoint: false
+  # 校验检查项 
+  check_option:
+    # 文件长度校验
+    check_content_length: true
+    # 过期时间校验
+    check_expires: false
+    # 文件内容校验，既字节流校验
+    check_content: false
+    # oss meta数据校验
+    check_meta_data: false
+  # 任务属性  
+  attributes:
+    # 批次大小，既每批传输文件数据量，默认值 100
+    bach_size: 100
+    # 任务并行度，默认值为cpu核数
+    task_parallelism: 12
+    # 最大错误数，当错数量超过该值任务停止，默认值 1
+    max_errors: 1
+    # 任务元数据保存目录，包括任务 checkpoint、错误记录文件、文件执行列表、增量文件列表等任务执行相关文件，默认值 /tmp/meta_dir
+    meta_dir: /tmp/meta_dir
+    # 当目标文件存在时是否同步，用以适应某些需要跳过重复同步的场景
+    target_exists_skip: false
+    # 从 checkpoint 开始同步，用于任务中断后续传操作
+    start_from_checkpoint: false
+    # 大文件拆分依据，当文件大于该属性值时，进行查分同步，默认值50M
+    large_file_size: 50m
+    # 拆分块尺寸，默认值 10M
+    multi_part_chunk: 10m
 ```
 
 ## 同步任务流程

@@ -177,7 +177,7 @@ impl OSSActions for OssJdClient {
             .client
             .get_object()
             .bucket(bucket)
-            .key(key.clone())
+            .key(&key)
             .send()
             .await?;
 
@@ -215,7 +215,7 @@ impl OSSActions for OssJdClient {
                 .client
                 .get_object()
                 .bucket(bucket.clone())
-                .key(key.clone())
+                .key(&key)
                 .send()
                 .await
                 .unwrap();
