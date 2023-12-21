@@ -87,8 +87,6 @@ pub fn analyze_folder_files_size(
     last_modify_filter: Option<LastModifyFilter>,
 ) -> Result<DashMap<String, i128>> {
     let size_map = DashMap::<String, i128>::new();
-    let mut min = 0;
-    let mut max = 0;
     for entry in WalkDir::new(folder)
         .into_iter()
         .filter_map(Result::ok)
@@ -124,21 +122,6 @@ pub fn analyze_folder_files_size(
             };
             size += 1;
             size_map.insert(key, size);
-
-            // if obj_size.gt(&max) {
-            //     max = obj_size;
-            //     size_map.insert("max".to_string(), max);
-            // }
-
-            // if min.eq(&0) {
-            //     min = obj_size;
-            //     size_map.insert("min".to_string(), min);
-            // } else {
-            //     if min.gt(&obj_size) {
-            //         min = obj_size;
-            //         size_map.insert("min".to_string(), min);
-            //     }
-            // }
         };
     }
     Ok(size_map)
@@ -222,7 +205,7 @@ pub fn generate_file(file_size: usize, batch: usize, file_name: &str) -> Result<
         .create(true)
         .write(true)
         .truncate(true)
-        .open(file_name.clone())?;
+        .open(file_name)?;
     let mut file = LineWriter::new(file_ref);
     let str = rand_string(batch);
     for _ in 0..str_len {
@@ -273,7 +256,7 @@ pub fn generate_line_file(line_base_size: usize, lines: usize, file_name: &str) 
         .create(true)
         .write(true)
         .append(true)
-        .open(file_name.clone())?;
+        .open(file_name)?;
     let mut file = LineWriter::new(file_ref);
     let str = rand_string(line_base_size);
     for i in 0..lines {
