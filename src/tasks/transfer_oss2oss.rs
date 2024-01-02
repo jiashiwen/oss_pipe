@@ -15,7 +15,9 @@ use crate::{
 };
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use aws_sdk_s3::{error::GetObjectErrorKind, model::Object};
+
+use aws_sdk_s3::types::Object;
+// use aws_sdk_s3::{error::GetObjectErrorKind, model::Object};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
@@ -704,14 +706,22 @@ impl TransferOss2OssRecordsExecutor {
             Err(e) => {
                 // 源端文件不存在按传输成功处理
                 let service_err = e.into_service_error();
-                match service_err.kind {
-                    GetObjectErrorKind::NoSuchKey(_) => {
+                match service_err.is_no_such_key() {
+                    true => {
                         return Ok(());
                     }
-                    _ => {
+                    false => {
                         return Err(service_err.into());
                     }
                 }
+                // match service_err.kind {
+                //     GetObjectErrorKind::NoSuchKey(_) => {
+                //         return Ok(());
+                //     }
+                //     _ => {
+                //         return Err(service_err.into());
+                //     }
+                // }
             }
         };
 
@@ -824,15 +834,24 @@ impl TransferOss2OssRecordsExecutor {
                     Ok(o) => o,
                     Err(e) => {
                         let service_err = e.into_service_error();
-                        match service_err.kind {
-                            GetObjectErrorKind::NoSuchKey(_) => {
+                        match service_err.is_no_such_key() {
+                            true => {
                                 return Ok(());
                             }
-                            _ => {
+                            false => {
                                 log::error!("{}", service_err);
                                 return Err(service_err.into());
                             }
                         }
+                        // match service_err.kind {
+                        //     GetObjectErrorKind::NoSuchKey(_) => {
+                        //         return Ok(());
+                        //     }
+                        //     _ => {
+                        //         log::error!("{}", service_err);
+                        //         return Err(service_err.into());
+                        //     }
+                        // }
                     }
                 };
                 target_oss

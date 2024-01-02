@@ -4,7 +4,8 @@ use crate::{
     s3::OSSDescription,
 };
 use anyhow::{anyhow, Result};
-use aws_sdk_s3::model::ObjectIdentifier;
+// use aws_sdk_s3::model::ObjectIdentifier;
+use aws_sdk_s3::types::ObjectIdentifier;
 use serde::{
     de::{self},
     Deserialize, Deserializer, Serialize, Serializer,
@@ -240,8 +241,11 @@ impl TaskTruncateBucket {
             for line in lines {
                 if let Result::Ok(key) = line {
                     if !key.ends_with("/") {
-                        let obj_id = ObjectIdentifier::builder().set_key(Some(key)).build();
-                        vec_keys.push(obj_id);
+                        // let obj_id = ObjectIdentifier::builder().set_key(Some(key)).build();
+                        if let Ok(obj_id) = ObjectIdentifier::builder().set_key(Some(key)).build() {
+                            vec_keys.push(obj_id);
+                        }
+                        // vec_keys.push(obj_id);
                     }
                 };
                 if vec_keys.len().to_string().eq(&self.bach_size.to_string()) {
