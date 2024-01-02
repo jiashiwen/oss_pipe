@@ -15,9 +15,11 @@ use crate::{
     checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
     s3::{aws_s3::OssClient, OSSDescription},
 };
+use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
-use aws_sdk_s3::{error::GetObjectErrorKind, output::GetObjectOutput};
+use aws_sdk_s3::operation::get_object::GetObjectOutput;
+// use aws_sdk_s3::{error::GetObjectErrorKind, output::GetObjectOutput};
 use dashmap::DashMap;
 use serde::Deserialize;
 use serde::Serialize;
@@ -209,10 +211,14 @@ impl Local2OssRecordsComparator {
             Err(e) => {
                 // 源端文件不存在按传输成功处理
                 let service_err = e.into_service_error();
-                match service_err.kind {
-                    GetObjectErrorKind::NoSuchKey(_) => {}
-                    _ => return Err(service_err.into()),
+                match service_err.is_no_such_key() {
+                    true => {}
+                    false => return Err(service_err.into()),
                 }
+                // match service_err.kind {
+                //     GetObjectErrorKind::NoSuchKey(_) => {}
+                //     _ => return Err(service_err.into()),
+                // }
             }
         };
 
@@ -260,7 +266,11 @@ impl Local2OssRecordsComparator {
     ) -> Result<Option<ObjectDiff>> {
         let s_file = File::open(source_key)?;
         let len_s = i128::from(s_file.metadata()?.len());
-        let len_t = i128::from(t_obj.content_length());
+        // let len_t = i128::from(t_obj.content_length());
+        let len_t = match t_obj.content_length() {
+            Some(l) => i128::from(l),
+            None => return Err(anyhow!("content length is None")),
+        };
 
         if !len_s.eq(&len_t) {
             let diff = ObjectDiff {

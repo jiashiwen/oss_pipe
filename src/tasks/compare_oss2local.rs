@@ -14,9 +14,11 @@ use crate::{
     checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
     s3::{aws_s3::OssClient, OSSDescription},
 };
+use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
-use aws_sdk_s3::{error::GetObjectErrorKind, output::GetObjectOutput};
+use aws_sdk_s3::operation::get_object::GetObjectOutput;
+// use aws_sdk_s3::{error::GetObjectErrorKind, output::GetObjectOutput};
 use dashmap::DashMap;
 use serde::Deserialize;
 use serde::Serialize;
@@ -202,10 +204,14 @@ impl Oss2LocalRecordsComparator {
             }
             Err(e) => {
                 let service_err = e.into_service_error();
-                match service_err.kind {
-                    GetObjectErrorKind::NoSuchKey(_) => {}
-                    _ => return Err(service_err.into()),
+                match service_err.is_no_such_key() {
+                    true => {}
+                    false => return Err(service_err.into()),
                 }
+                // match service_err.kind {
+                //     GetObjectErrorKind::NoSuchKey(_) => {}
+                //     _ => return Err(service_err.into()),
+                // }
             }
         };
         let t_path = Path::new(target_key);
@@ -249,7 +255,11 @@ impl Oss2LocalRecordsComparator {
         s_obj: &GetObjectOutput,
         target_key: &str,
     ) -> Result<Option<ObjectDiff>> {
-        let len_s = i128::from(s_obj.content_length());
+        // let len_s = i128::from(s_obj.content_length());
+        let len_s = match s_obj.content_length() {
+            Some(l) => i128::from(l),
+            None => return Err(anyhow!("content length is None")),
+        };
         let t_file = File::open(target_key)?;
         let len_t = i128::from(t_file.metadata()?.len());
         if !len_s.eq(&len_t) {
@@ -273,7 +283,12 @@ impl Oss2LocalRecordsComparator {
         target_key: &str,
     ) -> Result<Option<ObjectDiff>> {
         let buffer_size = 1048577;
-        let s_len = TryInto::<usize>::try_into(s_obj.content_length())?;
+        // let s_len = TryInto::<usize>::try_into(s_obj.content_length())?;
+        let s_len = match s_obj.content_length() {
+            Some(l) => TryInto::<usize>::try_into(l)?,
+            None => return Err(anyhow!("content length is None")),
+        };
+
         let mut left = s_len.clone();
         let mut reader_s = s_obj.body.into_async_read();
         let mut t_file = File::open(target_key)?;

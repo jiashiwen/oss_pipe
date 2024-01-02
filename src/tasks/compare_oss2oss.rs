@@ -15,9 +15,11 @@ use crate::{
     checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
     s3::{aws_s3::OssClient, OSSDescription},
 };
+use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
-use aws_sdk_s3::{error::GetObjectErrorKind, output::GetObjectOutput};
+use aws_sdk_s3::operation::get_object::GetObjectOutput;
+// use aws_sdk_s3::{error::GetObjectErrorKind, output::GetObjectOutput};
 use dashmap::DashMap;
 use serde::Deserialize;
 use serde::Serialize;
@@ -212,10 +214,14 @@ impl Oss2OssRecordsComparator {
             }
             Err(e) => {
                 let service_err = e.into_service_error();
-                match service_err.kind {
-                    GetObjectErrorKind::NoSuchKey(_) => {}
-                    _ => return Err(service_err.into()),
+                match service_err.is_no_such_key() {
+                    true => {}
+                    false => return Err(service_err.into()),
                 }
+                // match service_err.kind {
+                //     GetObjectErrorKind::NoSuchKey(_) => {}
+                //     _ => return Err(service_err.into()),
+                // }
             }
         };
 
@@ -230,10 +236,16 @@ impl Oss2OssRecordsComparator {
             Err(e) => {
                 // 源端文件不存在按传输成功处理
                 let service_err = e.into_service_error();
-                match service_err.kind {
-                    GetObjectErrorKind::NoSuchKey(_) => {}
-                    _ => return Err(service_err.into()),
+                match service_err.is_no_such_key() {
+                    true => {}
+                    false => return Err(service_err.into()),
                 }
+
+                // let service_err = e.into_service_error();
+                // match service_err.kind {
+                //     GetObjectErrorKind::NoSuchKey(_) => {}
+                //     _ => return Err(service_err.into()),
+                // }
             }
         };
 
@@ -290,8 +302,28 @@ impl Oss2OssRecordsComparator {
         t_obj: &GetObjectOutput,
         target_key: &str,
     ) -> Option<ObjectDiff> {
-        let len_s = i128::from(s_obj.content_length());
-        let len_t = i128::from(t_obj.content_length());
+        // let len_s = i128::from(s_obj.content_length());
+        // let len_t = i128::from(t_obj.content_length());
+        // if !len_s.eq(&len_t) {
+        //     let diff = ObjectDiff {
+        //         source: record.key.clone(),
+        //         target: target_key.to_string(),
+        //         diff: Diff::LengthDiff(DiffLength {
+        //             source_content_len: len_s,
+        //             target_content_len: len_t,
+        //         }),
+        //     };
+        //     return Some(diff);
+        // }
+
+        let len_s = match s_obj.content_length() {
+            Some(l) => i128::from(l),
+            None => i128::from(0),
+        };
+        let len_t = match t_obj.content_length() {
+            Some(l) => i128::from(l),
+            None => i128::from(0),
+        };
         if !len_s.eq(&len_t) {
             let diff = ObjectDiff {
                 source: record.key.clone(),
@@ -362,7 +394,13 @@ impl Oss2OssRecordsComparator {
         target_key: &str,
     ) -> Result<Option<ObjectDiff>> {
         let buffer_size = 1048577;
-        let obj_len = TryInto::<usize>::try_into(s_obj.content_length())?;
+        let s_obj_len = match s_obj.content_length() {
+            Some(l) => l,
+            None => return Err(anyhow!("content length is None")),
+        };
+
+        let obj_len = TryInto::<usize>::try_into(s_obj_len)?;
+        // let obj_len = TryInto::<usize>::try_into(s_obj.content_length())?;
         let mut left = obj_len.clone();
         let mut reader_s = s_obj.body.into_async_read();
         let mut reader_t = t_obj.body.into_async_read();

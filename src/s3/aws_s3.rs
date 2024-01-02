@@ -4,12 +4,15 @@ use crate::{
     tasks::{gen_file_path, MODIFIED_PREFIX, REMOVED_PREFIX, TRANSFER_OBJECT_LIST_FILE_PREFIX},
 };
 use anyhow::{anyhow, Result};
-use aws_sdk_s3::{
-    model::{CompletedMultipartUpload, CompletedPart, Delete, Object, ObjectIdentifier},
-    output::{CreateMultipartUploadOutput, GetObjectOutput},
-    types::ByteStream,
-    Client,
-};
+use aws_sdk_s3::operation::create_multipart_upload::CreateMultipartUploadOutput;
+use aws_sdk_s3::operation::get_object::GetObjectOutput;
+use aws_sdk_s3::types::CompletedMultipartUpload;
+use aws_sdk_s3::types::CompletedPart;
+use aws_sdk_s3::types::Delete;
+use aws_sdk_s3::types::Object;
+use aws_sdk_s3::types::ObjectIdentifier;
+use aws_sdk_s3::Client;
+use aws_smithy_types::byte_stream::ByteStream;
 use dashmap::DashMap;
 use std::{
     fs::{self, File, OpenOptions},
@@ -112,8 +115,10 @@ impl OssClient {
         bucket: &str,
         key: &str,
     ) -> std::result::Result<
-        aws_sdk_s3::output::GetObjectOutput,
-        aws_sdk_s3::types::SdkError<aws_sdk_s3::error::GetObjectError>,
+        // aws_sdk_s3::output::GetObjectOutput,
+        // aws_sdk_s3::types::SdkError<aws_sdk_s3::error::GetObjectError>,
+        aws_sdk_s3::operation::get_object::GetObjectOutput,
+        aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::get_object::GetObjectError>,
     > {
         let resp = self
             .client
@@ -130,8 +135,10 @@ impl OssClient {
         bucket: &str,
         key: &str,
     ) -> std::result::Result<
-        aws_sdk_s3::output::DeleteObjectOutput,
-        aws_sdk_s3::types::SdkError<aws_sdk_s3::error::DeleteObjectError>,
+        // aws_sdk_s3::output::DeleteObjectOutput,
+        // aws_sdk_s3::types::SdkError<aws_sdk_s3::error::DeleteObjectError>,
+        aws_sdk_s3::operation::delete_object::DeleteObjectOutput,
+        aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::delete_object::DeleteObjectError>,
     > {
         let resp = self
             .client
@@ -148,13 +155,16 @@ impl OssClient {
         bucket: &str,
         keys: Vec<ObjectIdentifier>,
     ) -> std::result::Result<
-        aws_sdk_s3::output::DeleteObjectsOutput,
-        aws_sdk_s3::types::SdkError<aws_sdk_s3::error::DeleteObjectsError>,
+        // aws_sdk_s3::output::DeleteObjectsOutput,
+        // aws_sdk_s3::types::SdkError<aws_sdk_s3::error::DeleteObjectsError>,
+        aws_sdk_s3::operation::delete_objects::DeleteObjectsOutput,
+        aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::delete_objects::DeleteObjectsError>,
     > {
+        let del = Delete::builder().set_objects(Some(keys)).build()?;
         self.client
             .delete_objects()
             .bucket(bucket)
-            .delete(Delete::builder().set_objects(Some(keys)).build())
+            .delete(del)
             .send()
             .await
     }
@@ -198,15 +208,23 @@ impl OssClient {
 
         let mut obj_list = None;
 
-        if let Some(l) = list.contents() {
-            let mut vec = vec![];
-            for item in l.iter() {
-                vec.push(item.clone());
-            }
-            if vec.len() > 0 {
-                obj_list = Some(vec);
-            }
-        };
+        // if let Some(l) = list.contents() {
+        //     let mut vec = vec![];
+        //     for item in l.iter() {
+        //         vec.push(item.clone());
+        //     }
+        //     if vec.len() > 0 {
+        //         obj_list = Some(vec);
+        //     }
+        // };
+        let mut vec = vec![];
+        for o in list.contents() {
+            vec.push(o.clone());
+        }
+        if vec.len() > 0 {
+            obj_list = Some(vec);
+        }
+
         let mut token = None;
         if let Some(str) = list.next_continuation_token() {
             token = Some(str.to_string());
@@ -227,7 +245,11 @@ impl OssClient {
         chunk_size: usize,
         object: GetObjectOutput,
     ) -> Result<()> {
-        let content_len_usize: usize = object.content_length().try_into()?;
+        let content_len = match object.content_length() {
+            Some(l) => l,
+            None => return Err(anyhow!("content length is None")),
+        };
+        let content_len_usize: usize = content_len.try_into()?;
         let expr = match object.expires() {
             Some(d) => Some(*d),
             None => None,
@@ -795,8 +817,13 @@ impl OssClient {
                     }
                 }
 
-                let obj_size = i128::from(obj.size());
-                let map_key = size_distributed(obj_size);
+                let obj_size = match obj.size() {
+                    Some(s) => s,
+                    None => return Err(anyhow!("object length is None")),
+                };
+
+                let obj_size_i128 = i128::from(obj_size);
+                let map_key = size_distributed(obj_size_i128);
                 let mut map_val = match size_map.get(&map_key) {
                     Some(m) => *m.value(),
                     None => 0,
@@ -838,8 +865,13 @@ impl OssClient {
                             }
                         }
                     }
-                    let obj_size = i128::from(obj.size());
-                    let map_key = size_distributed(obj_size);
+
+                    let obj_size = match obj.size() {
+                        Some(s) => s,
+                        None => return Err(anyhow!("object length is None")),
+                    };
+                    let obj_size_i128 = i128::from(obj_size);
+                    let map_key = size_distributed(obj_size_i128);
                     let mut map_val = match size_map.get(&map_key) {
                         Some(m) => *m.value(),
                         None => 0,
@@ -861,7 +893,12 @@ pub async fn download_object(
     splite_size: usize,
     chunk_size: usize,
 ) -> Result<()> {
-    let mut content_len_usize: usize = get_object.content_length().try_into()?;
+    let content_len = match get_object.content_length() {
+        Some(l) => l,
+        None => return Err(anyhow!("content length is None")),
+    };
+    let mut content_len_usize: usize = content_len.try_into()?;
+    // let mut content_len_usize: usize = get_object.content_length().try_into()?;
     if content_len_usize.le(&splite_size) {
         let content = get_object.body.collect().await?;
         let bytes = content.into_bytes();
@@ -892,8 +929,7 @@ pub async fn download_object(
 
 #[cfg(test)]
 mod test {
-
-    use aws_sdk_s3::types::ByteStream;
+    use aws_sdk_s3::primitives::ByteStream;
 
     use crate::{commons::rand_string, s3::OSSDescription};
 

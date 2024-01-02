@@ -2,8 +2,9 @@ use super::OSSActions;
 use super::{OssObjectsList, OssProvider};
 use anyhow::{Ok, Result};
 use async_trait::async_trait;
-use aws_sdk_s3::types::ByteStream;
+// use aws_sdk_s3::types::ByteStream;
 use aws_sdk_s3::Client;
+use aws_smithy_types::byte_stream::ByteStream;
 use bytes::Bytes;
 use std::fs::OpenOptions;
 use std::io::{LineWriter, Write};
@@ -43,17 +44,28 @@ impl OSSActions for JRSSClient {
 
         let mut obj_list = None;
 
-        if let Some(l) = list.contents() {
-            let mut vec = vec![];
-            for item in l.iter() {
-                if let Some(str) = item.key() {
-                    vec.push(str.to_string());
-                };
+        // if let Some(l) = list.contents() {
+        //     let mut vec = vec![];
+        //     for item in l.iter() {
+        //         if let Some(str) = item.key() {
+        //             vec.push(str.to_string());
+        //         };
+        //     }
+        //     if vec.len() > 0 {
+        //         obj_list = Some(vec);
+        //     }
+        // };
+
+        let mut vec = vec![];
+        for o in list.contents() {
+            if let Some(s) = o.key() {
+                vec.push(s.to_string());
             }
-            if vec.len() > 0 {
-                obj_list = Some(vec);
-            }
-        };
+        }
+        if vec.len() > 0 {
+            obj_list = Some(vec);
+        }
+
         let mut token = None;
         if let Some(str) = list.next_continuation_token() {
             token = Some(str.to_string());
@@ -102,13 +114,20 @@ impl OSSActions for JRSSClient {
             .append(true)
             .open(file_path.clone())?;
         let mut file = LineWriter::new(file_ref);
-        if let Some(objects) = r.contents() {
-            for item in objects.iter() {
-                let _ = file.write_all(item.key().unwrap().as_bytes());
+        // if let Some(objects) = r.contents() {
+        //     for item in objects.iter() {
+        //         let _ = file.write_all(item.key().unwrap().as_bytes());
+        //         let _ = file.write_all("\n".as_bytes());
+        //     }
+        //     file.flush()?;
+        // }
+        for o in r.contents() {
+            if let Some(s) = o.key() {
+                let _ = file.write_all(s.as_bytes());
                 let _ = file.write_all("\n".as_bytes());
             }
-            file.flush()?;
         }
+        file.flush()?;
 
         return match r.next_continuation_token() {
             Some(str) => Ok(Some(str.to_string())),
