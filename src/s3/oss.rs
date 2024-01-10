@@ -2,7 +2,7 @@ use super::{ali_oss::OssAliClient, aws_s3::OssClient, jd_s3::OssJdClient, jrss::
 use aliyun_oss_client::{BucketName, EndPoint};
 use anyhow::{Ok, Result};
 use async_trait::async_trait;
-use aws_config::SdkConfig;
+use aws_config::{BehaviorVersion, SdkConfig};
 use aws_credential_types::{provider::SharedCredentialsProvider, Credentials};
 // use aws_sdk_s3::Region;
 use aws_sdk_s3::config::Region;
@@ -212,9 +212,13 @@ impl OSSDescription {
                     )))
                     .endpoint_url(self.endpoint.clone())
                     .region(Region::new(self.region.clone()))
+                    .behavior_version(BehaviorVersion::latest())
                     .build();
+
                 let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+
                 let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
+
                 let oss_client = OssClient { client };
                 Ok(oss_client)
             }
@@ -229,6 +233,7 @@ impl OSSDescription {
                     )))
                     .endpoint_url(self.endpoint.clone())
                     .region(Region::new(self.region.clone()))
+                    .behavior_version(BehaviorVersion::latest())
                     .build();
 
                 let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
@@ -248,6 +253,7 @@ impl OSSDescription {
                     )))
                     .endpoint_url(self.endpoint.clone())
                     .region(Region::new(self.region.clone()))
+                    .behavior_version(BehaviorVersion::latest())
                     .build();
 
                 let s3_config_builder =
@@ -268,6 +274,7 @@ impl OSSDescription {
                     )))
                     .endpoint_url(self.endpoint.clone())
                     .region(Region::new(self.region.clone()))
+                    .behavior_version(BehaviorVersion::latest())
                     .build();
                 let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
                 let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
@@ -285,6 +292,7 @@ impl OSSDescription {
                     )))
                     .endpoint_url(self.endpoint.clone())
                     .region(Region::new(self.region.clone()))
+                    .behavior_version(BehaviorVersion::latest())
                     .build();
                 let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
                 let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
@@ -303,6 +311,7 @@ impl OSSDescription {
                     )))
                     .endpoint_url(self.endpoint.clone())
                     .region(Region::new(self.region.clone()))
+                    .behavior_version(BehaviorVersion::latest())
                     .build();
                 let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
                 let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
@@ -321,6 +330,7 @@ impl OSSDescription {
                     )))
                     .endpoint_url(self.endpoint.clone())
                     .region(Region::new(self.region.clone()))
+                    .behavior_version(BehaviorVersion::latest())
                     .build();
                 let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
                 let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
