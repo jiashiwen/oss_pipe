@@ -47,6 +47,7 @@ pub struct AnalyzedResult {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
 pub enum TransferType {
     Full,
     Stock,
@@ -117,8 +118,8 @@ pub struct TransferTaskAttributes {
     pub exclude: Option<Vec<String>>,
     #[serde(default = "TaskDefaultParameters::filter_default")]
     pub include: Option<Vec<String>>,
-    #[serde(default = "TaskDefaultParameters::continuous_default")]
-    pub continuous: bool,
+    // #[serde(default = "TaskDefaultParameters::continuous_default")]
+    // pub continuous: bool,
     #[serde(default = "TaskDefaultParameters::transfer_type_default")]
     pub transfer_type: TransferType,
     #[serde(default = "TaskDefaultParameters::last_modify_filter_default")]
@@ -138,7 +139,7 @@ impl Default for TransferTaskAttributes {
             multi_part_chunk: TaskDefaultParameters::multi_part_chunk_default(),
             exclude: TaskDefaultParameters::filter_default(),
             include: TaskDefaultParameters::filter_default(),
-            continuous: TaskDefaultParameters::continuous_default(),
+            // continuous: TaskDefaultParameters::continuous_default(),
             transfer_type: TaskDefaultParameters::transfer_type_default(),
             last_modify_filter: TaskDefaultParameters::last_modify_filter_default(),
         }
@@ -347,7 +348,7 @@ impl TransferTask {
                         // Todo 重新分析逻辑，需要再checkpoint中记录每次增量执行前的起始时间点
                         // 清理文件重新生成object list 文件需大于指定时间戳,并根据原始object list 删除位于目标端但源端不存在的文件
                         // 流程逻辑
-                        // 扫描target 文件list-> 抓取自扫描🕙开始，源端的变动数据 -> 生成objlist，action 新增target change capture
+                        // 扫描target 文件list-> 抓取自扫描时间开始，源端的变动数据 -> 生成objlist，action 新增target change capture
                         let modified = match task
                             .changed_object_capture_based_target(checkpoint.timestamp)
                             .await
@@ -409,10 +410,12 @@ impl TransferTask {
         };
         rt.block_on(async {
             let mut file_for_notify = None;
-
             // 持续同步逻辑: 执行增量助理
             let task_increment_prelude = self.gen_transfer_actions();
-            if self.attributes.continuous {
+            // if self.attributes.continuous {
+            if self.attributes.transfer_type.is_full()
+                || self.attributes.transfer_type.is_increment()
+            {
                 let assistant = Arc::clone(&increment_assistant);
                 task::spawn(async move {
                     if let Err(e) = task_increment_prelude.increment_prelude(assistant).await {
@@ -506,6 +509,11 @@ impl TransferTask {
                         .await;
                 }
             } else {
+                // 若为只执行增量任务，跳过存量步骤
+                if self.attributes.transfer_type.is_increment() {
+                    return;
+                }
+
                 // 启动checkpoint记录线程
                 let stock_status_saver = TaskStatusSaver {
                     check_point_path: check_point_file.clone(),
@@ -622,7 +630,6 @@ impl TransferTask {
                 file_for_notify: notify,
                 task_stage: TransferStage::Stock,
                 timestamp: 0,
-                // current_stock_object_list_file: executed_file.path.clone(),
             };
             if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
                 log::error!("{}", e);
@@ -633,15 +640,9 @@ impl TransferTask {
             }
         });
 
-        // match self.attributes.transfer_type{
-        //     super::TransferType::Full => todo!(),
-        //     super::TransferType::Stock => todo!(),
-        //     super::TransferType::Increment => todo!(),
-        // }
-
         // 增量逻辑
-        if self.attributes.continuous {
-            // if self.attributes.transfer_type.is_full() || self.attributes.transfer_type.is_increment() {
+        // if self.attributes.continuous {
+        if self.attributes.transfer_type.is_full() || self.attributes.transfer_type.is_increment() {
             rt.block_on(async {
                 let stop_mark = Arc::new(AtomicBool::new(false));
                 let offset_map = Arc::new(DashMap::<String, FilePosition>::new());

@@ -176,6 +176,7 @@ impl TransferTaskActions for TransferOss2Oss {
         object_list_file: &str,
     ) -> Result<FileDescription> {
         let client_source = self.source.gen_oss_client()?;
+
         // 若为持续同步模式，且 last_modify_timestamp 大于 0，则将 last_modify 属性大于last_modify_timestamp变量的对象加入执行列表
         client_source
             .append_object_list_to_file(
