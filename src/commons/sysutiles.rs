@@ -1,4 +1,4 @@
-use sysinfo::{System, SystemExt};
+use sysinfo::System;
 
 #[allow(dead_code)]
 pub fn process_exists(pid: &i32) -> bool {
