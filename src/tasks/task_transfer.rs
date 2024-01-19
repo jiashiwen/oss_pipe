@@ -241,7 +241,8 @@ impl TransferTask {
             }
 
             let header = vec!["size_range", "objects", "percent"];
-            builder.set_header(header);
+            // builder.set_header(header);
+            builder.insert_record(0, header);
 
             let mut table = builder.build();
             table.with(Style::ascii_rounded());

@@ -562,7 +562,8 @@ pub fn show_compare_result(result_file: &str) -> Result<()> {
     }
 
     let header = vec!["source", "target", "diff_type", "diff"];
-    builder.set_header(header);
+    // builder.set_header(header);
+    builder.insert_record(0, header);
 
     let table = builder.build();
     // table.with(Style::ascii_rounded());
