@@ -13,7 +13,7 @@ rustyline = "13.0.0"
 rustyline-derive = "0.10.0"
 shellwords = "1.1.0"
 lazy_static = "1.4.0"
-sysinfo = "0.29.11"
+sysinfo = "0.30.5"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "^1"
 serde_yaml = "0.9.27"
@@ -34,20 +34,25 @@ regex = "1.8.1"
 termtree = "0.4.1"
 indicatif = "0.17.6"
 notify = "6.1.1"
-tabled = "0.14.0"
+tabled = "0.15.0"
 rust_decimal = "1.33"
 rust_decimal_macros = "1.33"
 inotify = "0.10.2"
 once_cell = "1.18.0"
 
 # jd and aws oss
-aws-config = { git = "https://github.com/awslabs/aws-sdk-rust", branch = "main" }
-aws-sdk-s3 = { git = "https://github.com/awslabs/aws-sdk-rust", branch = "main" }
-aws-types = { git = "https://github.com/awslabs/aws-sdk-rust", branch = "main", feature = [
-    "hardcoded-credentials",
-] }
-aws-credential-types = { git = "https://github.com/awslabs/aws-sdk-rust", branch = "main" }
-aws-smithy-types = { git = "https://github.com/awslabs/aws-sdk-rust", branch = "main" }
+aws-config = "1.1.2"
+aws-sdk-s3 = "1.12.0"
+aws-credential-types = "1.1.2"
+aws-smithy-types = "1.1.3"
+aws-types = { version = "1.1.2", feature = ["hardcoded-credentials"] }
+# aws-config = { git = "https://github.com/awslabs/aws-sdk-rust", branch = "main" }
+# aws-sdk-s3 = { git = "https://github.com/awslabs/aws-sdk-rust", branch = "main" }
+# aws-types = { git = "https://github.com/awslabs/aws-sdk-rust", branch = "main", feature = [
+#     "hardcoded-credentials",
+# ] }
+# aws-credential-types = { git = "https://github.com/awslabs/aws-sdk-rust", branch = "main" }
+# aws-smithy-types = { git = "https://github.com/awslabs/aws-sdk-rust", branch = "main" }
 
 # aliyun oss
 aliyun-oss-client = "0.12.9"

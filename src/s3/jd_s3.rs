@@ -101,13 +101,6 @@ impl OSSActions for OssJdClient {
             .append(true)
             .open(file_path.clone())?;
         let mut file = LineWriter::new(file_ref);
-        // if let Some(objects) = r.contents() {
-        //     for item in objects.iter() {
-        //         let _ = file.write_all(item.key().unwrap().as_bytes());
-        //         let _ = file.write_all("\n".as_bytes());
-        //     }
-        //     file.flush()?;
-        // }
         for o in r.contents() {
             if let Some(s) = o.key() {
                 let _ = file.write_all(s.as_bytes());
@@ -272,7 +265,7 @@ impl OSSActions for OssJdClient {
             .client
             .get_object()
             .bucket(bucket)
-            .key(key.clone())
+            .key(key)
             .send()
             .await?;
         let data = resp.body.collect().await?;

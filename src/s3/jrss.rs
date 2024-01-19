@@ -2,7 +2,6 @@ use super::OSSActions;
 use super::{OssObjectsList, OssProvider};
 use anyhow::{Ok, Result};
 use async_trait::async_trait;
-// use aws_sdk_s3::types::ByteStream;
 use aws_sdk_s3::Client;
 use aws_smithy_types::byte_stream::ByteStream;
 use bytes::Bytes;
@@ -43,18 +42,6 @@ impl OSSActions for JRSSClient {
         let list = obj_list.send().await?;
 
         let mut obj_list = None;
-
-        // if let Some(l) = list.contents() {
-        //     let mut vec = vec![];
-        //     for item in l.iter() {
-        //         if let Some(str) = item.key() {
-        //             vec.push(str.to_string());
-        //         };
-        //     }
-        //     if vec.len() > 0 {
-        //         obj_list = Some(vec);
-        //     }
-        // };
 
         let mut vec = vec![];
         for o in list.contents() {
@@ -254,7 +241,7 @@ impl OSSActions for JRSSClient {
             .client
             .get_object()
             .bucket(bucket)
-            .key(key.clone())
+            .key(key)
             .send()
             .await?;
         let data = resp.body.collect().await?;

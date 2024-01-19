@@ -10,15 +10,13 @@ mod size_distributed;
 mod subcmdcompleter;
 mod sysutiles;
 pub mod yamlutile;
-
-pub use calculate_etag::*;
 pub use convert::*;
 pub use fileutiles::*;
 pub use filters::*;
 pub use json_utile::*;
 pub use notify_utile::*;
 pub use processbar::*;
-pub use rand_util::*;
+// pub use rand_util::*;
 pub use size_distributed::*;
 pub use subcmdcompleter::CommandCompleter;
 pub use subcmdcompleter::SubCmd;

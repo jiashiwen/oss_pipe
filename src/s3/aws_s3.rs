@@ -926,38 +926,3 @@ pub async fn download_object(
     file.flush()?;
     Ok(())
 }
-
-#[cfg(test)]
-mod test {
-    use aws_sdk_s3::primitives::ByteStream;
-
-    use crate::{commons::rand_string, s3::OSSDescription};
-
-    //cargo test s3::aws_s3::test::test_vec_to_byte_stream -- --nocapture
-    #[test]
-    fn test_vec_to_byte_stream() {
-        // 获取oss连接参数
-        let vec_oss = crate::commons::read_yaml_file::<Vec<OSSDescription>>("osscfg.yml").unwrap();
-        let oss_desc = vec_oss[0].clone();
-        let jd_client = oss_desc.gen_oss_client().unwrap();
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let mut vec_line = vec![];
-
-        for _ in 0..99 {
-            let mut s = rand_string(8);
-            s.push('\n');
-            vec_line.push(s.into_bytes());
-        }
-
-        let vec_u8 = vec_line.into_iter().flatten().collect::<Vec<u8>>();
-
-        // file.flush().unwrap();
-        let stream = ByteStream::from(vec_u8);
-
-        rt.block_on(async {
-            let _ = jd_client
-                .upload_object_bytes("jsw-bucket-1", "line_file", None, stream)
-                .await;
-        });
-    }
-}
