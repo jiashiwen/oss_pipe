@@ -95,6 +95,10 @@ path = "examples/result_deal.rs"
 name = "minio"
 path = "examples/minio.rs"
 
+[[example]]
+name = "qiniu"
+path = "examples/qiniu.rs"
+
 [profile.release]
 lto = true
 opt-level = 'z'
