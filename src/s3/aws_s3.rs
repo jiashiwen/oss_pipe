@@ -5,7 +5,10 @@ use crate::{
 };
 use anyhow::{anyhow, Result};
 use aws_sdk_s3::operation::create_multipart_upload::CreateMultipartUploadOutput;
-use aws_sdk_s3::operation::get_object::GetObjectOutput;
+use aws_sdk_s3::operation::{
+    abort_multipart_upload::AbortMultipartUploadOutput, get_object::GetObjectOutput,
+    list_multipart_uploads::ListMultipartUploadsOutput,
+};
 use aws_sdk_s3::types::CompletedMultipartUpload;
 use aws_sdk_s3::types::CompletedPart;
 use aws_sdk_s3::types::Delete;
@@ -495,6 +498,38 @@ impl OssClient {
             .send()
             .await?;
         Ok(())
+    }
+
+    pub async fn list_multi_parts_upload(
+        &self,
+        bucket: &str,
+    ) -> Result<ListMultipartUploadsOutput> {
+        let list_upload = self
+            .client
+            .list_multipart_uploads()
+            .bucket(bucket)
+            .send()
+            .await?;
+
+        Ok(list_upload)
+    }
+
+    pub async fn abort_multi_part_upload(
+        &self,
+        bucket: &str,
+        key: &str,
+        upload_id: &str,
+    ) -> Result<AbortMultipartUploadOutput> {
+        let abort_upload = self
+            .client
+            .abort_multipart_upload()
+            .bucket(bucket)
+            .key("multi_upload")
+            .upload_id("A710EC89FE35FA52")
+            .send()
+            .await?;
+
+        Ok(abort_upload)
     }
 
     pub async fn object_exists(
