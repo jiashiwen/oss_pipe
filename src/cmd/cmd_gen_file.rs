@@ -7,7 +7,7 @@ pub fn new_gen_file_cmd() -> Command {
             .value_name("file_size")
             .required(true)
             .index(1)
-            .help("specific generated file size")])
+            .help("specific generated file size,example 100K,1M,2G")])
         .args(&[Arg::new("batch")
             .value_name("batch")
             .required(true)
