@@ -101,3 +101,67 @@ payload_override: aws_sigv4::http_request::SignableBody::UnsignedPayload,
 
 
 Added set_payload_override to UploadPartInputBuilder, PutObject, and GetObjectInputBuilder to prevent frequent calls to sigv4 when using aws_sigv4::http_request::SignableBody to change object transfers, causing high CPU usage.
+
+impl UploadPartFluentBuilder {
+    pub async fn send(
+        self,
+    ) -> ::std::result::Result<
+        crate::operation::upload_part::UploadPartOutput,
+        ::aws_smithy_runtime_api::client::result::SdkError<
+            crate::operation::upload_part::UploadPartError,
+            ::aws_smithy_runtime_api::client::orchestrator::HttpResponse,
+        >,
+    > {
+        let input = self
+            .inner
+            .build()
+            .map_err(::aws_smithy_runtime_api::client::result::SdkError::construction_failure)?;
+        let runtime_plugins = crate::operation::upload_part::UploadPart::operation_runtime_plugins(
+            // self.handle.runtime_plugins.clone(),
+            self.handle.runtime_plugins.clone().with_client_plugin(
+                crate::presigning_interceptors::SigV4PresigningRuntimePlugin::new(
+                    crate::presigning::PresigningConfig::expires_in(
+                        std::time::Duration::from_secs(3000),
+                    )
+                    .unwrap(),
+                    ::aws_sigv4::http_request::SignableBody::UnsignedPayload,
+                ),
+            ),
+            &self.handle.conf,
+            self.config_override,
+        );
+        crate::operation::upload_part::UploadPart::orchestrate(&runtime_plugins, input).await
+    }
+
+    pub async fn send_with_plugins(
+        self,
+        presigning_config: PresigningConfig,
+    ) -> ::std::result::Result<
+        crate::operation::upload_part::UploadPartOutput,
+        result::SdkError<
+            crate::operation::upload_part::UploadPartError,
+            ::aws_smithy_runtime_api::client::orchestrator::HttpResponse,
+        >,
+    > {
+        let input = self
+            .inner
+            .build()
+            .map_err(result::SdkError::construction_failure)?;
+
+        let plugin = crate::presigning_interceptors::SigV4PresigningRuntimePlugin::new(
+            presigning_config,
+            ::aws_sigv4::http_request::SignableBody::UnsignedPayload,
+        );
+        let runtime_plugins = crate::operation::upload_part::UploadPart::operation_runtime_plugins(
+            // self.handle.runtime_plugins.clone(),
+            self.handle
+                .runtime_plugins
+                .clone()
+                .with_client_plugin(plugin),
+            &self.handle.conf,
+            self.config_override,
+        );
+        crate::operation::upload_part::UploadPart::orchestrate(&runtime_plugins, input).await
+    }
+
+}
