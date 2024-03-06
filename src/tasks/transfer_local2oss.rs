@@ -737,7 +737,7 @@ impl Local2OssExecuter {
         }
 
         target_oss
-            .upload(
+            .upload_local_file(
                 self.target.bucket.as_str(),
                 target_key,
                 source_file,
@@ -810,7 +810,7 @@ impl Local2OssExecuter {
                         continue;
                     }
 
-                    c_t.upload(
+                    c_t.upload_local_file(
                         self.target.bucket.as_str(),
                         &record.target_key,
                         &record.source_key,

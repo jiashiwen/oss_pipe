@@ -6,7 +6,8 @@ use crate::{
 use anyhow::{anyhow, Result};
 use aws_sdk_s3::operation::create_multipart_upload::CreateMultipartUploadOutput;
 use aws_sdk_s3::operation::{
-    abort_multipart_upload::AbortMultipartUploadOutput, get_object::GetObjectOutput,
+    abort_multipart_upload::AbortMultipartUploadOutput,
+    complete_multipart_upload::CompleteMultipartUploadOutput, get_object::GetObjectOutput,
     list_multipart_uploads::ListMultipartUploadsOutput,
 };
 use aws_sdk_s3::types::CompletedMultipartUpload;
@@ -288,28 +289,9 @@ impl OssClient {
         // 计算上传分片
         let mut content_len = body_len;
         let mut byte_stream_async_reader = body.into_async_read();
-        let mut upload_parts: Vec<CompletedPart> = Vec::new();
+        let mut completed_parts: Vec<CompletedPart> = Vec::new();
 
-        //获取上传id
-        let multipart_upload_res = match expires {
-            Some(datatime) => {
-                self.client
-                    .create_multipart_upload()
-                    .bucket(bucket)
-                    .key(key)
-                    .expires(datatime)
-                    .send()
-                    .await
-            }
-            None => {
-                self.client
-                    .create_multipart_upload()
-                    .bucket(bucket)
-                    .key(key)
-                    .send()
-                    .await
-            }
-        }?;
+        let multipart_upload_res = self.create_multipart_upload(bucket, key, expires).await?;
 
         let upload_id = match multipart_upload_res.upload_id() {
             Some(id) => id,
@@ -318,7 +300,7 @@ impl OssClient {
             }
         };
 
-        let mut part_num = 0;
+        let mut part_number = 0;
         loop {
             let buffer = match content_len >= chunk_size {
                 true => {
@@ -334,48 +316,26 @@ impl OssClient {
                 }
             };
             let buf_len = buffer.len();
-            let upload_part_res = self
-                .client
-                .upload_part()
-                .key(key)
-                .bucket(bucket)
-                .upload_id(upload_id)
-                .body(ByteStream::from(buffer))
-                .part_number(part_num)
-                .send()
+            let stream = ByteStream::from(buffer);
+            part_number += 1;
+
+            let completed_part = self
+                .upload_part(upload_id, part_number, bucket, key, stream)
                 .await?;
-            let completer_part = CompletedPart::builder()
-                .e_tag(upload_part_res.e_tag.unwrap_or_default())
-                .part_number(part_num)
-                .build();
-            upload_parts.push(completer_part);
-            part_num += 1;
+            completed_parts.push(completed_part);
 
             if content_len == 0 || buf_len < chunk_size {
                 break;
             }
         }
 
-        // 完成上传文件合并
-        let completed_multipart_upload: CompletedMultipartUpload =
-            CompletedMultipartUpload::builder()
-                .set_parts(Some(upload_parts))
-                .build();
-
-        let _complete_multipart_upload_res = self
-            .client
-            .complete_multipart_upload()
-            .bucket(bucket)
-            .key(key)
-            .multipart_upload(completed_multipart_upload)
-            .upload_id(upload_id)
-            .send()
+        let _ = self
+            .complete_multipart_upload(bucket, key, upload_id, completed_parts)
             .await?;
-
         Ok(())
     }
 
-    pub async fn upload(
+    pub async fn upload_local_file(
         &self,
         bucket: &str,
         key: &str,
@@ -430,16 +390,9 @@ impl OssClient {
         chuck_size: usize,
     ) -> Result<()> {
         let mut part_number = 0;
-        let mut upload_parts: Vec<CompletedPart> = Vec::new();
-
-        //获取上传id
-        let multipart_upload_res: CreateMultipartUploadOutput = self
-            .client
-            .create_multipart_upload()
-            .bucket(bucket)
-            .key(key)
-            .send()
-            .await?;
+        let mut completed_parts: Vec<CompletedPart> = Vec::new();
+        let multipart_upload_res: CreateMultipartUploadOutput =
+            self.create_multipart_upload(bucket, key, None).await?;
         let upload_id = match multipart_upload_res.upload_id() {
             Some(id) => id,
             None => {
@@ -460,35 +413,91 @@ impl OssClient {
             let body = &buf[..read_count];
             let stream = ByteStream::from(body.to_vec());
 
-            let upload_part_res = self
-                .client
-                .upload_part()
-                .key(key)
-                .bucket(bucket)
-                .upload_id(upload_id)
-                .body(stream)
-                .part_number(part_number)
-                .send()
+            let completed_part = self
+                .upload_part(upload_id, part_number, bucket, key, stream)
                 .await?;
-
-            let completed_part = CompletedPart::builder()
-                .e_tag(upload_part_res.e_tag.unwrap_or_default())
-                .part_number(part_number)
-                .build();
-
-            upload_parts.push(completed_part);
+            completed_parts.push(completed_part);
 
             if read_count != chuck_size {
                 break;
             }
         }
         // 完成上传文件合并
+        self.complete_multipart_upload(bucket, key, upload_id, completed_parts)
+            .await?;
+        Ok(())
+    }
+
+    #[inline]
+    pub async fn create_multipart_upload(
+        &self,
+        bucket: &str,
+        key: &str,
+        expires: Option<aws_smithy_types::DateTime>,
+    ) -> Result<CreateMultipartUploadOutput> {
+        let multipart_upload_res = match expires {
+            Some(datatime) => {
+                self.client
+                    .create_multipart_upload()
+                    .bucket(bucket)
+                    .key(key)
+                    .expires(datatime)
+                    .send()
+                    .await
+            }
+            None => {
+                self.client
+                    .create_multipart_upload()
+                    .bucket(bucket)
+                    .key(key)
+                    .send()
+                    .await
+            }
+        }?;
+        Ok(multipart_upload_res)
+    }
+
+    #[inline]
+    pub async fn upload_part(
+        &self,
+        upload_id: &str,
+        part_number: i32,
+        bucket: &str,
+        key: &str,
+        stream: ByteStream,
+    ) -> Result<CompletedPart> {
+        let upload_part_res = self
+            .client
+            .upload_part()
+            .upload_id(upload_id)
+            .part_number(part_number)
+            .bucket(bucket)
+            .key(key)
+            .body(stream)
+            .send()
+            .await?;
+
+        let completed_part = CompletedPart::builder()
+            .e_tag(upload_part_res.e_tag.unwrap_or_default())
+            .part_number(part_number)
+            .build();
+        Ok(completed_part)
+    }
+
+    #[inline]
+    pub async fn complete_multipart_upload(
+        &self,
+        bucket: &str,
+        key: &str,
+        upload_id: &str,
+        completed_parts: Vec<CompletedPart>,
+    ) -> Result<CompleteMultipartUploadOutput> {
         let completed_multipart_upload: CompletedMultipartUpload =
             CompletedMultipartUpload::builder()
-                .set_parts(Some(upload_parts))
+                .set_parts(Some(completed_parts))
                 .build();
 
-        let _complete_multipart_upload_res = self
+        let complete_multi_part_upload_output = self
             .client
             .complete_multipart_upload()
             .bucket(bucket)
@@ -497,9 +506,10 @@ impl OssClient {
             .upload_id(upload_id)
             .send()
             .await?;
-        Ok(())
+        Ok(complete_multi_part_upload_output)
     }
 
+    #[inline]
     pub async fn list_multi_parts_upload(
         &self,
         bucket: &str,
@@ -514,6 +524,7 @@ impl OssClient {
         Ok(list_upload)
     }
 
+    #[inline]
     pub async fn abort_multi_part_upload(
         &self,
         bucket: &str,
@@ -524,8 +535,8 @@ impl OssClient {
             .client
             .abort_multipart_upload()
             .bucket(bucket)
-            .key("multi_upload")
-            .upload_id("A710EC89FE35FA52")
+            .key(key)
+            .upload_id(upload_id)
             .send()
             .await?;
 
