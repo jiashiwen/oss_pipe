@@ -106,6 +106,7 @@ impl TransferTaskActions for TransferLocal2Local {
     async fn listed_records_transfor(
         &self,
         joinset: &mut JoinSet<()>,
+        // joinset: Arc<Mutex<&mut JoinSet<()>>>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,

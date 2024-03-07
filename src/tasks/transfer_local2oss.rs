@@ -126,6 +126,7 @@ impl TransferTaskActions for TransferLocal2Oss {
     async fn listed_records_transfor(
         &self,
         joinset: &mut JoinSet<()>,
+        // joinset: Arc<Mutex<&mut JoinSet<()>>>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
@@ -140,6 +141,9 @@ impl TransferTaskActions for TransferLocal2Oss {
             attributes: self.attributes.clone(),
             list_file_path: list_file,
         };
+        // let js = Arc::clone(joinset);
+        // let mutex = Mutex::new(joinset);
+        // let js = Arc::new(mutex);
 
         joinset.spawn(async move {
             if let Err(e) = local2oss.exec_listed_records(records).await {
@@ -638,7 +642,12 @@ pub struct Local2OssExecuter {
 }
 
 impl Local2OssExecuter {
-    pub async fn exec_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
+    pub async fn exec_listed_records(
+        &self,
+        records: Vec<ListedRecord>,
+        // joinset: &mut JoinSet<()>,
+        // joinset: Arc<Mutex<&mut JoinSet<()>>>,
+    ) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
@@ -659,6 +668,10 @@ impl Local2OssExecuter {
 
         let target_oss_client = self.target.gen_oss_client()?;
 
+        let joinset = &mut JoinSet::new();
+        let mutex = Mutex::new(joinset);
+        let arc_joinset = Arc::new(mutex);
+
         for record in records {
             // 文件位置提前记录，避免漏记
             self.offset_map.insert(
@@ -675,8 +688,9 @@ impl Local2OssExecuter {
             };
             target_key.push_str(&record.key);
 
+            let js = Arc::clone(&arc_joinset);
             if let Err(e) = self
-                .listed_record_handler(&source_file_path, &target_oss_client, &target_key)
+                .listed_record_handler(js, &source_file_path, &target_oss_client, &target_key)
                 .await
             {
                 let record_desc = RecordDescription {
@@ -715,6 +729,7 @@ impl Local2OssExecuter {
 
     async fn listed_record_handler(
         &self,
+        joinset: Arc<Mutex<&mut JoinSet<()>>>,
         source_file: &str,
         target_oss: &OssClient,
         target_key: &str,
@@ -746,10 +761,13 @@ impl Local2OssExecuter {
         //     )
         //     .await
 
-        let mut execut_set = JoinSet::new();
+        // let mut execut_set = JoinSet::new();
+        // let joinset = Arc::new(Mutex::new(&mut execut_set));
+        let joinset = Arc::clone(&joinset);
         target_oss
             .upload_local_file_paralle(
-                &mut execut_set,
+                // &mut execut_set,
+                joinset,
                 self.attributes.task_parallelism,
                 self.target.bucket.as_str(),
                 target_key,
