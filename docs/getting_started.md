@@ -11,11 +11,11 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 * 构建
 
 ```shell
-apt update
-apt install openssl
-apt install libssl1.1
-apt install libssl-dev
-apt install -y pkg-config
+apt update \
+&& apt install openssl -y \
+&& apt install libssl1.1 \
+&& apt install libssl-dev \
+&& apt install -y pkg-config
 ```
 
 ```shell

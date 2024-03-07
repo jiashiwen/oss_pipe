@@ -1,6 +1,6 @@
 [package]
 name = "oss_pipe"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -46,6 +46,16 @@ aws-sdk-s3 = "1.17.0"
 aws-credential-types = "1.1.2"
 aws-smithy-types = "1.1.3"
 aws-types = { version = "1.1.2", feature = ["hardcoded-credentials"] }
+
+# aws-config = { path = "/root/rustprojects/aws-sdk-rust/sdk/aws-config", features = [
+#     "behavior-version-latest",
+# ] }
+# aws-sdk-s3 = { path = "/root/rustprojects/aws-sdk-rust/sdk/s3" }
+# aws-credential-types = { path = "/root/rustprojects/aws-sdk-rust/sdk/aws-credential-types" }
+# aws-smithy-types = { path = "/root/rustprojects/aws-sdk-rust/sdk/aws-smithy-types" }
+# aws-types = { path = "/root/rustprojects/aws-sdk-rust/sdk/aws-types", feature = [
+#     "hardcoded-credentials",
+# ] }
 
 # aliyun oss
 aliyun-oss-client = "0.12.9"
