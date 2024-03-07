@@ -736,8 +736,21 @@ impl Local2OssExecuter {
             }
         }
 
+        // target_oss
+        //     .upload_local_file(
+        //         self.target.bucket.as_str(),
+        //         target_key,
+        //         source_file,
+        //         self.attributes.large_file_size,
+        //         self.attributes.multi_part_chunk,
+        //     )
+        //     .await
+
+        let mut execut_set = JoinSet::new();
         target_oss
-            .upload_local_file(
+            .upload_local_file_paralle(
+                &mut execut_set,
+                self.attributes.task_parallelism,
                 self.target.bucket.as_str(),
                 target_key,
                 source_file,
