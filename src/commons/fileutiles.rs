@@ -10,6 +10,12 @@ use std::{
 };
 use walkdir::WalkDir;
 
+#[derive(Debug, Clone)]
+pub struct FilePart {
+    pub part_num: i32,
+    pub offset: u64,
+}
+
 pub fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
 where
     P: AsRef<Path>,
@@ -323,6 +329,29 @@ pub fn generate_files(
         let _ = file.flush();
     }
     Ok(())
+}
+
+pub fn gen_multi_part_plan(file_path: &str, chunk_size: usize) -> Result<Vec<FilePart>> {
+    let mut vec_file_parts: Vec<FilePart> = vec![];
+    let f = File::open(file_path)?;
+    let meta = f.metadata()?;
+    let file_len = meta.len();
+    let chunk_size_u64 = TryInto::<u64>::try_into(chunk_size)?;
+    let mut offset = 0;
+    let quotient = file_len / chunk_size_u64;
+    let remainder = file_len % chunk_size_u64;
+    let part_quantities = match remainder.eq(&0) {
+        true => quotient,
+        false => quotient + 1,
+    };
+    for part_num_u64 in 1..=part_quantities {
+        let part_num = TryInto::<i32>::try_into(part_num_u64)?;
+        let file_part = FilePart { part_num, offset };
+        vec_file_parts.push(file_part);
+        offset += chunk_size_u64;
+    }
+
+    Ok(vec_file_parts)
 }
 
 #[cfg(test)]
