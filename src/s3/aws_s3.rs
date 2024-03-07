@@ -6,18 +6,23 @@ use crate::{
     tasks::{gen_file_path, MODIFIED_PREFIX, REMOVED_PREFIX, TRANSFER_OBJECT_LIST_FILE_PREFIX},
 };
 use anyhow::{anyhow, Result};
-use aws_sdk_s3::operation::create_multipart_upload::CreateMultipartUploadOutput;
-use aws_sdk_s3::operation::{
-    abort_multipart_upload::AbortMultipartUploadOutput,
-    complete_multipart_upload::CompleteMultipartUploadOutput, get_object::GetObjectOutput,
-    list_multipart_uploads::ListMultipartUploadsOutput,
-};
 use aws_sdk_s3::types::CompletedMultipartUpload;
 use aws_sdk_s3::types::CompletedPart;
 use aws_sdk_s3::types::Delete;
 use aws_sdk_s3::types::Object;
 use aws_sdk_s3::types::ObjectIdentifier;
 use aws_sdk_s3::Client;
+use aws_sdk_s3::{
+    operation::create_multipart_upload::CreateMultipartUploadOutput, presigning::PresigningConfig,
+};
+use aws_sdk_s3::{
+    operation::{
+        abort_multipart_upload::AbortMultipartUploadOutput,
+        complete_multipart_upload::CompleteMultipartUploadOutput, get_object::GetObjectOutput,
+        list_multipart_uploads::ListMultipartUploadsOutput,
+    },
+    presigning,
+};
 use aws_smithy_types::{body::SdkBody, byte_stream::ByteStream};
 use dashmap::DashMap;
 use std::{
@@ -372,7 +377,8 @@ impl OssClient {
     // 替换upload_local_file
     pub async fn upload_local_file_paralle(
         &self,
-        joinset: &mut JoinSet<()>,
+        // joinset: &mut JoinSet<()>,
+        joinset: Arc<Mutex<&mut JoinSet<()>>>,
         max_parallelism: usize,
         bucket: &str,
         key: &str,
@@ -380,7 +386,7 @@ impl OssClient {
         file_max_size: usize,
         chuck_size: usize,
     ) -> Result<()> {
-        let mut file = File::open(local_file)?;
+        let file = File::open(local_file)?;
         let file_meta = file.metadata()?;
         let file_max_size_u64 = TryInto::<u64>::try_into(file_max_size)?;
         if file_meta.len().le(&file_max_size_u64) {
@@ -474,7 +480,7 @@ impl OssClient {
 
     pub async fn multipart_upload_local_file_multi_task(
         &self,
-        joinset: &mut JoinSet<()>,
+        joinset: Arc<Mutex<&mut JoinSet<()>>>,
         max_parallelism: usize,
         bucket: &str,
         key: &str,
@@ -511,10 +517,10 @@ impl OssClient {
                 let f = file_path.to_string();
                 let e_m: Arc<AtomicBool> = Arc::clone(&err_mark);
                 let l_p = Arc::clone(&left_parts);
-                while joinset.len() >= max_parallelism {
-                    joinset.join_next().await;
+                while joinset.lock().await.len() >= max_parallelism {
+                    joinset.lock().await.join_next().await;
                 }
-                joinset.spawn(async move {
+                joinset.lock().await.spawn(async move {
                     if e_m.load(std::sync::atomic::Ordering::SeqCst) {
                         return;
                     }
@@ -540,10 +546,10 @@ impl OssClient {
             let f = file_path.to_string();
             let e_m: Arc<AtomicBool> = Arc::clone(&err_mark);
             let l_p = Arc::clone(&left_parts);
-            while joinset.len() >= max_parallelism {
-                joinset.join_next().await;
+            while joinset.lock().await.len() >= max_parallelism {
+                joinset.lock().await.join_next().await;
             }
-            joinset.spawn(async move {
+            joinset.lock().await.spawn(async move {
                 if e_m.load(std::sync::atomic::Ordering::SeqCst) {
                     return;
                 }
@@ -560,7 +566,7 @@ impl OssClient {
         while !err_mark.load(std::sync::atomic::Ordering::SeqCst)
             && !left_parts.load(std::sync::atomic::Ordering::SeqCst).eq(&0)
         {
-            joinset.join_next().await;
+            joinset.lock().await.join_next().await;
         }
 
         if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
@@ -568,7 +574,7 @@ impl OssClient {
         }
 
         if !left_parts.load(std::sync::atomic::Ordering::SeqCst).eq(&0) {
-            joinset.join_next().await;
+            joinset.lock().await.join_next().await;
         }
 
         let completed_parts = b_tree_mutex.lock().await.clone().into_values().collect();
@@ -1102,6 +1108,7 @@ pub async fn upload_parts(
         let body = &buf[..read_count];
 
         let stream = ByteStream::new(SdkBody::from(body));
+        let presigning = PresigningConfig::expires_in(std::time::Duration::from_secs(3000))?;
 
         let upload_part_res = client
             .upload_part()
@@ -1110,7 +1117,8 @@ pub async fn upload_parts(
             .upload_id(upload_id)
             .body(stream)
             .part_number(p.part_num)
-            .send()
+            // .send()
+            .send_with_plugins(presigning)
             .await?;
 
         let completed_part = CompletedPart::builder()

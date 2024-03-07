@@ -2,6 +2,7 @@
 .history
 /logs/*
 /task_example_yml   
+/task_yml
 /examples
 osscfg_default.yml
 osscfg.yml
