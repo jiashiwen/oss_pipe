@@ -120,7 +120,7 @@ impl TransferTaskActions for TransferOss2Oss {
     // 记录执行器
     async fn listed_records_transfor(
         &self,
-        joinset: &mut JoinSet<()>,
+        execute_set: &mut JoinSet<()>,
         // joinset: Arc<Mutex<&mut JoinSet<()>>>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
@@ -137,7 +137,7 @@ impl TransferTaskActions for TransferOss2Oss {
             list_file_path: list_file,
         };
 
-        joinset.spawn(async move {
+        execute_set.spawn(async move {
             if let Err(e) = transfer.exec_listed_records(records).await {
                 stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{}", e);

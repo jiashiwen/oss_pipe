@@ -622,6 +622,7 @@ impl OssClient {
         key: &str,
         stream: ByteStream,
     ) -> Result<CompletedPart> {
+        let presigning = PresigningConfig::expires_in(std::time::Duration::from_secs(3000))?;
         let upload_part_res = self
             .client
             .upload_part()
@@ -630,7 +631,8 @@ impl OssClient {
             .bucket(bucket)
             .key(key)
             .body(stream)
-            .send()
+            .send_with_plugins(presigning)
+            // .send()
             .await?;
 
         let completed_part = CompletedPart::builder()

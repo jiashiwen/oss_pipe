@@ -105,7 +105,7 @@ impl TransferTaskActions for TransferLocal2Local {
 
     async fn listed_records_transfor(
         &self,
-        joinset: &mut JoinSet<()>,
+        execute_set: &mut JoinSet<()>,
         // joinset: Arc<Mutex<&mut JoinSet<()>>>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
@@ -122,7 +122,7 @@ impl TransferTaskActions for TransferLocal2Local {
             list_file_path: list_file,
         };
 
-        joinset.spawn(async move {
+        execute_set.spawn(async move {
             if let Err(e) = local2local.exec_listed_records(records).await {
                 stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{}", e);
