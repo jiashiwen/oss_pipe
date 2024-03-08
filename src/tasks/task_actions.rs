@@ -25,7 +25,7 @@ pub trait TransferTaskActions {
     async fn listed_records_transfor(
         &self,
         execute_set: &mut JoinSet<()>,
-        // execute_set: Arc<Mutex<&mut JoinSet<()>>>,
+        // joinset: Arc<Mutex<&mut JoinSet<()>>>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,

@@ -125,7 +125,7 @@ impl TransferTaskActions for TransferLocal2Oss {
     // 记录执行器
     async fn listed_records_transfor(
         &self,
-        joinset: &mut JoinSet<()>,
+        execute_set: &mut JoinSet<()>,
         // joinset: Arc<Mutex<&mut JoinSet<()>>>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
@@ -145,7 +145,8 @@ impl TransferTaskActions for TransferLocal2Oss {
         // let mutex = Mutex::new(joinset);
         // let js = Arc::new(mutex);
 
-        joinset.spawn(async move {
+        execute_set.spawn(async move {
+            // js.lock().await.len();
             if let Err(e) = local2oss.exec_listed_records(records).await {
                 stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{}", e);
@@ -761,8 +762,6 @@ impl Local2OssExecuter {
         //     )
         //     .await
 
-        // let mut execut_set = JoinSet::new();
-        // let joinset = Arc::new(Mutex::new(&mut execut_set));
         let joinset = Arc::clone(&joinset);
         target_oss
             .upload_local_file_paralle(
