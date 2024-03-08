@@ -122,6 +122,7 @@ impl TransferTaskActions for TransferOss2Oss {
         &self,
         execute_set: &mut JoinSet<()>,
         // joinset: Arc<Mutex<&mut JoinSet<()>>>,
+        exec_multi_uploads: Arc<AtomicUsize>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,

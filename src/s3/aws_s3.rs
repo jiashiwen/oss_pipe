@@ -374,10 +374,9 @@ impl OssClient {
     }
 
     // Todo
-    // 替换upload_local_file
+    // 通过upload_parts_quantities: Arc::<AtomicUsize> 控制并发数量
     pub async fn upload_local_file_paralle(
         &self,
-        // joinset: &mut JoinSet<()>,
         joinset: Arc<Mutex<&mut JoinSet<()>>>,
         max_parallelism: usize,
         bucket: &str,
@@ -478,6 +477,8 @@ impl OssClient {
         Ok(())
     }
 
+    //ToDo
+    // 假如原子计数器，函数开始+1，结束或报错-1
     pub async fn multipart_upload_local_file_multi_task(
         &self,
         joinset: Arc<Mutex<&mut JoinSet<()>>>,
@@ -521,6 +522,8 @@ impl OssClient {
                     joinset.lock().await.join_next().await;
                 }
                 joinset.lock().await.spawn(async move {
+                    //ToDo
+                    // 假如原子计数器，函数开始+1，结束或报错-1
                     if e_m.load(std::sync::atomic::Ordering::SeqCst) {
                         return;
                     }
@@ -550,6 +553,8 @@ impl OssClient {
                 joinset.lock().await.join_next().await;
             }
             joinset.lock().await.spawn(async move {
+                //ToDo
+                // 假如原子计数器，函数开始+1，结束或报错-1
                 if e_m.load(std::sync::atomic::Ordering::SeqCst) {
                     return;
                 }
