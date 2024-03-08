@@ -404,6 +404,8 @@ impl TransferTask {
         let mut sys_set = JoinSet::new();
         // execut_set 用于执行任务
         let mut execut_set = JoinSet::new();
+        let mut execute_set: JoinSet<()> = JoinSet::new();
+        let arc_exec_set = Arc::new(Mutex::new(&mut execute_set));
 
         let object_list_file = match list_file {
             Some(f) => f,
@@ -575,10 +577,18 @@ impl TransferTask {
                         while execut_set.len() >= self.attributes.task_parallelism {
                             execut_set.join_next().await;
                         }
+
+                        while arc_exec_set.lock().await.len() >= self.attributes.task_parallelism {
+                            arc_exec_set.lock().await.join_next().await;
+                        }
+
                         let vk = vec_keys.clone();
+                        let arc_joinset = Arc::clone(&arc_exec_set);
                         task_stock
                             .listed_records_transfor(
                                 &mut execut_set,
+                                // arc_joinset,
+                                Arc::new(AtomicUsize::new(0)),
                                 vk,
                                 Arc::clone(&snapshot_stop_mark),
                                 Arc::clone(&err_counter),
@@ -601,10 +611,17 @@ impl TransferTask {
                         execut_set.join_next().await;
                     }
 
+                    while arc_exec_set.lock().await.len() >= self.attributes.task_parallelism {
+                        arc_exec_set.lock().await.join_next().await;
+                    }
+
                     let vk = vec_keys.clone();
+                    let arc_joinset = Arc::clone(&arc_exec_set);
                     task_stock
                         .listed_records_transfor(
                             &mut execut_set,
+                            // arc_joinset,
+                            Arc::new(AtomicUsize::new(0)),
                             vk,
                             Arc::clone(&snapshot_stop_mark),
                             Arc::clone(&err_counter),

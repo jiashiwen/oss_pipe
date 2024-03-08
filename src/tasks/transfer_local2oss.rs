@@ -127,6 +127,7 @@ impl TransferTaskActions for TransferLocal2Oss {
         &self,
         execute_set: &mut JoinSet<()>,
         // joinset: Arc<Mutex<&mut JoinSet<()>>>,
+        exec_multi_uploads: Arc<AtomicUsize>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
@@ -141,13 +142,15 @@ impl TransferTaskActions for TransferLocal2Oss {
             attributes: self.attributes.clone(),
             list_file_path: list_file,
         };
-        // let js = Arc::clone(joinset);
+        // let js = Arc::clone(&joinset);
         // let mutex = Mutex::new(joinset);
         // let js = Arc::new(mutex);
 
         execute_set.spawn(async move {
-            // js.lock().await.len();
-            if let Err(e) = local2oss.exec_listed_records(records).await {
+            if let Err(e) = local2oss
+                .exec_listed_records(records, exec_multi_uploads)
+                .await
+            {
                 stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{}", e);
             };
@@ -646,8 +649,7 @@ impl Local2OssExecuter {
     pub async fn exec_listed_records(
         &self,
         records: Vec<ListedRecord>,
-        // joinset: &mut JoinSet<()>,
-        // joinset: Arc<Mutex<&mut JoinSet<()>>>,
+        upload_parts_quantities: Arc<AtomicUsize>,
     ) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
@@ -763,6 +765,7 @@ impl Local2OssExecuter {
         //     .await
 
         let joinset = Arc::clone(&joinset);
+
         target_oss
             .upload_local_file_paralle(
                 // &mut execut_set,
