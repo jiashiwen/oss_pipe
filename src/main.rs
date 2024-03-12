@@ -12,6 +12,7 @@ mod tasks;
 
 fn main() {
     // env_logger::init();
+    console_subscriber::init();
     init_log();
     cmd::run_app();
 }

@@ -26,14 +26,13 @@ use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
 use std::io::{BufRead, Seek, SeekFrom};
+use std::sync::Arc;
+use std::time::Duration;
 use std::{
     fs::{self, File, OpenOptions},
     io::{BufReader, Write},
     path::Path,
-    sync::{
-        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
-        Arc,
-    },
+    sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::task::JoinSet;
@@ -126,14 +125,19 @@ impl TransferTaskActions for TransferLocal2Oss {
     async fn listed_records_transfor(
         &self,
         execute_set: &mut JoinSet<()>,
-        // joinset: Arc<Mutex<&mut JoinSet<()>>>,
-        exec_multi_uploads: Arc<AtomicUsize>,
+        executing_transfers: Arc<AtomicUsize>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<std::string::String, FilePosition>>,
         list_file: String,
     ) {
+        while executing_transfers.load(std::sync::atomic::Ordering::SeqCst)
+            >= self.attributes.task_parallelism
+        {
+            task::yield_now().await;
+        }
+
         let local2oss = Local2OssExecuter {
             source: self.source.clone(),
             target: self.target.clone(),
@@ -142,19 +146,16 @@ impl TransferTaskActions for TransferLocal2Oss {
             attributes: self.attributes.clone(),
             list_file_path: list_file,
         };
-        // let js = Arc::clone(&joinset);
-        // let mutex = Mutex::new(joinset);
-        // let js = Arc::new(mutex);
 
+        // executing_transfers.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let e_t = Arc::clone(&executing_transfers);
         execute_set.spawn(async move {
-            if let Err(e) = local2oss
-                .exec_listed_records(records, exec_multi_uploads)
-                .await
-            {
+            if let Err(e) = local2oss.exec_listed_records(records, e_t).await {
                 stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{}", e);
             };
         });
+        // executing_transfers.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
     }
 
     async fn record_descriptions_transfor(
@@ -649,7 +650,7 @@ impl Local2OssExecuter {
     pub async fn exec_listed_records(
         &self,
         records: Vec<ListedRecord>,
-        upload_parts_quantities: Arc<AtomicUsize>,
+        executing_transfers: Arc<AtomicUsize>,
     ) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
@@ -676,6 +677,11 @@ impl Local2OssExecuter {
         let arc_joinset = Arc::new(mutex);
 
         for record in records {
+            while executing_transfers.load(std::sync::atomic::Ordering::SeqCst)
+                >= self.attributes.task_parallelism
+            {
+                task::yield_now().await;
+            }
             // 文件位置提前记录，避免漏记
             self.offset_map.insert(
                 offset_key.clone(),
@@ -692,8 +698,10 @@ impl Local2OssExecuter {
             target_key.push_str(&record.key);
 
             let js = Arc::clone(&arc_joinset);
+            let e_u = Arc::clone(&executing_transfers);
+
             if let Err(e) = self
-                .listed_record_handler(js, &source_file_path, &target_oss_client, &target_key)
+                .listed_record_handler(js, e_u, &source_file_path, &target_oss_client, &target_key)
                 .await
             {
                 let record_desc = RecordDescription {
@@ -733,6 +741,7 @@ impl Local2OssExecuter {
     async fn listed_record_handler(
         &self,
         joinset: Arc<Mutex<&mut JoinSet<()>>>,
+        executing_transfers: Arc<AtomicUsize>,
         source_file: &str,
         target_oss: &OssClient,
         target_key: &str,
@@ -764,12 +773,17 @@ impl Local2OssExecuter {
         //     )
         //     .await
 
-        let joinset = Arc::clone(&joinset);
+        while executing_transfers.load(std::sync::atomic::Ordering::SeqCst)
+            >= self.attributes.task_parallelism
+        {
+            task::yield_now().await;
+        }
 
+        let joinset = Arc::clone(&joinset);
         target_oss
             .upload_local_file_paralle(
-                // &mut execut_set,
                 joinset,
+                Arc::clone(&executing_transfers),
                 self.attributes.task_parallelism,
                 self.target.bucket.as_str(),
                 target_key,

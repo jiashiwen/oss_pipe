@@ -22,6 +22,7 @@ use anyhow::{anyhow, Result};
 use dashmap::DashMap;
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use std::{
     fs::{self, File},
     io::{self, BufRead},
@@ -139,7 +140,6 @@ impl Default for TransferTaskAttributes {
             multi_part_chunk: TaskDefaultParameters::multi_part_chunk_default(),
             exclude: TaskDefaultParameters::filter_default(),
             include: TaskDefaultParameters::filter_default(),
-            // continuous: TaskDefaultParameters::continuous_default(),
             transfer_type: TaskDefaultParameters::transfer_type_default(),
             last_modify_filter: TaskDefaultParameters::last_modify_filter_default(),
         }
@@ -404,8 +404,8 @@ impl TransferTask {
         let mut sys_set = JoinSet::new();
         // execut_set 用于执行任务
         let mut execut_set = JoinSet::new();
-        let mut execute_set: JoinSet<()> = JoinSet::new();
-        let arc_exec_set = Arc::new(Mutex::new(&mut execute_set));
+        // 正在执行的任务数量，用于控制分片上传并行度
+        let executing_transfers = Arc::new(AtomicUsize::new(0));
 
         let object_list_file = match list_file {
             Some(f) => f,
@@ -574,21 +574,22 @@ impl TransferTask {
                         .to_string()
                         .eq(&self.attributes.bach_size.to_string())
                     {
+                        while executing_transfers.load(std::sync::atomic::Ordering::SeqCst)
+                            >= self.attributes.task_parallelism
+                        {
+                            task::yield_now().await;
+                        }
                         while execut_set.len() >= self.attributes.task_parallelism {
+                            task::yield_now().await;
                             execut_set.join_next().await;
                         }
 
-                        while arc_exec_set.lock().await.len() >= self.attributes.task_parallelism {
-                            arc_exec_set.lock().await.join_next().await;
-                        }
-
                         let vk = vec_keys.clone();
-                        let arc_joinset = Arc::clone(&arc_exec_set);
+                        // executing_transfers.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         task_stock
                             .listed_records_transfor(
                                 &mut execut_set,
-                                // arc_joinset,
-                                Arc::new(AtomicUsize::new(0)),
+                                Arc::clone(&executing_transfers),
                                 vk,
                                 Arc::clone(&snapshot_stop_mark),
                                 Arc::clone(&err_counter),
@@ -599,6 +600,7 @@ impl TransferTask {
 
                         // 清理临时key vec
                         vec_keys.clear();
+                        // executing_transfers.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
                     }
                 }
 
@@ -607,21 +609,23 @@ impl TransferTask {
                     && err_counter.load(std::sync::atomic::Ordering::SeqCst)
                         < self.attributes.max_errors
                 {
+                    while executing_transfers.load(std::sync::atomic::Ordering::SeqCst)
+                        >= self.attributes.task_parallelism
+                    {
+                        task::yield_now().await;
+                        // let _ = tokio::time::sleep(Duration::from_millis(100));
+                    }
+
                     while execut_set.len() >= self.attributes.task_parallelism {
+                        task::yield_now().await;
                         execut_set.join_next().await;
                     }
-
-                    while arc_exec_set.lock().await.len() >= self.attributes.task_parallelism {
-                        arc_exec_set.lock().await.join_next().await;
-                    }
-
                     let vk = vec_keys.clone();
-                    let arc_joinset = Arc::clone(&arc_exec_set);
+                    // executing_transfers.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     task_stock
                         .listed_records_transfor(
                             &mut execut_set,
-                            // arc_joinset,
-                            Arc::new(AtomicUsize::new(0)),
+                            Arc::clone(&executing_transfers),
                             vk,
                             Arc::clone(&snapshot_stop_mark),
                             Arc::clone(&err_counter),
@@ -629,11 +633,18 @@ impl TransferTask {
                             executed_file.path.clone(),
                         )
                         .await;
+                    // executing_transfers.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
                 }
             }
 
             while execut_set.len() > 0 {
                 execut_set.join_next().await;
+                task::yield_now().await;
+            }
+
+            while executing_transfers.load(std::sync::atomic::Ordering::SeqCst) > 0 {
+                task::yield_now().await;
+                // let _ = tokio::time::sleep(Duration::from_micros(200));
             }
             // 配置停止 offset save 标识为 true
             snapshot_stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -654,6 +665,7 @@ impl TransferTask {
             };
 
             while sys_set.len() > 0 {
+                task::yield_now().await;
                 sys_set.join_next().await;
             }
         });
