@@ -34,9 +34,13 @@ use std::{
         atomic::{AtomicBool, AtomicUsize},
         Arc,
     },
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::{io::AsyncReadExt, sync::Mutex, task::JoinSet};
+use tokio::{
+    io::AsyncReadExt,
+    sync::Mutex,
+    task::{self, JoinSet},
+};
 
 #[derive(Debug, Clone)]
 pub struct OssClient {
@@ -131,8 +135,6 @@ impl OssClient {
         bucket: &str,
         key: &str,
     ) -> std::result::Result<
-        // aws_sdk_s3::output::GetObjectOutput,
-        // aws_sdk_s3::types::SdkError<aws_sdk_s3::error::GetObjectError>,
         aws_sdk_s3::operation::get_object::GetObjectOutput,
         aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::get_object::GetObjectError>,
     > {
@@ -151,8 +153,6 @@ impl OssClient {
         bucket: &str,
         key: &str,
     ) -> std::result::Result<
-        // aws_sdk_s3::output::DeleteObjectOutput,
-        // aws_sdk_s3::types::SdkError<aws_sdk_s3::error::DeleteObjectError>,
         aws_sdk_s3::operation::delete_object::DeleteObjectOutput,
         aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::delete_object::DeleteObjectError>,
     > {
@@ -378,6 +378,7 @@ impl OssClient {
     pub async fn upload_local_file_paralle(
         &self,
         joinset: Arc<Mutex<&mut JoinSet<()>>>,
+        executing_uploads: Arc<AtomicUsize>,
         max_parallelism: usize,
         bucket: &str,
         key: &str,
@@ -399,8 +400,9 @@ impl OssClient {
                 .await?;
             return Ok(());
         }
-        self.multipart_upload_local_file_multi_task(
+        self.multipart_upload_local_file_paralle(
             joinset,
+            executing_uploads,
             max_parallelism,
             bucket,
             key,
@@ -479,9 +481,10 @@ impl OssClient {
 
     //ToDo
     // 假如原子计数器，函数开始+1，结束或报错-1
-    pub async fn multipart_upload_local_file_multi_task(
+    pub async fn multipart_upload_local_file_paralle(
         &self,
         joinset: Arc<Mutex<&mut JoinSet<()>>>,
+        executing_uploads: Arc<AtomicUsize>,
         max_parallelism: usize,
         bucket: &str,
         key: &str,
@@ -518,15 +521,23 @@ impl OssClient {
                 let f = file_path.to_string();
                 let e_m: Arc<AtomicBool> = Arc::clone(&err_mark);
                 let l_p = Arc::clone(&left_parts);
+                let e_u = Arc::clone(&executing_uploads);
+
                 while joinset.lock().await.len() >= max_parallelism {
                     joinset.lock().await.join_next().await;
+                }
+                while e_u.load(std::sync::atomic::Ordering::SeqCst) >= max_parallelism {
+                    task::yield_now().await;
+                    // let _ = tokio::time::sleep(Duration::from_millis(100));
                 }
                 joinset.lock().await.spawn(async move {
                     //ToDo
                     // 假如原子计数器，函数开始+1，结束或报错-1
+
                     if e_m.load(std::sync::atomic::Ordering::SeqCst) {
                         return;
                     }
+                    e_u.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     match upload_parts(c, &up_id, &b, &k, &f, v, chuck_size, b_t_arc, l_p).await {
                         Ok(_) => {}
                         Err(e) => {
@@ -534,7 +545,9 @@ impl OssClient {
                             e_m.store(true, std::sync::atomic::Ordering::SeqCst);
                         }
                     }
+                    e_u.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
                 });
+
                 v_parts.clear();
             }
         }
@@ -549,15 +562,24 @@ impl OssClient {
             let f = file_path.to_string();
             let e_m: Arc<AtomicBool> = Arc::clone(&err_mark);
             let l_p = Arc::clone(&left_parts);
+            let e_u = Arc::clone(&executing_uploads);
+
             while joinset.lock().await.len() >= max_parallelism {
                 joinset.lock().await.join_next().await;
             }
+
             joinset.lock().await.spawn(async move {
                 //ToDo
                 // 假如原子计数器，函数开始+1，结束或报错-1
                 if e_m.load(std::sync::atomic::Ordering::SeqCst) {
                     return;
                 }
+
+                while e_u.load(std::sync::atomic::Ordering::SeqCst) >= max_parallelism {
+                    let _ = tokio::time::sleep(Duration::from_millis(100));
+                }
+
+                e_u.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 match upload_parts(c, &up_id, &b, &k, &f, v, chuck_size, b_t_arc, l_p).await {
                     Ok(_) => {}
                     Err(e) => {
@@ -565,6 +587,7 @@ impl OssClient {
                         e_m.store(true, std::sync::atomic::Ordering::SeqCst);
                     }
                 }
+                e_u.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
             });
         }
 
