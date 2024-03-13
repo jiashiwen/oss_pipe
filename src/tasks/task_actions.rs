@@ -10,7 +10,10 @@ use std::sync::{
     atomic::{AtomicBool, AtomicUsize},
     Arc,
 };
-use tokio::{sync::Mutex, task::JoinSet};
+use tokio::{
+    sync::{Mutex, RwLock},
+    task::JoinSet,
+};
 
 // Todo
 // 需新增objectlistfile executor，用于承载对象列表对象执行逻辑
@@ -25,7 +28,8 @@ pub trait TransferTaskActions {
     async fn listed_records_transfor(
         &self,
         execute_set: &mut JoinSet<()>,
-        executing_transfers: Arc<AtomicUsize>,
+        // executing_transfers: Arc<AtomicUsize>,
+        executing_transfers: Arc<RwLock<usize>>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,

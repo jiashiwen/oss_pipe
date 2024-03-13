@@ -30,7 +30,10 @@ use std::{
     },
     time::{SystemTime, UNIX_EPOCH},
 };
-use tokio::{sync::Mutex, task::JoinSet};
+use tokio::{
+    sync::{Mutex, RwLock},
+    task::JoinSet,
+};
 use walkdir::WalkDir;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -122,7 +125,8 @@ impl TransferTaskActions for TransferOss2Oss {
         &self,
         execute_set: &mut JoinSet<()>,
         // joinset: Arc<Mutex<&mut JoinSet<()>>>,
-        exec_multi_uploads: Arc<AtomicUsize>,
+        // exec_multi_uploads: Arc<AtomicUsize>,
+        executing_transfers: Arc<RwLock<usize>>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
