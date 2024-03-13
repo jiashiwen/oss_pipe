@@ -22,7 +22,7 @@ use anyhow::{anyhow, Result};
 use dashmap::DashMap;
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+
 use std::{
     fs::{self, File},
     io::{self, BufRead},
@@ -451,6 +451,7 @@ impl TransferTask {
                 // 按列表传输object from source to target
                 let lines: io::Lines<io::BufReader<File>> =
                     io::BufReader::new(object_list_file).lines();
+
                 for line in lines {
                     // 若错误达到上限，则停止任务
                     if err_counter.load(std::sync::atomic::Ordering::SeqCst)
@@ -547,8 +548,10 @@ impl TransferTask {
                 let task_stock = self.gen_transfer_actions();
                 let mut vec_keys: Vec<ListedRecord> = vec![];
                 // 按列表传输object from source to target
+
                 let lines: io::Lines<io::BufReader<File>> =
                     io::BufReader::new(object_list_file).lines();
+
                 for line in lines {
                     // 若错误达到上限，则停止任务
                     if err_counter.load(std::sync::atomic::Ordering::SeqCst)
@@ -603,7 +606,8 @@ impl TransferTask {
                 }
 
                 // 处理集合中的剩余数据，若错误达到上限，则不执行后续操作
-                if vec_keys.len() > 0
+                // if vec_keys.len() > 0
+                if !vec_keys.is_empty()
                     && err_counter.load(std::sync::atomic::Ordering::SeqCst)
                         < self.attributes.max_errors
                 {
