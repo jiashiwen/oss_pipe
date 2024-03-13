@@ -132,12 +132,6 @@ impl TransferTaskActions for TransferLocal2Oss {
         offset_map: Arc<DashMap<std::string::String, FilePosition>>,
         list_file: String,
     ) {
-        while executing_transfers.load(std::sync::atomic::Ordering::SeqCst)
-            >= self.attributes.task_parallelism
-        {
-            task::yield_now().await;
-        }
-
         let local2oss = Local2OssExecuter {
             source: self.source.clone(),
             target: self.target.clone(),
@@ -147,15 +141,15 @@ impl TransferTaskActions for TransferLocal2Oss {
             list_file_path: list_file,
         };
 
-        // executing_transfers.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let e_t = Arc::clone(&executing_transfers);
         execute_set.spawn(async move {
-            if let Err(e) = local2oss.exec_listed_records(records, e_t).await {
+            if let Err(e) = local2oss
+                .exec_listed_records(records, executing_transfers)
+                .await
+            {
                 stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{}", e);
             };
         });
-        // executing_transfers.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
     }
 
     async fn record_descriptions_transfor(
@@ -270,7 +264,7 @@ impl TransferTaskActions for TransferLocal2Oss {
             .list_objects(
                 &self.target.bucket,
                 self.target.prefix.clone(),
-                self.attributes.bach_size,
+                self.attributes.objects_per_batch,
                 None,
             )
             .await?;
@@ -284,7 +278,7 @@ impl TransferTaskActions for TransferLocal2Oss {
                 .list_objects(
                     &self.target.bucket,
                     self.target.prefix.clone(),
-                    self.attributes.bach_size,
+                    self.attributes.objects_per_batch,
                     None,
                 )
                 .await?;
@@ -347,7 +341,7 @@ impl TransferTaskActions for TransferLocal2Oss {
         let modified_size = modified_file.metadata()?.len();
         let removed_size = removed_file.metadata()?.len();
 
-        merge_file(&modified, &removed, self.attributes.multi_part_chunk)?;
+        merge_file(&modified, &removed, self.attributes.multi_part_chunk_size)?;
         let total_size = removed_size + modified_size;
         let total_lines = removed_lines + modified_lines;
 
@@ -672,16 +666,7 @@ impl Local2OssExecuter {
 
         let target_oss_client = self.target.gen_oss_client()?;
 
-        let joinset = &mut JoinSet::new();
-        let mutex = Mutex::new(joinset);
-        let arc_joinset = Arc::new(mutex);
-
         for record in records {
-            while executing_transfers.load(std::sync::atomic::Ordering::SeqCst)
-                >= self.attributes.task_parallelism
-            {
-                task::yield_now().await;
-            }
             // 文件位置提前记录，避免漏记
             self.offset_map.insert(
                 offset_key.clone(),
@@ -697,11 +682,11 @@ impl Local2OssExecuter {
             };
             target_key.push_str(&record.key);
 
-            let js = Arc::clone(&arc_joinset);
             let e_u = Arc::clone(&executing_transfers);
-
             if let Err(e) = self
-                .listed_record_handler(js, e_u, &source_file_path, &target_oss_client, &target_key)
+                // .listed_record_handler(js, e_u, &source_file_path, &target_oss_client, &target_key)
+                // .await
+                .listed_record_handler(e_u, &source_file_path, &target_oss_client, &target_key)
                 .await
             {
                 let record_desc = RecordDescription {
@@ -740,7 +725,6 @@ impl Local2OssExecuter {
 
     async fn listed_record_handler(
         &self,
-        joinset: Arc<Mutex<&mut JoinSet<()>>>,
         executing_transfers: Arc<AtomicUsize>,
         source_file: &str,
         target_oss: &OssClient,
@@ -773,23 +757,19 @@ impl Local2OssExecuter {
         //     )
         //     .await
 
-        while executing_transfers.load(std::sync::atomic::Ordering::SeqCst)
-            >= self.attributes.task_parallelism
-        {
-            task::yield_now().await;
-        }
+        // ToDo
+        // 新增阐述chunk_batch 定义分片上传每批上传分片的数量
 
-        let joinset = Arc::clone(&joinset);
         target_oss
             .upload_local_file_paralle(
-                joinset,
-                Arc::clone(&executing_transfers),
-                self.attributes.task_parallelism,
+                source_file,
                 self.target.bucket.as_str(),
                 target_key,
-                source_file,
                 self.attributes.large_file_size,
-                self.attributes.multi_part_chunk,
+                Arc::clone(&executing_transfers),
+                self.attributes.multi_part_chunk_size,
+                self.attributes.multi_part_chunks_per_batch,
+                self.attributes.multi_part_parallelism,
             )
             .await
     }
@@ -862,7 +842,7 @@ impl Local2OssExecuter {
                         &record.target_key,
                         &record.source_key,
                         self.attributes.large_file_size,
-                        self.attributes.multi_part_chunk,
+                        self.attributes.multi_part_chunk_size,
                     )
                     .await
                 }

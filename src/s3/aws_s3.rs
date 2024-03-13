@@ -6,6 +6,11 @@ use crate::{
     tasks::{gen_file_path, MODIFIED_PREFIX, REMOVED_PREFIX, TRANSFER_OBJECT_LIST_FILE_PREFIX},
 };
 use anyhow::{anyhow, Result};
+use aws_sdk_s3::operation::{
+    abort_multipart_upload::AbortMultipartUploadOutput,
+    complete_multipart_upload::CompleteMultipartUploadOutput, get_object::GetObjectOutput,
+    list_multipart_uploads::ListMultipartUploadsOutput,
+};
 use aws_sdk_s3::types::CompletedMultipartUpload;
 use aws_sdk_s3::types::CompletedPart;
 use aws_sdk_s3::types::Delete;
@@ -15,16 +20,9 @@ use aws_sdk_s3::Client;
 use aws_sdk_s3::{
     operation::create_multipart_upload::CreateMultipartUploadOutput, presigning::PresigningConfig,
 };
-use aws_sdk_s3::{
-    operation::{
-        abort_multipart_upload::AbortMultipartUploadOutput,
-        complete_multipart_upload::CompleteMultipartUploadOutput, get_object::GetObjectOutput,
-        list_multipart_uploads::ListMultipartUploadsOutput,
-    },
-    presigning,
-};
 use aws_smithy_types::{body::SdkBody, byte_stream::ByteStream};
 use dashmap::DashMap;
+
 use std::{
     collections::BTreeMap,
     fs::{self, File, OpenOptions},
@@ -377,18 +375,18 @@ impl OssClient {
     // 通过upload_parts_quantities: Arc::<AtomicUsize> 控制并发数量
     pub async fn upload_local_file_paralle(
         &self,
-        joinset: Arc<Mutex<&mut JoinSet<()>>>,
-        executing_uploads: Arc<AtomicUsize>,
-        max_parallelism: usize,
+        local_file: &str,
         bucket: &str,
         key: &str,
-        local_file: &str,
-        file_max_size: usize,
-        chuck_size: usize,
+        splited_file_size: usize,
+        executing_transfers: Arc<AtomicUsize>,
+        multi_part_chunk_size: usize,
+        multi_part_chunk_per_batch: usize,
+        multi_part_parallelism: usize,
     ) -> Result<()> {
         let file = File::open(local_file)?;
         let file_meta = file.metadata()?;
-        let file_max_size_u64 = TryInto::<u64>::try_into(file_max_size)?;
+        let file_max_size_u64 = TryInto::<u64>::try_into(splited_file_size)?;
         if file_meta.len().le(&file_max_size_u64) {
             let body = ByteStream::from_path(Path::new(&local_file)).await?;
             self.client
@@ -400,14 +398,29 @@ impl OssClient {
                 .await?;
             return Ok(());
         }
-        self.multipart_upload_local_file_paralle(
-            joinset,
-            executing_uploads,
-            max_parallelism,
+        // self.multipart_upload_local_file_paralle(
+        //     joinset,
+        //     executing_uploads,
+        //     max_parallelism,
+        //     bucket,
+        //     key,
+        //     local_file,
+        //     chunk_size,
+        // )
+        // .await
+
+        // while executing_transfers.load(std::sync::atomic::Ordering::SeqCst) > multi_part_parallelism
+        // {
+        //     task::yield_now().await;
+        // }
+        self.multipart_upload_local_file_paralle_batch(
+            local_file,
             bucket,
             key,
-            local_file,
-            chuck_size,
+            executing_transfers,
+            multi_part_chunk_size,
+            multi_part_chunk_per_batch,
+            multi_part_parallelism,
         )
         .await
     }
@@ -531,9 +544,6 @@ impl OssClient {
                     // let _ = tokio::time::sleep(Duration::from_millis(100));
                 }
                 joinset.lock().await.spawn(async move {
-                    //ToDo
-                    // 假如原子计数器，函数开始+1，结束或报错-1
-
                     if e_m.load(std::sync::atomic::Ordering::SeqCst) {
                         return;
                     }
@@ -612,6 +622,48 @@ impl OssClient {
         Ok(())
     }
 
+    pub async fn multipart_upload_local_file_paralle_batch(
+        &self,
+        file_path: &str,
+        bucket: &str,
+        key: &str,
+        executing_transfers: Arc<AtomicUsize>,
+        multi_part_chunk_size: usize,
+        multi_part_chunk_per_batch: usize,
+        multi_part_parallelism: usize,
+    ) -> Result<()> {
+        // while executing_transfers.load(std::sync::atomic::Ordering::SeqCst) > multi_part_parallelism
+        // {
+        //     task::yield_now().await;
+        // }
+        let multipart_upload_res: CreateMultipartUploadOutput =
+            self.create_multipart_upload(bucket, key, None).await?;
+        let upload_id = match multipart_upload_res.upload_id() {
+            Some(id) => id,
+            None => {
+                return Err(anyhow!("upload id is None"));
+            }
+        };
+
+        let completed_parts = self
+            .upload_parts(
+                file_path,
+                bucket,
+                key,
+                upload_id,
+                executing_transfers,
+                multi_part_chunk_size,
+                multi_part_chunk_per_batch,
+                multi_part_parallelism,
+            )
+            .await?;
+
+        // 完成上传文件合并
+        self.complete_multipart_upload(bucket, key, upload_id, completed_parts)
+            .await?;
+        Ok(())
+    }
+
     #[inline]
     pub async fn create_multipart_upload(
         &self,
@@ -668,6 +720,134 @@ impl OssClient {
             .part_number(part_number)
             .build();
         Ok(completed_part)
+    }
+
+    pub async fn upload_parts(
+        &self,
+        file_name: &str,
+        bucket: &str,
+        key: &str,
+        upload_id: &str,
+        executing_transfers: Arc<AtomicUsize>,
+        multi_part_chunk_size: usize,
+        multi_part_chunk_per_batch: usize,
+        multi_part_parallelism: usize,
+    ) -> Result<Vec<CompletedPart>> {
+        let file_parts = gen_multi_part_plan(file_name, multi_part_chunk_size)?;
+        let client = self.client.clone();
+        let arc_client = Arc::new(client);
+        let err_mark = Arc::new(AtomicBool::new(false));
+        let mut joinset = JoinSet::new();
+
+        let completed_parts_btree: Arc<Mutex<BTreeMap<i32, CompletedPart>>> =
+            Arc::new(Mutex::new(BTreeMap::new()));
+
+        let mut batch = file_parts.len() / multi_part_chunk_per_batch;
+        if (file_parts.len() % multi_part_chunk_per_batch) > 0 {
+            batch += 1;
+        }
+
+        let mut parts_vec = vec![];
+        let file_parts_len = file_parts.len();
+
+        for f_p in file_parts {
+            let part_num_usize: usize = TryInto::try_into(f_p.part_num)?;
+            parts_vec.push(f_p);
+
+            if (parts_vec.len() % batch).eq(&0) || part_num_usize.eq(&file_parts_len) {
+                let p_v = parts_vec.clone();
+
+                let c = Arc::clone(&arc_client);
+                let err_mark = Arc::clone(&err_mark);
+                let f = file_name.to_string();
+                let u_id = upload_id.to_string();
+                let b = bucket.to_string();
+                let k = key.to_string();
+                let c_b_tree = Arc::clone(&completed_parts_btree);
+                let e_t = Arc::clone(&executing_transfers);
+                while e_t.load(std::sync::atomic::Ordering::SeqCst) > multi_part_parallelism {
+                    task::yield_now().await;
+                }
+                joinset.spawn(async move {
+                    println!(
+                        "{}/{}",
+                        e_t.load(std::sync::atomic::Ordering::SeqCst),
+                        multi_part_parallelism
+                    );
+                    e_t.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    for p in p_v {
+                        let p_n = p.part_num;
+                        let stream = match file_part_to_byte_stream(&f, p, multi_part_chunk_size) {
+                            Ok(b) => b,
+                            Err(e) => {
+                                log::error!("{:?}", e);
+                                err_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+                                e_t.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                                return;
+                            }
+                        };
+
+                        let presigning = match PresigningConfig::expires_in(
+                            std::time::Duration::from_secs(3000),
+                        ) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                log::error!("{:?}", e);
+                                err_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+                                e_t.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                                return;
+                            }
+                        };
+
+                        let upload_part_res = match c
+                            .upload_part()
+                            .bucket(&b)
+                            .key(&k)
+                            .upload_id(&u_id)
+                            .body(stream)
+                            .part_number(p_n)
+                            // .send()
+                            .send_with_plugins(presigning)
+                            .await
+                        {
+                            Ok(res) => res,
+                            Err(e) => {
+                                log::error!("{:?}", e);
+                                err_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+                                e_t.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                                return;
+                            }
+                        };
+
+                        let completed_part = CompletedPart::builder()
+                            .e_tag(upload_part_res.e_tag.unwrap_or_default())
+                            .part_number(p_n)
+                            .build();
+                        let mut b_t = c_b_tree.lock().await;
+                        b_t.insert(p_n, completed_part);
+                    }
+                    e_t.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                });
+
+                parts_vec.clear();
+            }
+        }
+
+        while joinset.len() > 0 {
+            if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(anyhow!("upload error"));
+            }
+            joinset.join_next().await;
+        }
+
+        let completed_parts = completed_parts_btree
+            .lock()
+            .await
+            .clone()
+            .into_values()
+            .collect::<Vec<CompletedPart>>();
+
+        Ok(completed_parts)
     }
 
     #[inline]
@@ -782,7 +962,6 @@ impl OssClient {
         batch_size: i32,
         multi_part_chunk: usize,
     ) -> Result<(FileDescription, FileDescription, i64)> {
-        // let mut set = JoinSet::new();
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
 
         let new_object_list = gen_file_path(
@@ -1201,4 +1380,13 @@ pub async fn download_object(
 
     file.flush()?;
     Ok(())
+}
+
+fn file_part_to_byte_stream(file_name: &str, p: FilePart, chunk_size: usize) -> Result<ByteStream> {
+    let mut f = File::open(file_name)?;
+    f.seek(SeekFrom::Start(p.offset))?;
+    let mut buf = vec![0; chunk_size];
+    let read_count = f.read(&mut buf)?;
+    let body = &buf[..read_count];
+    Ok(ByteStream::new(SdkBody::from(body)))
 }

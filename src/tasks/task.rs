@@ -85,7 +85,7 @@ impl TaskDefaultParameters {
         "default_name".to_string()
     }
 
-    pub fn batch_size_default() -> i32 {
+    pub fn objects_per_batch_default() -> i32 {
         100
     }
 
@@ -112,9 +112,16 @@ impl TaskDefaultParameters {
         // 50M
         10485760 * 5
     }
-    pub fn multi_part_chunk_default() -> usize {
+    pub fn multi_part_chunk_size_default() -> usize {
         // 10M
         10485760
+    }
+
+    pub fn multi_part_chunks_per_batch_default() -> usize {
+        10
+    }
+    pub fn multi_part_parallelism_default() -> usize {
+        4
     }
 
     pub fn meta_dir_default() -> String {
@@ -167,8 +174,8 @@ where
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TaskTruncateBucket {
     pub oss: OSSDescription,
-    #[serde(default = "TaskDefaultParameters::batch_size_default")]
-    pub bach_size: i32,
+    #[serde(default = "TaskDefaultParameters::objects_per_batch_default")]
+    pub objects_per_batch: i32,
     #[serde(default = "TaskDefaultParameters::task_threads_default")]
     pub task_threads: usize,
     #[serde(default = "TaskDefaultParameters::max_errors_default")]
@@ -180,7 +187,7 @@ pub struct TaskTruncateBucket {
 impl Default for TaskTruncateBucket {
     fn default() -> Self {
         Self {
-            bach_size: TaskDefaultParameters::batch_size_default(),
+            objects_per_batch: TaskDefaultParameters::objects_per_batch_default(),
             task_threads: TaskDefaultParameters::task_threads_default(),
             max_errors: TaskDefaultParameters::max_errors_default(),
             meta_dir: TaskDefaultParameters::meta_dir_default(),
@@ -214,7 +221,7 @@ impl TaskTruncateBucket {
                 .append_object_list_to_file(
                     self.oss.bucket.clone(),
                     self.oss.prefix.clone(),
-                    self.bach_size,
+                    self.objects_per_batch,
                     &object_list_file,
                     None,
                 )
@@ -248,7 +255,11 @@ impl TaskTruncateBucket {
                         // vec_keys.push(obj_id);
                     }
                 };
-                if vec_keys.len().to_string().eq(&self.bach_size.to_string()) {
+                if vec_keys
+                    .len()
+                    .to_string()
+                    .eq(&self.objects_per_batch.to_string())
+                {
                     while set.len() >= self.task_threads {
                         set.join_next().await;
                     }

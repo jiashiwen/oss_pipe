@@ -95,8 +95,8 @@ impl Default for ObjectStorage {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TransferTaskAttributes {
-    #[serde(default = "TaskDefaultParameters::batch_size_default")]
-    pub bach_size: i32,
+    #[serde(default = "TaskDefaultParameters::objects_per_batch_default")]
+    pub objects_per_batch: i32,
     #[serde(default = "TaskDefaultParameters::task_threads_default")]
     pub task_parallelism: usize,
     #[serde(default = "TaskDefaultParameters::max_errors_default")]
@@ -111,16 +111,18 @@ pub struct TransferTaskAttributes {
     #[serde(serialize_with = "se_usize_to_str")]
     #[serde(deserialize_with = "de_usize_from_str")]
     pub large_file_size: usize,
-    #[serde(default = "TaskDefaultParameters::multi_part_chunk_default")]
+    #[serde(default = "TaskDefaultParameters::multi_part_chunk_size_default")]
     #[serde(serialize_with = "se_usize_to_str")]
     #[serde(deserialize_with = "de_usize_from_str")]
-    pub multi_part_chunk: usize,
+    pub multi_part_chunk_size: usize,
+    #[serde(default = "TaskDefaultParameters::multi_part_chunks_per_batch_default")]
+    pub multi_part_chunks_per_batch: usize,
+    #[serde(default = "TaskDefaultParameters::multi_part_parallelism_default")]
+    pub multi_part_parallelism: usize,
     #[serde(default = "TaskDefaultParameters::filter_default")]
     pub exclude: Option<Vec<String>>,
     #[serde(default = "TaskDefaultParameters::filter_default")]
     pub include: Option<Vec<String>>,
-    // #[serde(default = "TaskDefaultParameters::continuous_default")]
-    // pub continuous: bool,
     #[serde(default = "TaskDefaultParameters::transfer_type_default")]
     pub transfer_type: TransferType,
     #[serde(default = "TaskDefaultParameters::last_modify_filter_default")]
@@ -130,14 +132,17 @@ pub struct TransferTaskAttributes {
 impl Default for TransferTaskAttributes {
     fn default() -> Self {
         Self {
-            bach_size: TaskDefaultParameters::batch_size_default(),
+            objects_per_batch: TaskDefaultParameters::objects_per_batch_default(),
             task_parallelism: TaskDefaultParameters::task_threads_default(),
             max_errors: TaskDefaultParameters::max_errors_default(),
             meta_dir: TaskDefaultParameters::meta_dir_default(),
             target_exists_skip: TaskDefaultParameters::target_exists_skip_default(),
             start_from_checkpoint: TaskDefaultParameters::target_exists_skip_default(),
             large_file_size: TaskDefaultParameters::large_file_size_default(),
-            multi_part_chunk: TaskDefaultParameters::multi_part_chunk_default(),
+            multi_part_chunk_size: TaskDefaultParameters::multi_part_chunk_size_default(),
+            multi_part_chunks_per_batch: TaskDefaultParameters::multi_part_chunks_per_batch_default(
+            ),
+            multi_part_parallelism: TaskDefaultParameters::multi_part_parallelism_default(),
             exclude: TaskDefaultParameters::filter_default(),
             include: TaskDefaultParameters::filter_default(),
             transfer_type: TaskDefaultParameters::transfer_type_default(),
@@ -468,7 +473,7 @@ impl TransferTask {
                     if vec_keys
                         .len()
                         .to_string()
-                        .eq(&self.attributes.bach_size.to_string())
+                        .eq(&self.attributes.objects_per_batch.to_string())
                     {
                         while execut_set.len() >= self.attributes.task_parallelism {
                             execut_set.join_next().await;
@@ -572,20 +577,14 @@ impl TransferTask {
                     if vec_keys
                         .len()
                         .to_string()
-                        .eq(&self.attributes.bach_size.to_string())
+                        .eq(&self.attributes.objects_per_batch.to_string())
                     {
-                        while executing_transfers.load(std::sync::atomic::Ordering::SeqCst)
-                            >= self.attributes.task_parallelism
-                        {
-                            task::yield_now().await;
-                        }
                         while execut_set.len() >= self.attributes.task_parallelism {
-                            task::yield_now().await;
                             execut_set.join_next().await;
                         }
 
                         let vk = vec_keys.clone();
-                        // executing_transfers.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
                         task_stock
                             .listed_records_transfor(
                                 &mut execut_set,
@@ -600,7 +599,6 @@ impl TransferTask {
 
                         // 清理临时key vec
                         vec_keys.clear();
-                        // executing_transfers.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
                     }
                 }
 
@@ -609,19 +607,11 @@ impl TransferTask {
                     && err_counter.load(std::sync::atomic::Ordering::SeqCst)
                         < self.attributes.max_errors
                 {
-                    while executing_transfers.load(std::sync::atomic::Ordering::SeqCst)
-                        >= self.attributes.task_parallelism
-                    {
-                        task::yield_now().await;
-                        // let _ = tokio::time::sleep(Duration::from_millis(100));
-                    }
-
                     while execut_set.len() >= self.attributes.task_parallelism {
-                        task::yield_now().await;
                         execut_set.join_next().await;
                     }
                     let vk = vec_keys.clone();
-                    // executing_transfers.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
                     task_stock
                         .listed_records_transfor(
                             &mut execut_set,
@@ -633,19 +623,17 @@ impl TransferTask {
                             executed_file.path.clone(),
                         )
                         .await;
-                    // executing_transfers.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
                 }
             }
 
             while execut_set.len() > 0 {
                 execut_set.join_next().await;
-                task::yield_now().await;
             }
 
-            while executing_transfers.load(std::sync::atomic::Ordering::SeqCst) > 0 {
-                task::yield_now().await;
-                // let _ = tokio::time::sleep(Duration::from_micros(200));
-            }
+            // while executing_transfers.load(std::sync::atomic::Ordering::SeqCst) > 0 {
+            //     task::yield_now().await;
+            //     // let _ = tokio::time::sleep(Duration::from_micros(200));
+            // }
             // 配置停止 offset save 标识为 true
             snapshot_stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
             let lock = increment_assistant.lock().await;

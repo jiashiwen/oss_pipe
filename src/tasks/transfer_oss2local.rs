@@ -66,7 +66,7 @@ impl TransferTaskActions for TransferOss2Local {
                 self.source.prefix.clone(),
                 Some(regex_filter),
                 self.attributes.last_modify_filter.clone(),
-                self.attributes.bach_size,
+                self.attributes.objects_per_batch,
             )
             .await
     }
@@ -136,7 +136,7 @@ impl TransferTaskActions for TransferOss2Local {
             .append_object_list_to_file(
                 self.source.bucket.clone(),
                 self.source.prefix.clone(),
-                self.attributes.bach_size,
+                self.attributes.objects_per_batch,
                 object_list_file,
                 last_modify_filter,
             )
@@ -257,7 +257,7 @@ impl TransferTaskActions for TransferOss2Local {
             .list_objects(
                 &self.source.bucket,
                 self.source.prefix.clone(),
-                self.attributes.bach_size,
+                self.attributes.objects_per_batch,
                 None,
             )
             .await?;
@@ -271,7 +271,7 @@ impl TransferTaskActions for TransferOss2Local {
                 .list_objects(
                     &self.source.bucket,
                     self.source.prefix.clone(),
-                    self.attributes.bach_size,
+                    self.attributes.objects_per_batch,
                     None,
                 )
                 .await?;
@@ -286,7 +286,7 @@ impl TransferTaskActions for TransferOss2Local {
         let modified_size = modified_file.metadata()?.len();
         let removed_size = removed_file.metadata()?.len();
 
-        merge_file(&modified, &removed, self.attributes.multi_part_chunk)?;
+        merge_file(&modified, &removed, self.attributes.multi_part_chunk_size)?;
         let total_size = removed_size + modified_size;
         let total_lines = removed_lines + modified_lines;
 
@@ -464,7 +464,7 @@ impl TransferTaskActions for TransferOss2Local {
                 if vec_keys
                     .len()
                     .to_string()
-                    .eq(&self.attributes.bach_size.to_string())
+                    .eq(&self.attributes.objects_per_batch.to_string())
                 {
                     while execute_set.len() >= self.attributes.task_parallelism {
                         execute_set.join_next().await;
@@ -909,7 +909,7 @@ impl Oss2LocalListedRecordsExecutor {
             resp,
             &mut t_file,
             self.attributes.large_file_size,
-            self.attributes.multi_part_chunk,
+            self.attributes.multi_part_chunk_size,
         )
         .await
     }
@@ -1024,7 +1024,7 @@ impl Oss2LocalListedRecordsExecutor {
                     obj,
                     &mut t_file,
                     self.attributes.large_file_size,
-                    self.attributes.multi_part_chunk,
+                    self.attributes.multi_part_chunk_size,
                 )
                 .await?
             }
