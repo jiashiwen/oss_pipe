@@ -409,10 +409,6 @@ impl OssClient {
         // )
         // .await
 
-        // while executing_transfers.load(std::sync::atomic::Ordering::SeqCst) > multi_part_parallelism
-        // {
-        //     task::yield_now().await;
-        // }
         self.multipart_upload_local_file_paralle_batch(
             local_file,
             bucket,
@@ -632,10 +628,6 @@ impl OssClient {
         multi_part_chunk_per_batch: usize,
         multi_part_parallelism: usize,
     ) -> Result<()> {
-        // while executing_transfers.load(std::sync::atomic::Ordering::SeqCst) > multi_part_parallelism
-        // {
-        //     task::yield_now().await;
-        // }
         let multipart_upload_res: CreateMultipartUploadOutput =
             self.create_multipart_upload(bucket, key, None).await?;
         let upload_id = match multipart_upload_res.upload_id() {
@@ -765,15 +757,15 @@ impl OssClient {
                 let k = key.to_string();
                 let c_b_tree = Arc::clone(&completed_parts_btree);
                 let e_t = Arc::clone(&executing_transfers);
+                println!(
+                    "{}/{}",
+                    e_t.load(std::sync::atomic::Ordering::SeqCst),
+                    multi_part_parallelism
+                );
                 while e_t.load(std::sync::atomic::Ordering::SeqCst) > multi_part_parallelism {
                     task::yield_now().await;
                 }
                 joinset.spawn(async move {
-                    println!(
-                        "{}/{}",
-                        e_t.load(std::sync::atomic::Ordering::SeqCst),
-                        multi_part_parallelism
-                    );
                     e_t.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     for p in p_v {
                         let p_n = p.part_num;
