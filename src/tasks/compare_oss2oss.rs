@@ -54,7 +54,7 @@ impl CompareTaskActions for CompareOss2Oss {
             .append_object_list_to_file(
                 self.source.bucket.clone(),
                 self.source.prefix.clone(),
-                self.attributes.bach_size,
+                self.attributes.objects_per_batch,
                 object_list_file,
                 last_modify_filter,
             )

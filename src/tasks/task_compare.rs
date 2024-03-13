@@ -132,8 +132,8 @@ impl ObjectDiff {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CompareTaskAttributes {
-    #[serde(default = "TaskDefaultParameters::batch_size_default")]
-    pub bach_size: i32,
+    #[serde(default = "TaskDefaultParameters::objects_per_batch_default")]
+    pub objects_per_batch: i32,
     #[serde(default = "TaskDefaultParameters::task_threads_default")]
     pub task_parallelism: usize,
     #[serde(default = "TaskDefaultParameters::max_errors_default")]
@@ -146,7 +146,7 @@ pub struct CompareTaskAttributes {
     #[serde(serialize_with = "se_usize_to_str")]
     #[serde(deserialize_with = "de_usize_from_str")]
     pub large_file_size: usize,
-    #[serde(default = "TaskDefaultParameters::multi_part_chunk_default")]
+    #[serde(default = "TaskDefaultParameters::multi_part_chunk_size_default")]
     #[serde(serialize_with = "se_usize_to_str")]
     #[serde(deserialize_with = "de_usize_from_str")]
     pub multi_part_chunk: usize,
@@ -165,13 +165,13 @@ pub struct CompareTaskAttributes {
 impl Default for CompareTaskAttributes {
     fn default() -> Self {
         Self {
-            bach_size: TaskDefaultParameters::batch_size_default(),
+            objects_per_batch: TaskDefaultParameters::objects_per_batch_default(),
             task_parallelism: TaskDefaultParameters::task_threads_default(),
             max_errors: TaskDefaultParameters::max_errors_default(),
             meta_dir: TaskDefaultParameters::meta_dir_default(),
             start_from_checkpoint: TaskDefaultParameters::target_exists_skip_default(),
             large_file_size: TaskDefaultParameters::large_file_size_default(),
-            multi_part_chunk: TaskDefaultParameters::multi_part_chunk_default(),
+            multi_part_chunk: TaskDefaultParameters::multi_part_chunk_size_default(),
             exclude: TaskDefaultParameters::filter_default(),
             include: TaskDefaultParameters::filter_default(),
             continuous: TaskDefaultParameters::continuous_default(),
@@ -449,7 +449,7 @@ impl CompareTask {
                 if vec_keys
                     .len()
                     .to_string()
-                    .eq(&self.attributes.bach_size.to_string())
+                    .eq(&self.attributes.objects_per_batch.to_string())
                 {
                     while execut_set.len() >= self.attributes.task_parallelism {
                         execut_set.join_next().await;

@@ -283,7 +283,7 @@ impl TransferTaskActions for TransferLocal2Local {
         let modified_size = modified_file.metadata()?.len();
         let removed_size = removed_file.metadata()?.len();
 
-        merge_file(&modified, &removed, self.attributes.multi_part_chunk)?;
+        merge_file(&modified, &removed, self.attributes.multi_part_chunk_size)?;
         let total_size = removed_size + modified_size;
         let total_lines = removed_lines + modified_lines;
 
@@ -682,7 +682,7 @@ impl Local2LocalExecutor {
             source_file,
             target_file,
             self.attributes.large_file_size,
-            self.attributes.multi_part_chunk,
+            self.attributes.multi_part_chunk_size,
         )
     }
 
@@ -739,7 +739,7 @@ impl Local2LocalExecutor {
                     &record.source_key,
                     &record.target_key,
                     self.attributes.large_file_size,
-                    self.attributes.multi_part_chunk,
+                    self.attributes.multi_part_chunk_size,
                 )?;
             }
             Opt::REMOVE => fs::remove_file(record.target_key.as_str())?,
