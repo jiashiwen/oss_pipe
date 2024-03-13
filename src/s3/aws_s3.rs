@@ -36,7 +36,7 @@ use std::{
 };
 use tokio::{
     io::AsyncReadExt,
-    sync::Mutex,
+    sync::{Mutex, RwLock},
     task::{self, JoinSet},
 };
 
@@ -379,7 +379,8 @@ impl OssClient {
         bucket: &str,
         key: &str,
         splited_file_size: usize,
-        executing_transfers: Arc<AtomicUsize>,
+        // executing_transfers: Arc<AtomicUsize>,
+        executing_transfers: Arc<RwLock<usize>>,
         multi_part_chunk_size: usize,
         multi_part_chunk_per_batch: usize,
         multi_part_parallelism: usize,
@@ -623,7 +624,8 @@ impl OssClient {
         file_path: &str,
         bucket: &str,
         key: &str,
-        executing_transfers: Arc<AtomicUsize>,
+        // executing_transfers: Arc<AtomicUsize>,
+        executing_transfers: Arc<RwLock<usize>>,
         multi_part_chunk_size: usize,
         multi_part_chunk_per_batch: usize,
         multi_part_parallelism: usize,
@@ -720,7 +722,8 @@ impl OssClient {
         bucket: &str,
         key: &str,
         upload_id: &str,
-        executing_transfers: Arc<AtomicUsize>,
+        // executing_transfers: Arc<AtomicUsize>,
+        executing_transfers: Arc<RwLock<usize>>,
         multi_part_chunk_size: usize,
         multi_part_chunk_per_batch: usize,
         multi_part_parallelism: usize,
@@ -757,16 +760,26 @@ impl OssClient {
                 let k = key.to_string();
                 let c_b_tree = Arc::clone(&completed_parts_btree);
                 let e_t = Arc::clone(&executing_transfers);
-                println!(
-                    "{}/{}",
-                    e_t.load(std::sync::atomic::Ordering::SeqCst),
-                    multi_part_parallelism
-                );
-                while e_t.load(std::sync::atomic::Ordering::SeqCst) > multi_part_parallelism {
+                // println!(
+                //     "{}/{}",
+                //     e_t.load(std::sync::atomic::Ordering::SeqCst),
+                //     multi_part_parallelism
+                // );
+                // while e_t.load(std::sync::atomic::Ordering::SeqCst) > multi_part_parallelism {
+                //     task::yield_now().await;
+                // }
+                println!("{}/{}", e_t.read().await, multi_part_parallelism);
+                while e_t.read().await.gt(&multi_part_parallelism) {
                     task::yield_now().await;
                 }
+
                 joinset.spawn(async move {
-                    e_t.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    // e_t.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    {
+                        let mut num = e_t.write().await;
+                        *num += 1;
+                    }
+
                     for p in p_v {
                         let p_n = p.part_num;
                         let stream = match file_part_to_byte_stream(&f, p, multi_part_chunk_size) {
@@ -774,7 +787,9 @@ impl OssClient {
                             Err(e) => {
                                 log::error!("{:?}", e);
                                 err_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-                                e_t.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                                // e_t.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                                let mut num = e_t.write().await;
+                                *num -= 1;
                                 return;
                             }
                         };
@@ -786,7 +801,9 @@ impl OssClient {
                             Err(e) => {
                                 log::error!("{:?}", e);
                                 err_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-                                e_t.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                                // e_t.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                                let mut num = e_t.write().await;
+                                *num -= 1;
                                 return;
                             }
                         };
@@ -806,7 +823,9 @@ impl OssClient {
                             Err(e) => {
                                 log::error!("{:?}", e);
                                 err_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-                                e_t.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                                // e_t.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                                let mut num = e_t.write().await;
+                                *num -= 1;
                                 return;
                             }
                         };
@@ -818,7 +837,9 @@ impl OssClient {
                         let mut b_t = c_b_tree.lock().await;
                         b_t.insert(p_n, completed_part);
                     }
-                    e_t.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                    // e_t.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                    let mut num = e_t.write().await;
+                    *num -= 1;
                 });
 
                 parts_vec.clear();

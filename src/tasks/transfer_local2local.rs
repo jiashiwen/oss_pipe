@@ -27,7 +27,7 @@ use std::{
     path::Path,
     sync::{atomic::AtomicUsize, Arc},
 };
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use tokio::task::{self, JoinSet};
 use walkdir::WalkDir;
 
@@ -107,7 +107,8 @@ impl TransferTaskActions for TransferLocal2Local {
         &self,
         execute_set: &mut JoinSet<()>,
         // joinset: Arc<Mutex<&mut JoinSet<()>>>,
-        executing_uploads: Arc<AtomicUsize>,
+        // executing_uploads: Arc<AtomicUsize>,
+        executing_transfers: Arc<RwLock<usize>>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,

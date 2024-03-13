@@ -35,6 +35,7 @@ use std::{
     sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
+use tokio::sync::RwLock;
 use tokio::task::JoinSet;
 use tokio::{sync::Mutex, task};
 use walkdir::WalkDir;
@@ -125,7 +126,8 @@ impl TransferTaskActions for TransferLocal2Oss {
     async fn listed_records_transfor(
         &self,
         execute_set: &mut JoinSet<()>,
-        executing_transfers: Arc<AtomicUsize>,
+        // executing_transfers: Arc<AtomicUsize>,
+        executing_transfers: Arc<RwLock<usize>>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
@@ -644,7 +646,8 @@ impl Local2OssExecuter {
     pub async fn exec_listed_records(
         &self,
         records: Vec<ListedRecord>,
-        executing_transfers: Arc<AtomicUsize>,
+        // executing_transfers: Arc<AtomicUsize>,
+        executing_transfers: Arc<RwLock<usize>>,
     ) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
@@ -725,7 +728,8 @@ impl Local2OssExecuter {
 
     async fn listed_record_handler(
         &self,
-        executing_transfers: Arc<AtomicUsize>,
+        // executing_transfers: Arc<AtomicUsize>,
+        executing_transfers: Arc<RwLock<usize>>,
         source_file: &str,
         target_oss: &OssClient,
         target_key: &str,
