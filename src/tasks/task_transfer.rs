@@ -584,13 +584,13 @@ impl TransferTask {
                         .to_string()
                         .eq(&self.attributes.objects_per_batch.to_string())
                     {
-                        while executing_transfers
-                            .read()
-                            .await
-                            .gt(&self.attributes.multi_part_parallelism)
-                        {
-                            task::yield_now().await;
-                        }
+                        // while executing_transfers
+                        //     .read()
+                        //     .await
+                        //     .ge(&self.attributes.multi_part_parallelism)
+                        // {
+                        //     task::yield_now().await;
+                        // }
                         while execut_set.len() >= self.attributes.task_parallelism {
                             execut_set.join_next().await;
                         }
@@ -620,13 +620,13 @@ impl TransferTask {
                     && err_counter.load(std::sync::atomic::Ordering::SeqCst)
                         < self.attributes.max_errors
                 {
-                    while executing_transfers
-                        .read()
-                        .await
-                        .gt(&self.attributes.multi_part_parallelism)
-                    {
-                        task::yield_now().await;
-                    }
+                    // while executing_transfers
+                    //     .read()
+                    //     .await
+                    //     .ge(&self.attributes.multi_part_parallelism)
+                    // {
+                    //     task::yield_now().await;
+                    // }
                     while execut_set.len() >= self.attributes.task_parallelism {
                         execut_set.join_next().await;
                     }

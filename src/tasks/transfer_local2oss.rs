@@ -728,7 +728,6 @@ impl Local2OssExecuter {
 
     async fn listed_record_handler(
         &self,
-        // executing_transfers: Arc<AtomicUsize>,
         executing_transfers: Arc<RwLock<usize>>,
         source_file: &str,
         target_oss: &OssClient,
