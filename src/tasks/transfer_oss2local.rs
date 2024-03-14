@@ -19,7 +19,6 @@ use crate::{
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use aws_sdk_s3::types::Object;
-// use aws_sdk_s3::{error::GetObjectErrorKind, model::Object};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;

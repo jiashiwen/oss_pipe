@@ -98,7 +98,7 @@ impl Default for ObjectStorage {
 pub struct TransferTaskAttributes {
     #[serde(default = "TaskDefaultParameters::objects_per_batch_default")]
     pub objects_per_batch: i32,
-    #[serde(default = "TaskDefaultParameters::task_threads_default")]
+    #[serde(default = "TaskDefaultParameters::task_parallelism_default")]
     pub task_parallelism: usize,
     #[serde(default = "TaskDefaultParameters::max_errors_default")]
     pub max_errors: usize,
@@ -134,7 +134,7 @@ impl Default for TransferTaskAttributes {
     fn default() -> Self {
         Self {
             objects_per_batch: TaskDefaultParameters::objects_per_batch_default(),
-            task_parallelism: TaskDefaultParameters::task_threads_default(),
+            task_parallelism: TaskDefaultParameters::task_parallelism_default(),
             max_errors: TaskDefaultParameters::max_errors_default(),
             meta_dir: TaskDefaultParameters::meta_dir_default(),
             target_exists_skip: TaskDefaultParameters::target_exists_skip_default(),
