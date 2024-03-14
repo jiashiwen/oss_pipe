@@ -224,6 +224,8 @@ fn cmd_match(matches: &ArgMatches) {
                 };
                 let file = oss2oss.get_one::<String>("file");
                 let mut transfer_oss2oss = TransferTask::default();
+                transfer_oss2oss.attributes.task_parallelism = num_cpus::get();
+
                 let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
                 let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
                 transfer_oss2oss.attributes.exclude = Some(exclude_vec);
@@ -320,6 +322,8 @@ fn cmd_match(matches: &ArgMatches) {
                 };
                 let file = local2oss.get_one::<String>("file");
                 let mut transfer_local2oss = TransferTask::default();
+                transfer_local2oss.attributes.task_parallelism = num_cpus::get();
+                transfer_local2oss.attributes.multi_part_parallelism = num_cpus::get() * 2;
                 let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
                 let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
                 transfer_local2oss.attributes.exclude = Some(exclude_vec);
@@ -368,6 +372,7 @@ fn cmd_match(matches: &ArgMatches) {
                 };
                 let file = local2local.get_one::<String>("file");
                 let mut transfer_local2local = TransferTask::default();
+                transfer_local2local.attributes.task_parallelism = num_cpus::get();
                 let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
                 let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
                 transfer_local2local.attributes.exclude = Some(exclude_vec);

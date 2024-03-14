@@ -410,10 +410,6 @@ impl OssClient {
         // )
         // .await
 
-        // while executing_transfers.read().await.ge(&multi_part_parallelism) {
-        //     task::yield_now().await;
-        // }
-
         self.multipart_upload_local_file_paralle_batch(
             local_file,
             bucket,
@@ -725,7 +721,6 @@ impl OssClient {
         bucket: &str,
         key: &str,
         upload_id: &str,
-        // executing_transfers: Arc<AtomicUsize>,
         executing_transfers: Arc<RwLock<usize>>,
         multi_part_chunk_size: usize,
         multi_part_chunk_per_batch: usize,
@@ -753,16 +748,15 @@ impl OssClient {
             parts_vec.push(f_p);
 
             if (parts_vec.len() % batch).eq(&0) || part_num_usize.eq(&file_parts_len) {
-                let p_v = parts_vec.clone();
-
+                let e_t = Arc::clone(&executing_transfers);
                 let c = Arc::clone(&arc_client);
                 let err_mark = Arc::clone(&err_mark);
                 let f = file_name.to_string();
-                let u_id = upload_id.to_string();
                 let b = bucket.to_string();
                 let k = key.to_string();
+                let u_id = upload_id.to_string();
+                let p_v = parts_vec.clone();
                 let c_b_tree = Arc::clone(&completed_parts_btree);
-                let e_t = Arc::clone(&executing_transfers);
 
                 while e_t.read().await.ge(&multi_part_parallelism) {
                     task::yield_now().await;
@@ -770,65 +764,83 @@ impl OssClient {
 
                 joinset.spawn(async move {
                     {
-                        println!("{}/{}", e_t.read().await, multi_part_parallelism);
+                        // println!("{}/{}", e_t.read().await, multi_part_parallelism);
+                        log::info!("{}/{}", e_t.read().await, multi_part_parallelism);
                         let mut num = e_t.write().await;
                         *num += 1;
                     }
 
-                    for p in p_v {
-                        let p_n = p.part_num;
-                        let stream = match file_part_to_byte_stream(&f, p, multi_part_chunk_size) {
-                            Ok(b) => b,
-                            Err(e) => {
-                                log::error!("{:?}", e);
-                                err_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-                                let mut num = e_t.write().await;
-                                *num -= 1;
-                                return;
-                            }
-                        };
+                    if let Err(e) = upload_parts_batch(
+                        c,
+                        &f,
+                        &b,
+                        &k,
+                        &u_id,
+                        p_v,
+                        multi_part_chunk_size,
+                        c_b_tree,
+                    )
+                    .await
+                    {
+                        log::error!("{:?}", e);
+                        err_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+                    };
 
-                        let presigning = match PresigningConfig::expires_in(
-                            std::time::Duration::from_secs(3000),
-                        ) {
-                            Ok(p) => p,
-                            Err(e) => {
-                                log::error!("{:?}", e);
-                                err_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-                                let mut num = e_t.write().await;
-                                *num -= 1;
-                                return;
-                            }
-                        };
+                    // for p in p_v {
+                    //     let p_n = p.part_num;
 
-                        let upload_part_res = match c
-                            .upload_part()
-                            .bucket(&b)
-                            .key(&k)
-                            .upload_id(&u_id)
-                            .body(stream)
-                            .part_number(p_n)
-                            // .send()
-                            .send_with_plugins(presigning)
-                            .await
-                        {
-                            Ok(res) => res,
-                            Err(e) => {
-                                log::error!("{:?}", e);
-                                err_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-                                let mut num = e_t.write().await;
-                                *num -= 1;
-                                return;
-                            }
-                        };
+                    // let stream = match file_part_to_byte_stream(&f, p, multi_part_chunk_size) {
+                    //     Ok(b) => b,
+                    //     Err(e) => {
+                    //         log::error!("{:?}", e);
+                    //         err_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+                    //         let mut num = e_t.write().await;
+                    //         *num -= 1;
+                    //         return;
+                    //     }
+                    // };
 
-                        let completed_part = CompletedPart::builder()
-                            .e_tag(upload_part_res.e_tag.unwrap_or_default())
-                            .part_number(p_n)
-                            .build();
-                        let mut b_t = c_b_tree.lock().await;
-                        b_t.insert(p_n, completed_part);
-                    }
+                    //     let presigning = match PresigningConfig::expires_in(
+                    //         std::time::Duration::from_secs(3000),
+                    //     ) {
+                    //         Ok(p) => p,
+                    //         Err(e) => {
+                    //             log::error!("{:?}", e);
+                    //             err_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+                    //             let mut num = e_t.write().await;
+                    //             *num -= 1;
+                    //             return;
+                    //         }
+                    //     };
+
+                    //     let upload_part_res = match c
+                    //         .upload_part()
+                    //         .bucket(&b)
+                    //         .key(&k)
+                    //         .upload_id(&u_id)
+                    //         .body(stream)
+                    //         .part_number(p_n)
+                    //         // .send()
+                    //         .send_with_plugins(presigning)
+                    //         .await
+                    //     {
+                    //         Ok(res) => res,
+                    //         Err(e) => {
+                    //             log::error!("{:?}", e);
+                    //             err_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+                    //             let mut num = e_t.write().await;
+                    //             *num -= 1;
+                    //             return;
+                    //         }
+                    //     };
+
+                    //     let completed_part = CompletedPart::builder()
+                    //         .e_tag(upload_part_res.e_tag.unwrap_or_default())
+                    //         .part_number(p_n)
+                    //         .build();
+                    //     let mut b_t = c_b_tree.lock().await;
+                    //     b_t.insert(p_n, completed_part);
+                    // }
                     let mut num = e_t.write().await;
                     *num -= 1;
                 });
@@ -1308,10 +1320,10 @@ impl OssClient {
 
 pub async fn upload_parts(
     client: Arc<Client>,
-    upload_id: &str,
+    file_name: &str,
     bucket: &str,
     key: &str,
-    file_name: &str,
+    upload_id: &str,
     parts_vec: Vec<FilePart>,
     chunk_size: usize,
     completed_parts_btree: Arc<Mutex<BTreeMap<i32, CompletedPart>>>,
@@ -1346,7 +1358,47 @@ pub async fn upload_parts(
         b_t.insert(p.part_num, completed_part);
         left_parts.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
     }
+    Ok(())
+}
 
+pub async fn upload_parts_batch(
+    client: Arc<Client>,
+    file_name: &str,
+    bucket: &str,
+    key: &str,
+    upload_id: &str,
+    parts_vec: Vec<FilePart>,
+    chunk_size: usize,
+    completed_parts_btree: Arc<Mutex<BTreeMap<i32, CompletedPart>>>,
+) -> Result<()> {
+    for p in parts_vec {
+        let mut f = File::open(file_name)?;
+        f.seek(SeekFrom::Start(p.offset))?;
+        let mut buf = vec![0; chunk_size];
+        let read_count = f.read(&mut buf)?;
+        let body = &buf[..read_count];
+
+        let stream = ByteStream::new(SdkBody::from(body));
+        let presigning = PresigningConfig::expires_in(std::time::Duration::from_secs(3000))?;
+
+        let upload_part_res = client
+            .upload_part()
+            .bucket(bucket)
+            .key(key)
+            .upload_id(upload_id)
+            .body(stream)
+            .part_number(p.part_num)
+            // .send()
+            .send_with_plugins(presigning)
+            .await?;
+
+        let completed_part = CompletedPart::builder()
+            .e_tag(upload_part_res.e_tag.unwrap_or_default())
+            .part_number(p.part_num)
+            .build();
+        let mut b_t = completed_parts_btree.lock().await;
+        b_t.insert(p.part_num, completed_part);
+    }
     Ok(())
 }
 

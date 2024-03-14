@@ -89,7 +89,7 @@ impl TaskDefaultParameters {
         100
     }
 
-    pub fn task_threads_default() -> usize {
+    pub fn task_parallelism_default() -> usize {
         num_cpus::get()
     }
 
@@ -121,7 +121,7 @@ impl TaskDefaultParameters {
         10
     }
     pub fn multi_part_parallelism_default() -> usize {
-        4
+        num_cpus::get() * 2
     }
 
     pub fn meta_dir_default() -> String {
@@ -176,8 +176,8 @@ pub struct TaskTruncateBucket {
     pub oss: OSSDescription,
     #[serde(default = "TaskDefaultParameters::objects_per_batch_default")]
     pub objects_per_batch: i32,
-    #[serde(default = "TaskDefaultParameters::task_threads_default")]
-    pub task_threads: usize,
+    #[serde(default = "TaskDefaultParameters::task_parallelism_default")]
+    pub task_parallelism: usize,
     #[serde(default = "TaskDefaultParameters::max_errors_default")]
     pub max_errors: usize,
     #[serde(default = "TaskDefaultParameters::meta_dir_default")]
@@ -188,7 +188,7 @@ impl Default for TaskTruncateBucket {
     fn default() -> Self {
         Self {
             objects_per_batch: TaskDefaultParameters::objects_per_batch_default(),
-            task_threads: TaskDefaultParameters::task_threads_default(),
+            task_parallelism: TaskDefaultParameters::task_parallelism_default(),
             max_errors: TaskDefaultParameters::max_errors_default(),
             meta_dir: TaskDefaultParameters::meta_dir_default(),
             oss: OSSDescription::default(),
@@ -260,7 +260,7 @@ impl TaskTruncateBucket {
                     .to_string()
                     .eq(&self.objects_per_batch.to_string())
                 {
-                    while set.len() >= self.task_threads {
+                    while set.len() >= self.task_parallelism {
                         set.join_next().await;
                     }
                     let c = match self.oss.gen_oss_client() {
@@ -283,7 +283,7 @@ impl TaskTruncateBucket {
             }
 
             if vec_keys.len() > 0 {
-                while set.len() >= self.task_threads {
+                while set.len() >= self.task_parallelism {
                     set.join_next().await;
                 }
                 let c = match self.oss.gen_oss_client() {

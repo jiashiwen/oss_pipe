@@ -15,9 +15,7 @@ use crate::{
 };
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-
 use aws_sdk_s3::types::Object;
-// use aws_sdk_s3::{error::GetObjectErrorKind, model::Object};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
@@ -124,8 +122,6 @@ impl TransferTaskActions for TransferOss2Oss {
     async fn listed_records_transfor(
         &self,
         execute_set: &mut JoinSet<()>,
-        // joinset: Arc<Mutex<&mut JoinSet<()>>>,
-        // exec_multi_uploads: Arc<AtomicUsize>,
         executing_transfers: Arc<RwLock<usize>>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
