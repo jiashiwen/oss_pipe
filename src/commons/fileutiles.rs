@@ -307,7 +307,7 @@ pub fn generate_files(
             }
         };
 
-        generate_file(file_size, 104857600, &file_path)?;
+        generate_file(file_size, 10485760, &file_path)?;
     }
 
     Ok(())
