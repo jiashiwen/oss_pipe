@@ -287,20 +287,6 @@ pub fn generate_files(
         std::fs::create_dir_all(dir_path)?;
     };
     let file_prefix = rand_string(file_prefix_len);
-    let batch = file_size / 10485760;
-    let remainder = file_size % 10485760;
-    let mut content = "".to_string();
-    if batch > 0 {
-        let batch_content = rand_string(10485760);
-        for _ in 0..batch {
-            content.push_str(&batch_content);
-        }
-    }
-
-    if remainder > 0 {
-        let remainder_content = rand_string(remainder);
-        content.push_str(&remainder_content);
-    }
 
     for _ in 0..file_quantity {
         let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos();
@@ -321,13 +307,9 @@ pub fn generate_files(
             }
         };
 
-        let mut file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .open(file_path)?;
-        let _ = file.write_all(content.as_bytes());
-        let _ = file.flush();
+        generate_file(file_size, 104857600, &file_path)?;
     }
+
     Ok(())
 }
 

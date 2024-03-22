@@ -717,14 +717,6 @@ impl TransferOss2OssRecordsExecutor {
                         return Err(service_err.into());
                     }
                 }
-                // match service_err.kind {
-                //     GetObjectErrorKind::NoSuchKey(_) => {
-                //         return Ok(());
-                //     }
-                //     _ => {
-                //         return Err(service_err.into());
-                //     }
-                // }
             }
         };
 
