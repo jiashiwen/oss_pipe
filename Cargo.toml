@@ -63,8 +63,8 @@ aliyun-oss-client = "0.12.9"
 
 
 [[example]]
-name = "read_bytes"
-path = "examples/read_bytes.rs"
+name = "multi_transfer"
+path = "examples/multi_transfer.rs"
 
 [[example]]
 name = "splite_test"

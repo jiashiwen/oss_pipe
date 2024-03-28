@@ -139,7 +139,10 @@ impl TransferTaskActions for TransferOss2Oss {
         };
 
         execute_set.spawn(async move {
-            if let Err(e) = transfer.exec_listed_records(records).await {
+            if let Err(e) = transfer
+                .exec_listed_records(records, executing_transfers)
+                .await
+            {
                 stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{}", e);
             };
@@ -622,7 +625,11 @@ pub struct TransferOss2OssRecordsExecutor {
 }
 
 impl TransferOss2OssRecordsExecutor {
-    pub async fn exec_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
+    pub async fn exec_listed_records(
+        &self,
+        records: Vec<ListedRecord>,
+        executing_transfers: Arc<RwLock<usize>>,
+    ) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
@@ -655,9 +662,9 @@ impl TransferOss2OssRecordsExecutor {
                 None => "".to_string(),
             };
             target_key.push_str(&record.key);
-
+            let e_u = Arc::clone(&executing_transfers);
             if let Err(e) = self
-                .listed_record_handler(&record, &c_s, &c_t, &target_key)
+                .listed_record_handler(e_u, &record, &c_s, &c_t, &target_key)
                 .await
             {
                 let recorddesc = RecordDescription {
@@ -696,6 +703,7 @@ impl TransferOss2OssRecordsExecutor {
 
     async fn listed_record_handler(
         &self,
+        executing_transfers: Arc<RwLock<usize>>,
         record: &ListedRecord,
         source_oss: &OssClient,
         target_oss: &OssClient,
@@ -730,13 +738,26 @@ impl TransferOss2OssRecordsExecutor {
             }
         }
 
+        // target_oss
+        //     .transfer_object(
+        //         self.target.bucket.as_str(),
+        //         target_key,
+        //         self.attributes.large_file_size,
+        //         self.attributes.multi_part_chunk_size,
+        //         obj_out_put,
+        //     )
+        //     .await
+
         target_oss
-            .transfer_object(
+            .transfer_object_paralle(
+                obj_out_put,
                 self.target.bucket.as_str(),
                 target_key,
                 self.attributes.large_file_size,
+                executing_transfers,
                 self.attributes.multi_part_chunk_size,
-                obj_out_put,
+                self.attributes.multi_part_chunks_per_batch,
+                self.attributes.multi_part_parallelism,
             )
             .await
     }
