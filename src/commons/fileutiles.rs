@@ -313,7 +313,7 @@ pub fn generate_files(
     Ok(())
 }
 
-pub fn gen_multi_part_plan(file_path: &str, chunk_size: usize) -> Result<Vec<FilePart>> {
+pub fn gen_file_part_plan(file_path: &str, chunk_size: usize) -> Result<Vec<FilePart>> {
     let mut vec_file_parts: Vec<FilePart> = vec![];
     let f = File::open(file_path)?;
     let meta = f.metadata()?;

@@ -1,7 +1,7 @@
 use crate::{
     checkpoint::{FileDescription, FilePosition, Opt, RecordDescription},
     commons::{
-        gen_multi_part_plan, merge_file, size_distributed, FilePart, LastModifyFilter, RegexFilter,
+        gen_file_part_plan, merge_file, size_distributed, FilePart, LastModifyFilter, RegexFilter,
     },
     tasks::{gen_file_path, MODIFIED_PREFIX, REMOVED_PREFIX, TRANSFER_OBJECT_LIST_FILE_PREFIX},
 };
@@ -44,6 +44,13 @@ use tokio::{
 pub struct StreamPart {
     pub part_num: i32,
     pub bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ObjectRange {
+    pub part_num: i32,
+    pub begin: usize,
+    pub end: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -545,7 +552,7 @@ impl OssClient {
         let b_tree_mutex = Arc::new(Mutex::new(b_tree));
         let err_mark = Arc::new(AtomicBool::new(false));
 
-        let file_parts = gen_multi_part_plan(file_path, chuck_size)?;
+        let file_parts = gen_file_part_plan(file_path, chuck_size)?;
         let left_parts = Arc::new(AtomicUsize::new(file_parts.len()));
         let multipart_upload_res: CreateMultipartUploadOutput =
             self.create_multipart_upload(bucket, key, None).await?;
@@ -615,8 +622,7 @@ impl OssClient {
             }
 
             joinset.lock().await.spawn(async move {
-                //ToDo
-                // 假如原子计数器，函数开始+1，结束或报错-1
+                // 原子计数器，函数开始+1，结束或报错-1
                 if e_m.load(std::sync::atomic::Ordering::SeqCst) {
                     return;
                 }
@@ -892,7 +898,6 @@ impl OssClient {
                 let k = key.to_string();
                 let c_b_t = Arc::clone(&completed_parts_btree);
                 joinset.spawn(async move {
-                    println!("upload part");
                     {
                         let mut num = e_t.write().await;
                         *num += 1;
@@ -933,6 +938,96 @@ impl OssClient {
         Ok(completed_parts)
     }
 
+    pub async fn upload_oss_stream_parts_by_range(
+        &self,
+        obj_output: Arc<&GetObjectOutput>,
+        s_client: Arc<Client>,
+        s_bucket: &str,
+        s_key: &str,
+        t_bucket: &str,
+        t_key: &str,
+        upload_id: &str,
+        executing_transfers: Arc<RwLock<usize>>,
+        multi_part_chunk_size: usize,
+        multi_part_chunk_per_batch: usize,
+        multi_part_parallelism: usize,
+    ) -> Result<Vec<CompletedPart>> {
+        let vec_obj_range = gen_object_part_plan(&obj_output, multi_part_chunk_size)?;
+
+        let client = self.client.clone();
+        let arc_t_client = Arc::new(client);
+        let err_mark = Arc::new(AtomicBool::new(false));
+        let mut joinset = JoinSet::new();
+
+        let completed_parts_btree: Arc<Mutex<BTreeMap<i32, CompletedPart>>> =
+            Arc::new(Mutex::new(BTreeMap::new()));
+
+        let mut vec_obj_range_tmp = vec![];
+        let vec_obj_range_len = vec_obj_range.len();
+
+        for range in vec_obj_range {
+            let part_num = range.part_num;
+            vec_obj_range_tmp.push(range);
+            if vec_obj_range_len.eq(&multi_part_chunk_per_batch)
+                || vec_obj_range_len.eq(&TryInto::<usize>::try_into(part_num)?)
+            {
+                let e_t = Arc::clone(&executing_transfers);
+                let s_c = Arc::clone(&s_client);
+                let t_c = Arc::clone(&arc_t_client);
+                let s_b = s_bucket.to_string();
+                let t_b = t_bucket.to_string();
+                let s_k = s_key.to_string();
+                let t_k = t_key.to_string();
+                let up_id = upload_id.to_string();
+                let v_o_r = vec_obj_range_tmp.clone();
+                let c_b_t = Arc::clone(&completed_parts_btree);
+                let e_m = Arc::clone(&err_mark);
+
+                while e_t.read().await.ge(&multi_part_parallelism) {
+                    task::yield_now().await;
+                }
+                joinset.spawn(async move {
+                    {
+                        let mut num = e_t.write().await;
+                        *num += 1;
+                    }
+
+                    if let Err(e) = upload_parts_batch_by_range(
+                        s_c, t_c, &s_b, &t_b, &s_k, &t_k, &up_id, v_o_r, c_b_t,
+                    )
+                    .await
+                    {
+                        log::error!("{:?}", e);
+                        e_m.store(true, std::sync::atomic::Ordering::SeqCst);
+                    };
+
+                    let mut num = e_t.write().await;
+                    *num -= 1;
+                });
+            }
+        }
+
+        while joinset.len() > 0 {
+            if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(anyhow!("upload error"));
+            }
+            joinset.join_next().await;
+        }
+
+        if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(anyhow!("upload error"));
+        }
+
+        let completed_parts = completed_parts_btree
+            .lock()
+            .await
+            .clone()
+            .into_values()
+            .collect::<Vec<CompletedPart>>();
+
+        Ok(completed_parts)
+    }
+
     pub async fn upload_file_parts(
         &self,
         file_name: &str,
@@ -944,7 +1039,7 @@ impl OssClient {
         multi_part_chunk_per_batch: usize,
         multi_part_parallelism: usize,
     ) -> Result<Vec<CompletedPart>> {
-        let file_parts = gen_multi_part_plan(file_name, multi_part_chunk_size)?;
+        let file_parts = gen_file_part_plan(file_name, multi_part_chunk_size)?;
         let client = self.client.clone();
         let arc_client = Arc::new(client);
         let err_mark = Arc::new(AtomicBool::new(false));
@@ -1482,6 +1577,8 @@ pub async fn upload_parts(
     Ok(())
 }
 
+// Todo
+// 规划object plan ，按range 切分 object
 pub async fn upload_stream_parts_batch(
     client: Arc<Client>,
     bucket: &str,
@@ -1491,7 +1588,6 @@ pub async fn upload_stream_parts_batch(
     completed_parts_btree: Arc<Mutex<BTreeMap<i32, CompletedPart>>>,
 ) -> Result<()> {
     for p in parts_vec {
-        println!("{}", p.part_num);
         let stream = ByteStream::from(p.bytes);
         let presigning = PresigningConfig::expires_in(std::time::Duration::from_secs(3000))?;
 
@@ -1501,6 +1597,49 @@ pub async fn upload_stream_parts_batch(
             .key(key)
             .upload_id(upload_id)
             .body(stream)
+            .part_number(p.part_num)
+            // .send()
+            .send_with_plugins(presigning)
+            .await?;
+
+        let completed_part = CompletedPart::builder()
+            .e_tag(upload_part_res.e_tag.unwrap_or_default())
+            .part_number(p.part_num)
+            .build();
+        let mut b_t = completed_parts_btree.lock().await;
+        b_t.insert(p.part_num, completed_part);
+    }
+    Ok(())
+}
+
+pub async fn upload_parts_batch_by_range(
+    s_client: Arc<Client>,
+    t_client: Arc<Client>,
+    s_bucket: &str,
+    t_bucket: &str,
+    s_key: &str,
+    t_key: &str,
+    upload_id: &str,
+    parts_vec: Vec<ObjectRange>,
+    completed_parts_btree: Arc<Mutex<BTreeMap<i32, CompletedPart>>>,
+) -> Result<()> {
+    for p in parts_vec {
+        let range_str = gen_range_string(p.begin, p.end);
+        let s_obj = s_client
+            .get_object()
+            .bucket(s_bucket)
+            .key(s_key)
+            .range(range_str)
+            .send()
+            .await?;
+        let presigning = PresigningConfig::expires_in(std::time::Duration::from_secs(3000))?;
+
+        let upload_part_res = t_client
+            .upload_part()
+            .bucket(t_bucket)
+            .key(t_key)
+            .upload_id(upload_id)
+            .body(s_obj.body)
             .part_number(p.part_num)
             // .send()
             .send_with_plugins(presigning)
@@ -1597,6 +1736,42 @@ pub async fn download_object(
     Ok(())
 }
 
-fn gen_range_string(begin: usize, end: usize) -> String {
+// 生成 range 字符串，用于oss range下载
+pub fn gen_range_string(begin: usize, end: usize) -> String {
     format!("bytes={}-{}", begin, end)
+}
+
+pub fn gen_object_part_plan(
+    get_object_output: &GetObjectOutput,
+    chunk_size: usize,
+) -> Result<Vec<ObjectRange>> {
+    let mut vec_obj_parts = vec![];
+    let obj_len = match get_object_output.content_length() {
+        Some(len) => TryInto::<usize>::try_into(len)?,
+        None => return Err(anyhow!("content length is None")),
+    };
+
+    let mut begin = 0;
+    let quotient = obj_len / chunk_size;
+    let remainder = obj_len % chunk_size;
+    let part_quantities = match remainder.eq(&0) {
+        true => quotient,
+        false => quotient + 1,
+    };
+    for part_idx in 1..=part_quantities {
+        let part_num = TryInto::<i32>::try_into(part_idx)?;
+        let end = match part_idx.eq(&part_quantities) && !remainder.eq(&0) {
+            true => begin + remainder,
+            false => begin + chunk_size,
+        };
+        let obj_range = ObjectRange {
+            part_num,
+            begin,
+            end,
+        };
+        vec_obj_parts.push(obj_range);
+        begin = end + 1;
+    }
+
+    Ok(vec_obj_parts)
 }
