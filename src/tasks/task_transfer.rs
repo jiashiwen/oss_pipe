@@ -411,7 +411,6 @@ impl TransferTask {
         // execut_set 用于执行任务
         let mut execut_set = JoinSet::new();
         // 正在执行的任务数量，用于控制分片上传并行度
-        // let executing_transfers = Arc::new(AtomicUsize::new(0));
         let executing_transfers = Arc::new(RwLock::new(0));
 
         let object_list_file = match list_file {
@@ -584,13 +583,6 @@ impl TransferTask {
                         .to_string()
                         .eq(&self.attributes.objects_per_batch.to_string())
                     {
-                        // while executing_transfers
-                        //     .read()
-                        //     .await
-                        //     .ge(&self.attributes.multi_part_parallelism)
-                        // {
-                        //     task::yield_now().await;
-                        // }
                         while execut_set.len() >= self.attributes.task_parallelism {
                             execut_set.join_next().await;
                         }

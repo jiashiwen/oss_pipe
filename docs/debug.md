@@ -253,3 +253,4 @@ let presigning = PresigningConfig::expires_in(std::time::Duration::from_secs(300
             .await?;
 ```
 
+flamegraph -o flamegraph_00.svg --pid 707018

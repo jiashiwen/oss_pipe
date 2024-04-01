@@ -709,7 +709,7 @@ impl TransferOss2OssRecordsExecutor {
         target_oss: &OssClient,
         target_key: &str,
     ) -> Result<()> {
-        let obj_out_put = match source_oss
+        let s_obj_output = match source_oss
             .get_object(&self.source.bucket.as_str(), record.key.as_str())
             .await
         {
@@ -748,18 +748,73 @@ impl TransferOss2OssRecordsExecutor {
         //     )
         //     .await
 
-        target_oss
-            .transfer_object_paralle(
-                obj_out_put,
-                self.target.bucket.as_str(),
-                target_key,
-                self.attributes.large_file_size,
-                executing_transfers,
-                self.attributes.multi_part_chunk_size,
-                self.attributes.multi_part_chunks_per_batch,
-                self.attributes.multi_part_parallelism,
-            )
-            .await
+        // ToDo
+        // 改写为按range并发下载模式
+        // target_oss
+        //     .transfer_object_paralle(
+        //         obj_out_put,
+        //         self.target.bucket.as_str(),
+        //         target_key,
+        //         self.attributes.large_file_size,
+        //         executing_transfers,
+        //         self.attributes.multi_part_chunk_size,
+        //         self.attributes.multi_part_chunks_per_batch,
+        //         self.attributes.multi_part_parallelism,
+        //     )
+        //     .await
+
+        let content_len = match s_obj_output.content_length() {
+            Some(l) => l,
+            None => return Err(anyhow!("content length is None")),
+        };
+        let content_len_usize: usize = content_len.try_into()?;
+        let expr = match s_obj_output.expires() {
+            Some(d) => Some(*d),
+            None => None,
+        };
+        return match content_len_usize.le(&self.attributes.large_file_size) {
+            true => {
+                target_oss
+                    .upload_object_bytes(
+                        self.target.bucket.as_str(),
+                        target_key,
+                        expr,
+                        s_obj_output.body,
+                    )
+                    .await
+            }
+            false => {
+                let s_client = source_oss.client.clone();
+                let s_c = Arc::new(s_client);
+                let e_t = Arc::clone(&executing_transfers);
+                target_oss
+                    .multipart_upload_obj_paralle_by_range(
+                        s_c,
+                        &self.source.bucket,
+                        record.key.as_str(),
+                        &self.target.bucket,
+                        target_key,
+                        expr,
+                        e_t,
+                        self.attributes.multi_part_chunk_size,
+                        self.attributes.multi_part_chunks_per_batch,
+                        self.attributes.multi_part_parallelism,
+                    )
+                    .await
+                // target_oss
+                //     .multipart_upload_object_stream_paralle_batch(
+                //         s_obj_output,
+                //         self.target.bucket.as_str(),
+                //         target_key,
+                //         expr,
+                //         executing_transfers,
+                //         self.attributes.multi_part_chunk_size,
+                //         self.attributes.multi_part_chunks_per_batch,
+                //         self.attributes.multi_part_parallelism,
+                //     )
+                //     .await
+            }
+        };
     }
 
     pub async fn exec_record_descriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
