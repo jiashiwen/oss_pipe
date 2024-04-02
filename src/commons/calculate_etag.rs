@@ -5,6 +5,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::iter::repeat;
 
+#[allow(dead_code)]
 fn calculate_etag_from_read(f: &mut dyn Read, chunk_size: usize) -> Result<String> {
     let mut md5 = Md5::new();
     let mut concat_md5 = Md5::new();
@@ -31,6 +32,7 @@ fn calculate_etag_from_read(f: &mut dyn Read, chunk_size: usize) -> Result<Strin
     Ok(md5_result)
 }
 
+#[allow(dead_code)]
 fn calculate_etag(file: &str, chunk_size: usize) -> Result<String> {
     let mut f = File::open(file)?;
     calculate_etag_from_read(&mut f, chunk_size)

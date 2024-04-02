@@ -20,6 +20,7 @@ where
     Ok(json)
 }
 
+#[allow(dead_code)]
 pub fn read_json_file<T>(path: &str) -> Result<T>
 where
     T: for<'a> Deserialize<'a>,

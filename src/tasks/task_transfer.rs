@@ -42,12 +42,6 @@ use tokio::{
 };
 use walkdir::WalkDir;
 
-pub struct AnalyzedResult {
-    pub size_range: String,
-    pub objects: i128,
-    pub total_objects: i128,
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 pub enum TransferType {
@@ -64,6 +58,7 @@ impl TransferType {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_stock(&self) -> bool {
         match self {
             TransferType::Stock => true,
@@ -106,7 +101,7 @@ pub struct TransferTaskAttributes {
     pub meta_dir: String,
     #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
     pub target_exists_skip: bool,
-    #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
+    #[serde(default = "TaskDefaultParameters::start_from_checkpoint_default")]
     pub start_from_checkpoint: bool,
     #[serde(default = "TaskDefaultParameters::large_file_size_default")]
     #[serde(serialize_with = "se_usize_to_str")]

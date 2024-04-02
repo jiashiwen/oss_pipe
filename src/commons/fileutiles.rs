@@ -72,6 +72,7 @@ pub fn multi_parts_copy_file(source: &str, target: &str, chunk_size: usize) -> R
     Ok(())
 }
 
+#[allow(dead_code)]
 fn remove_dir_contents<P: AsRef<Path>>(path: P) -> io::Result<()> {
     for entry in fs::read_dir(path)? {
         let entry = entry?;
@@ -250,6 +251,7 @@ pub fn merge_file<P: AsRef<Path>>(file: P, merge_to: P, chunk_size: usize) -> Re
 }
 
 // 生成指定行数，指定每行字节数的文件
+#[allow(dead_code)]
 pub fn generate_line_file(line_base_size: usize, lines: usize, file_name: &str) -> Result<()> {
     // 生成文件目录
     let store_path = Path::new(file_name);

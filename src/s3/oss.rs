@@ -123,6 +123,7 @@ impl OSSDescription {
 }
 
 impl OSSDescription {
+    #[allow(dead_code)]
     pub fn gen_oss_client_ref(&self) -> Result<Box<dyn OSSActions + Send + Sync>> {
         match self.provider {
             OssProvider::JD => {
@@ -351,10 +352,6 @@ mod test {
 
     use super::{OSSDescription, OssProvider};
 
-    fn print_type_of<T>(_: T) {
-        println!("{}", std::any::type_name::<T>())
-    }
-
     fn get_jd_oss_description() -> OSSDescription {
         let vec_oss = read_yaml_file::<Vec<OSSDescription>>("osscfg.yml").unwrap();
         let mut oss_jd = OSSDescription::default();
@@ -364,17 +361,6 @@ mod test {
             }
         }
         oss_jd
-    }
-
-    fn get_ali_oss_description() -> OSSDescription {
-        let vec_oss = read_yaml_file::<Vec<OSSDescription>>("osscfg.yml").unwrap();
-        let mut oss_ali = OSSDescription::default();
-        for item in vec_oss.iter() {
-            if item.provider == OssProvider::ALI {
-                oss_ali = item.clone();
-            }
-        }
-        oss_ali
     }
 
     //cargo test s3::oss::test::test_ossaction_jd_append_all_object_list_to_file -- --nocapture

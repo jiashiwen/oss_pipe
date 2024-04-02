@@ -291,9 +291,7 @@ impl TransferTaskActions for TransferOss2Local {
         merge_file(&modified, &removed, self.attributes.multi_part_chunk_size)?;
         let total_size = removed_size + modified_size;
         let total_lines = removed_lines + modified_lines;
-
         fs::rename(&removed, &modified)?;
-        // fs::remove_file(&modified)?;
         let file_desc = FileDescription {
             path: target_object_list.to_string(),
             size: total_size,
@@ -306,9 +304,7 @@ impl TransferTaskActions for TransferOss2Local {
     async fn listed_records_transfor(
         &self,
         execute_set: &mut JoinSet<()>,
-        // joinset: Arc<Mutex<&mut JoinSet<()>>>,
-        // exec_multi_uploads: Arc<AtomicUsize>,
-        executing_transfers: Arc<RwLock<usize>>,
+        _executing_transfers: Arc<RwLock<usize>>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
@@ -891,14 +887,6 @@ impl Oss2LocalListedRecordsExecutor {
                         return Err(service_err.into());
                     }
                 }
-                // match service_err.kind {
-                //     GetObjectErrorKind::NoSuchKey(_) => {
-                //         return Ok(());
-                //     }
-                //     _ => {
-                //         return Err(service_err.into());
-                //     }
-                // }
             }
         };
 

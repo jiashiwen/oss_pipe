@@ -27,7 +27,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::from_str;
 use std::io::{BufRead, Seek, SeekFrom};
 use std::sync::Arc;
-use std::time::Duration;
 use std::{
     fs::{self, File, OpenOptions},
     io::{BufReader, Write},
@@ -391,7 +390,7 @@ impl TransferTaskActions for TransferLocal2Oss {
 
     async fn execute_increment(
         &self,
-        joinset: &mut JoinSet<()>,
+        _joinset: &mut JoinSet<()>,
         assistant: Arc<Mutex<IncrementAssistant>>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
@@ -569,11 +568,6 @@ impl TransferTaskActions for TransferLocal2Oss {
 }
 
 impl TransferLocal2Oss {
-    fn gen_watcher(&self) -> notify::Result<NotifyWatcher> {
-        let watcher = NotifyWatcher::new(self.source.as_str())?;
-        Ok(watcher)
-    }
-
     async fn modified_str_to_record_description(
         &self,
         modified_str: &str,

@@ -75,7 +75,7 @@ impl NotifyWatcher {
 
     pub async fn watch_to_file(mut self, file: File, file_size: Arc<AtomicU64>) {
         let mut linewiter = LineWriter::new(&file);
-        // let mut tmp_modified = Modified::new();
+
         self.writing_file_status = true;
         for res in self.reciver {
             if !self.writing_file_status {
@@ -151,10 +151,12 @@ impl NotifyWatcher {
         }
     }
 
+    #[allow(dead_code)]
     pub fn stop_write_file(&mut self) {
         self.writing_file_status = false;
     }
 
+    #[allow(dead_code)]
     pub fn writing_file_status(&self) -> bool {
         self.writing_file_status
     }

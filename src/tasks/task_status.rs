@@ -54,8 +54,4 @@ impl TaskStatusSaver {
             yield_now().await;
         }
     }
-
-    pub fn set_executed_file(&mut self, exec_file: FileDescription) {
-        self.executed_file = exec_file;
-    }
 }

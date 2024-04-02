@@ -106,7 +106,7 @@ impl TransferTaskActions for TransferLocal2Local {
     async fn listed_records_transfor(
         &self,
         execute_set: &mut JoinSet<()>,
-        executing_transfers: Arc<RwLock<usize>>,
+        _executing_transfers: Arc<RwLock<usize>>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
@@ -177,8 +177,7 @@ impl TransferTaskActions for TransferLocal2Local {
             filter_type: crate::commons::LastModifyFilterType::Greater,
             timestamp,
         };
-        // let regex_filter =
-        //     RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include)?;
+
         let removed = gen_file_path(
             &self.attributes.meta_dir,
             REMOVED_PREFIX,
@@ -332,7 +331,7 @@ impl TransferTaskActions for TransferLocal2Local {
 
     async fn execute_increment(
         &self,
-        joinset: &mut JoinSet<()>,
+        _joinset: &mut JoinSet<()>,
         assistant: Arc<Mutex<IncrementAssistant>>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,

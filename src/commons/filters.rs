@@ -37,6 +37,7 @@ impl RegexFilter {
         })
     }
 
+    #[allow(dead_code)]
     pub fn new(exclude_regex: Option<RegexSet>, include_regex: Option<RegexSet>) -> Self {
         Self {
             exclude_regex,
@@ -44,10 +45,12 @@ impl RegexFilter {
         }
     }
 
+    #[allow(dead_code)]
     pub fn set_exclude(&mut self, reg_set: RegexSet) {
         self.exclude_regex = Some(reg_set);
     }
 
+    #[allow(dead_code)]
     pub fn set_include(&mut self, reg_set: RegexSet) {
         self.include_regex = Some(reg_set);
     }

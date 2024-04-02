@@ -234,6 +234,7 @@ impl TransferTaskActions for TransferOss2Oss {
         let source_client = self.source.gen_oss_client()?;
         let target_client = self.target.gen_oss_client()?;
 
+        // 筛选源对象，lastmodify大于等于时间戳并转换为RecordDescription格式
         let mut process_source_objects = |source_objects: Vec<Object>| -> Result<()> {
             for obj in source_objects {
                 if let Some(source_key) = obj.key() {
@@ -264,6 +265,7 @@ impl TransferTaskActions for TransferOss2Oss {
             Ok(())
         };
 
+        // 获取目标所有 object 与源对比得到已删除的 object 并写入文件
         let target_resp = target_client
             .list_objects(
                 &self.target.bucket,
@@ -354,6 +356,7 @@ impl TransferTaskActions for TransferOss2Oss {
             target_token = resp.next_token;
         }
 
+        // 获取源所有增量 object 并写入文件
         let source_resp = source_client
             .list_objects(
                 &self.source.bucket,
@@ -801,18 +804,6 @@ impl TransferOss2OssRecordsExecutor {
                         self.attributes.multi_part_parallelism,
                     )
                     .await
-                // target_oss
-                //     .multipart_upload_object_stream_paralle_batch(
-                //         s_obj_output,
-                //         self.target.bucket.as_str(),
-                //         target_key,
-                //         expr,
-                //         executing_transfers,
-                //         self.attributes.multi_part_chunk_size,
-                //         self.attributes.multi_part_chunks_per_batch,
-                //         self.attributes.multi_part_parallelism,
-                //     )
-                //     .await
             }
         };
     }
@@ -914,15 +905,6 @@ impl TransferOss2OssRecordsExecutor {
                                 return Err(service_err.into());
                             }
                         }
-                        // match service_err.kind {
-                        //     GetObjectErrorKind::NoSuchKey(_) => {
-                        //         return Ok(());
-                        //     }
-                        //     _ => {
-                        //         log::error!("{}", service_err);
-                        //         return Err(service_err.into());
-                        //     }
-                        // }
                     }
                 };
                 target_oss

@@ -10,7 +10,3 @@ pub fn size_distributed(size: i128) -> String {
         _ => "1G+".to_string(),
     };
 }
-
-pub fn size_distributed_equally_spaced(size: i128, step: i128) -> String {
-    (size / step).to_string()
-}
