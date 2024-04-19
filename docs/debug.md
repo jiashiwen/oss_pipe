@@ -206,6 +206,11 @@ impl UploadPartFluentBuilder {
         crate::operation::upload_part::UploadPart::orchestrate(&runtime_plugins, input).await
     }
 
+
+    /// Sends the request and returns the response with clinet plugin.
+    ///
+    /// If an error occurs, an `SdkError` will be returned with additional details that
+    /// can be matched against.
     pub async fn send_with_plugins(
         self,
         presigning_config: PresigningConfig,
