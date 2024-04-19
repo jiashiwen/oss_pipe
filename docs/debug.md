@@ -172,6 +172,9 @@ impl UploadPartFluentBuilder {
 修改代码如下：
 
 ```
+use ::aws_smithy_runtime_api::client::result;
+use crate::presigning::PresigningConfig;
+
 impl UploadPartFluentBuilder {
     pub async fn send(
         self,
