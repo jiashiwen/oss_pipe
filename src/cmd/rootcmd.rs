@@ -171,7 +171,6 @@ fn cmd_match(matches: &ArgMatches) {
 
                 match task {
                     Ok(t) => {
-                        log::info!("execute task: {:?}", t.task_id);
                         let r = t.task_desc.execute();
                         match r {
                             Ok(_) => log::info!("task {} execute ok!", t.task_id),

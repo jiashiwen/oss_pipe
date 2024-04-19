@@ -126,7 +126,8 @@
 ## 测试验证
 
 - [x] tokio  实现多线程稳定性，通过循环多线程upload测试,异步情况需重新考虑trait。
-- [ ] 验证 从oss流式读取行，内存直接put 到oss
+- [x] 验证 从oss流式读取行，内存直接put 到oss
+- [ ] 验证 crossbeam_utils::sync::WaitGroup 在 async 下是否起作用
 
 ## 多线程任务
 
@@ -147,3 +148,5 @@
 完成校验框架
 
 $$s_t^3$$
+
+

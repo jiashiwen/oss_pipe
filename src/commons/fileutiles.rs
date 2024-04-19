@@ -220,7 +220,7 @@ pub fn generate_file(file_size: usize, batch: usize, file_name: &str) -> Result<
     }
 
     if remainder > 0 {
-        let str = rand_string(batch);
+        let str = rand_string(remainder);
         let _ = file.write_all(str.as_bytes());
     }
 
@@ -288,29 +288,39 @@ pub fn generate_files(
     if !dir_path.exists() {
         std::fs::create_dir_all(dir_path)?;
     };
+
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(num_cpus::get())
+        .build()?;
+
     let file_prefix = rand_string(file_prefix_len);
+    pool.scope(|s| {
+        for _ in 0..file_quantity {
+            let mut file_name = file_prefix.clone();
+            s.spawn(move |_| {
+                let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos();
+                file_name.push_str(now.to_string().as_str());
 
-    for _ in 0..file_quantity {
-        let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos();
-        let mut file_name = file_prefix.clone();
-        file_name.push_str(now.to_string().as_str());
+                let file_path = match dir.ends_with("/") {
+                    true => {
+                        let mut folder = dir.to_string();
+                        folder.push_str(file_name.as_str());
+                        folder
+                    }
+                    false => {
+                        let mut folder = dir.to_string();
+                        folder.push_str("/");
+                        folder.push_str(file_name.as_str());
+                        folder
+                    }
+                };
 
-        let file_path = match dir.ends_with("/") {
-            true => {
-                let mut folder = dir.to_string();
-                folder.push_str(file_name.as_str());
-                folder
-            }
-            false => {
-                let mut folder = dir.to_string();
-                folder.push_str("/");
-                folder.push_str(file_name.as_str());
-                folder
-            }
-        };
-
-        generate_file(file_size, 10485760, &file_path)?;
-    }
+                if let Err(e) = generate_file(file_size, 1048576, &file_path) {
+                    log::error!("{}", e);
+                };
+            });
+        }
+    });
 
     Ok(())
 }
