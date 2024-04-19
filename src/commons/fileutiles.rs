@@ -293,11 +293,11 @@ pub fn generate_files(
         .num_threads(num_cpus::get())
         .build()?;
 
-    let file_prefix = rand_string(file_prefix_len);
     pool.scope(|s| {
         for _ in 0..file_quantity {
-            let mut file_name = file_prefix.clone();
             s.spawn(move |_| {
+                let file_prefix = rand_string(file_prefix_len);
+                let mut file_name = file_prefix.clone();
                 let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos();
                 file_name.push_str(now.to_string().as_str());
 
