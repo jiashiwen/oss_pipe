@@ -78,6 +78,7 @@ flamegraph -o flamegraph_00.svg --pid  10073
 修改建议
 为 UploadPartInputBuilder、PutObject、GetObjectInputBuilder 新增 set_payload_override， 以便使用aws_sigv4::http_request::SignableBody改变对象传递时频繁调用sigv4造成cpu使用率过高的问题
 
+```
       let payload_override = aws_sigv4::http_request::SignableBody::UnsignedPayload;
       let upload_part_res = client
             .upload_part()
@@ -89,13 +90,16 @@ flamegraph -o flamegraph_00.svg --pid  10073
             .part_number(p.part_num)
             .send()
             .await?;
+```
 
+```
 impl UploadPartInputBuilder {
      pub fn set_payload_override(mut self, payload_override: ::aws_sigv4::http_request::SignableBody) -> Self {
         self.inner.signing_options.payload_override = payload_override;;
         self
     }
 }
+```
 
 payload_override: aws_sigv4::http_request::SignableBody::UnsignedPayload,
 
@@ -103,7 +107,7 @@ payload_override: aws_sigv4::http_request::SignableBody::UnsignedPayload,
 Added set_payload_override to UploadPartInputBuilder, PutObject, and GetObjectInputBuilder to prevent frequent calls to sigv4 when using aws_sigv4::http_request::SignableBody to change object transfers, causing high CPU usage.
 
 
-sdk/s3/src/operation/upload_part/builders.rs
+modify sdk/s3/src/operation/upload_part/builders.rs
 
 ```
 use ::aws_smithy_runtime_api::client::result;
