@@ -9,7 +9,7 @@ edition = "2021"
 anyhow = "^1"
 tokio = { version = "^1", features = ["full"] }
 clap = "4.4.11"
-rustyline = "13.0.0"
+rustyline = "14.0.0"
 rustyline-derive = "0.10.0"
 shellwords = "1.1.0"
 lazy_static = "1.4.0"
@@ -106,6 +106,10 @@ path = "examples/qiniu.rs"
 name = "multi_t_upload"
 path = "examples/multi_thread_upload.rs"
 
+
+[[example]]
+name = "splite_test"
+path = "examples/splite_test.rs"
 
 [profile.release]
 lto = true

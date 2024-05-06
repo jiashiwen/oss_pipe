@@ -1113,6 +1113,17 @@ pub async fn upload_parts(
             .send()
             .await?;
 
+        // let presigning = PresigningConfig::expires_in(std::time::Duration::from_secs(3000))?;
+        // let upload_part_res = client
+        //     .upload_part()
+        //     .bucket(bucket)
+        //     .key(key)
+        //     .upload_id(upload_id)
+        //     .body(stream)
+        //     .part_number(p.part_num)
+        //     .send_with_plugins(presigning)
+        //     .await?;
+
         let completed_part = CompletedPart::builder()
             .e_tag(upload_part_res.e_tag.unwrap_or_default())
             .part_number(p.part_num)

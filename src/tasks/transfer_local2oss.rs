@@ -638,7 +638,11 @@ pub struct Local2OssExecuter {
 }
 
 impl Local2OssExecuter {
-    pub async fn exec_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
+    pub async fn exec_listed_records(
+        &self,
+        records: Vec<ListedRecord>,
+        // joinset: &mut JoinSet<()>,
+    ) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
@@ -747,6 +751,7 @@ impl Local2OssExecuter {
         //     .await
 
         let mut execut_set = JoinSet::new();
+
         target_oss
             .upload_local_file_paralle(
                 &mut execut_set,

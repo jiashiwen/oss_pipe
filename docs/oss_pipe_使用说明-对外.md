@@ -1,6 +1,4 @@
-# OSS PIPE V 0.2.0
-
-oss_pipe 是rust编写的文件迁移工具，旨在支撑大规模的文件迁移场景。相比java 或 golang 构建的同类型产品，借助rust语言的优势，oss_pipe具备无GC、高并发、部署便利、OOM风险低等优势。
+# OSS PIPE 
 
 ## 主要功能
 
@@ -37,31 +35,6 @@ oss_pipe 是rust编写的文件迁移工具，旨在支撑大规模的文件迁�
 
 ## Getting Stated
 
-### How to build
-
-* 安装rust编译环境
-
-```rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-
-* 构建
-
-```shell
-apt update
-apt install openssl
-apt install libssl1.1
-apt install libssl-dev
-apt install -y pkg-config
-```
-
-```shell
-git clone https://github.com/jiashiwen/oss_pipe.git
-cd oss_pipe
-git fetch origin
-git checkout -b 0.2.0 origin/0.2.0
-cargo build --release
-```
 
 ### 基本使用
 

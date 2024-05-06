@@ -73,7 +73,7 @@ aws_sigv4::http_request::canonical_request::CanonicalRequest::payload_hash 占�
 aws rust sdk runtime_plugins 字段为私有，不可变更，提issue
 
 
-flamegraph -o flamegraph_00.svg --pid  10073
+flamegraph -o flamegraph_00.svg --pid 707018
 
 修改建议
 为 UploadPartInputBuilder、PutObject、GetObjectInputBuilder 新增 set_payload_override， 以便使用aws_sigv4::http_request::SignableBody改变对象传递时频繁调用sigv4造成cpu使用率过高的问题
@@ -101,3 +101,5 @@ payload_override: aws_sigv4::http_request::SignableBody::UnsignedPayload,
 
 
 Added set_payload_override to UploadPartInputBuilder, PutObject, and GetObjectInputBuilder to prevent frequent calls to sigv4 when using aws_sigv4::http_request::SignableBody to change object transfers, causing high CPU usage.
+
+

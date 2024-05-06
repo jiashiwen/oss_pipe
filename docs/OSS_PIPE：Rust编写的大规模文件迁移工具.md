@@ -78,3 +78,5 @@
 - 管理客户端
   - TUI
 - 迁移工具
+
+![火焰图](./images/flamegraph_00.svg)
