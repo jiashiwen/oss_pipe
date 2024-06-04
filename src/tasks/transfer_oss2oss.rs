@@ -8,7 +8,7 @@ use crate::{
         get_task_checkpoint, FileDescription, FilePosition, ListedRecord, Opt, RecordDescription,
     },
     commons::{
-        json_to_struct, merge_file, promote_processbar, read_lines, struct_to_json_string,
+        self, json_to_struct, merge_file, promote_processbar, read_lines, struct_to_json_string,
         LastModifyFilter, RegexFilter,
     },
     s3::{aws_s3::OssClient, OSSDescription},
@@ -403,7 +403,7 @@ impl TransferTaskActions for TransferOss2Oss {
             size: total_size,
             total_lines,
         };
-
+        log::info!("capture changed object {:?}", file_desc);
         Ok(file_desc)
     }
 
@@ -457,8 +457,9 @@ impl TransferTaskActions for TransferOss2Oss {
                 .max_errors
                 .ge(&err_counter.load(std::sync::atomic::Ordering::SeqCst))
         {
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
             let modified = match self
-                .changed_object_capture_based_target(checkpoint.timestamp)
+                .changed_object_capture_based_target(checkpoint.task_begin_timestamp)
                 .await
             {
                 Ok(f) => f,
@@ -559,11 +560,12 @@ impl TransferTaskActions for TransferOss2Oss {
 
             finished_total_objects += modified.total_lines;
             if !modified.total_lines.eq(&0) {
-                let msg = format!(
+                let msg: String = format!(
                     "executing transfer modified finished this batch {} total {};",
                     modified.total_lines, finished_total_objects
                 );
-                pd.set_message(msg);
+                log::info!("{}", &msg);
+                // pd.set_message(msg);
             }
 
             let _ = fs::remove_file(&modified.path);
@@ -572,6 +574,7 @@ impl TransferTaskActions for TransferOss2Oss {
                 line_num: modified.total_lines,
             };
             checkpoint.executed_file = modified.clone();
+            checkpoint.task_begin_timestamp = i128::from(now.as_secs());
 
             let _ = checkpoint.save_to(&checkpoint_path);
 
@@ -751,21 +754,6 @@ impl TransferOss2OssRecordsExecutor {
         //         self.attributes.large_file_size,
         //         self.attributes.multi_part_chunk_size,
         //         obj_out_put,
-        //     )
-        //     .await
-
-        // ToDo
-        // 改写为按range并发下载模式
-        // target_oss
-        //     .transfer_object_paralle(
-        //         obj_out_put,
-        //         self.target.bucket.as_str(),
-        //         target_key,
-        //         self.attributes.large_file_size,
-        //         executing_transfers,
-        //         self.attributes.multi_part_chunk_size,
-        //         self.attributes.multi_part_chunks_per_batch,
-        //         self.attributes.multi_part_parallelism,
         //     )
         //     .await
 

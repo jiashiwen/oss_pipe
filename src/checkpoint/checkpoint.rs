@@ -40,7 +40,8 @@ pub struct CheckPoint {
     pub file_for_notify: Option<String>,
     pub task_stage: TransferStage,
     // 记录 checkpoint 时点的时间戳
-    pub timestamp: i128,
+    pub modify_checkpoint_timestamp: i128,
+    pub task_begin_timestamp: i128,
 }
 
 impl Default for CheckPoint {
@@ -53,8 +54,8 @@ impl Default for CheckPoint {
             },
             file_for_notify: Default::default(),
             task_stage: TransferStage::Stock,
-            timestamp: 0,
-            // current_stock_object_list_file: "".to_string(),
+            modify_checkpoint_timestamp: 0,
+            task_begin_timestamp: 0, // current_stock_object_list_file: "".to_string(),
         }
     }
 }
@@ -76,7 +77,7 @@ impl CheckPoint {
     }
     pub fn save_to(&mut self, path: &str) -> Result<()> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
-        self.timestamp = i128::from(now.as_secs());
+        self.modify_checkpoint_timestamp = i128::from(now.as_secs());
         let mut file = OpenOptions::new()
             .create(true)
             .write(true)
@@ -90,7 +91,7 @@ impl CheckPoint {
 
     pub fn save_to_file(&mut self, file: &mut File) -> Result<()> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
-        self.timestamp = i128::from(now.as_secs());
+        self.modify_checkpoint_timestamp = i128::from(now.as_secs());
         let constent = struct_to_yaml_string(self)?;
         file.write_all(constent.as_bytes())?;
         file.flush()?;
@@ -159,8 +160,8 @@ mod test {
                     executed_file_position: file_position,
                     file_for_notify: None,
                     task_stage: crate::tasks::TransferStage::Stock,
-                    timestamp: i128::from(now.as_secs()),
-                    // current_stock_object_list_file: path.to_string(),
+                    modify_checkpoint_timestamp: i128::from(now.as_secs()),
+                    task_begin_timestamp: i128::from(now.as_secs()),
                 };
 
                 let _ = checkpoint.save_to(save_path);

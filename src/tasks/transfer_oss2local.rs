@@ -405,7 +405,7 @@ impl TransferTaskActions for TransferOss2Local {
                 .ge(&err_counter.load(std::sync::atomic::Ordering::SeqCst))
         {
             let modified = match self
-                .changed_object_capture_based_target(checkpoint.timestamp)
+                .changed_object_capture_based_target(checkpoint.modify_checkpoint_timestamp)
                 .await
             {
                 Ok(f) => f,

@@ -352,7 +352,7 @@ impl TransferTask {
                         // 流程逻辑
                         // 扫描target 文件list-> 抓取自扫描时间开始，源端的变动数据 -> 生成objlist，action 新增target change capture
                         let modified = match task
-                            .changed_object_capture_based_target(checkpoint.timestamp)
+                            .changed_object_capture_based_target(checkpoint.task_begin_timestamp)
                             .await
                         {
                             Ok(f) => f,
@@ -416,7 +416,7 @@ impl TransferTask {
             let mut file_for_notify = None;
             // 持续同步逻辑: 执行增量助理
             let task_increment_prelude = self.gen_transfer_actions();
-            // if self.attributes.continuous {
+
             if self.attributes.transfer_type.is_full()
                 || self.attributes.transfer_type.is_increment()
             {
@@ -607,13 +607,6 @@ impl TransferTask {
                     && err_counter.load(std::sync::atomic::Ordering::SeqCst)
                         < self.attributes.max_errors
                 {
-                    // while executing_transfers
-                    //     .read()
-                    //     .await
-                    //     .ge(&self.attributes.multi_part_parallelism)
-                    // {
-                    //     task::yield_now().await;
-                    // }
                     while execut_set.len() >= self.attributes.task_parallelism {
                         execut_set.join_next().await;
                     }
@@ -637,10 +630,6 @@ impl TransferTask {
                 execut_set.join_next().await;
             }
 
-            // while executing_transfers.load(std::sync::atomic::Ordering::SeqCst) > 0 {
-            //     task::yield_now().await;
-            //     // let _ = tokio::time::sleep(Duration::from_micros(200));
-            // }
             // 配置停止 offset save 标识为 true
             snapshot_stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
             let lock = increment_assistant.lock().await;
@@ -653,7 +642,8 @@ impl TransferTask {
                 executed_file_position: list_file_position.clone(),
                 file_for_notify: notify,
                 task_stage: TransferStage::Stock,
-                timestamp: 0,
+                modify_checkpoint_timestamp: 0,
+                task_begin_timestamp: i128::from(now.as_secs()),
             };
             if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
                 log::error!("{}", e);

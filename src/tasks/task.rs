@@ -1,12 +1,12 @@
 use super::{CompareTask, TransferTask, TransferType};
 use crate::{
     commons::{
-        byte_size_str_to_usize, byte_size_usize_to_str, struct_to_yaml_string, LastModifyFilter,
+        self, byte_size_str_to_usize, byte_size_usize_to_str, struct_to_yaml_string,
+        LastModifyFilter,
     },
     s3::OSSDescription,
 };
 use anyhow::{anyhow, Result};
-// use aws_sdk_s3::model::ObjectIdentifier;
 use aws_sdk_s3::types::ObjectIdentifier;
 use serde::{
     de::{self},

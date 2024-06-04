@@ -1,7 +1,10 @@
 use super::{TransferStage, OFFSET_PREFIX};
 use crate::checkpoint::{CheckPoint, FileDescription, FilePosition};
 use dashmap::DashMap;
-use std::sync::{atomic::AtomicBool, Arc};
+use std::{
+    sync::{atomic::AtomicBool, Arc},
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::task::yield_now;
 
 pub struct TaskStatusSaver {
@@ -16,6 +19,7 @@ pub struct TaskStatusSaver {
 
 impl TaskStatusSaver {
     pub async fn snapshot_to_file(&self) {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
         let mut checkpoint = CheckPoint {
             executed_file: self.executed_file.clone(),
             executed_file_position: FilePosition {
@@ -24,7 +28,8 @@ impl TaskStatusSaver {
             },
             file_for_notify: self.file_for_notify.clone(),
             task_stage: self.task_stage,
-            timestamp: 0,
+            modify_checkpoint_timestamp: 0,
+            task_begin_timestamp: i128::from(now.as_secs()),
         };
         let _ = checkpoint.save_to(&self.check_point_path);
 
