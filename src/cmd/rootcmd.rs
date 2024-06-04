@@ -173,7 +173,7 @@ fn cmd_match(matches: &ArgMatches) {
                     Ok(t) => {
                         let r = t.task_desc.execute();
                         match r {
-                            Ok(_) => log::info!("task {} execute ok!", t.task_id),
+                            Ok(_) => log::info!("task {} execute ok!{}", t.task_id, now.elapsed()),
                             Err(e) => {
                                 log::error!("{}", e);
                             }
@@ -183,7 +183,7 @@ fn cmd_match(matches: &ArgMatches) {
                         log::error!("{}", e);
                     }
                 }
-                println!("{:?}", now.elapsed());
+                // println!("{:?}", now.elapsed());
             }
         }
 

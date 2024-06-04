@@ -666,7 +666,6 @@ impl TransferTask {
         });
 
         // 增量逻辑
-        // if self.attributes.continuous {
         if self.attributes.transfer_type.is_full() || self.attributes.transfer_type.is_increment() {
             rt.block_on(async {
                 let stop_mark = Arc::new(AtomicBool::new(false));

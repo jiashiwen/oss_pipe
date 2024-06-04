@@ -28,7 +28,7 @@ pub async fn quantify_processbar(
     pb.set_style(progress_style);
 
     while !stop_mark.load(std::sync::atomic::Ordering::Relaxed) {
-        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
         let line_num = status_map
             .iter()
             .filter(|f| f.key().starts_with(key_prefix))
@@ -38,11 +38,13 @@ pub async fn quantify_processbar(
             Some(current) => {
                 let new = min(current, total);
                 pb.set_position(new);
+                log::info!("total:{},executed:{}", total, new)
             }
             None => {}
         }
         yield_now().await;
     }
+    log::info!("total:{},executed:{}", total, total);
     pb.set_position(total);
     pb.finish_with_message("Finish");
 }

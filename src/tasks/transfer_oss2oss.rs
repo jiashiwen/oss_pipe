@@ -274,7 +274,9 @@ impl TransferTaskActions for TransferOss2Oss {
                 None,
             )
             .await?;
+
         let mut target_token = target_resp.next_token;
+
         if let Some(objects) = target_resp.object_list {
             for obj in objects {
                 if let Some(target_key) = obj.key() {
@@ -316,7 +318,7 @@ impl TransferTaskActions for TransferOss2Oss {
                     &self.target.bucket,
                     self.target.prefix.clone(),
                     self.attributes.objects_per_batch,
-                    None,
+                    target_token,
                 )
                 .await?;
             if let Some(objects) = resp.object_list {
@@ -376,7 +378,7 @@ impl TransferTaskActions for TransferOss2Oss {
                     &self.source.bucket,
                     self.source.prefix.clone(),
                     self.attributes.objects_per_batch,
-                    None,
+                    source_token,
                 )
                 .await?;
             if let Some(objects) = resp.object_list {
@@ -387,6 +389,7 @@ impl TransferTaskActions for TransferOss2Oss {
 
         removed_file.flush()?;
         modified_file.flush()?;
+
         let modified_size = modified_file.metadata()?.len();
         let removed_size = removed_file.metadata()?.len();
 

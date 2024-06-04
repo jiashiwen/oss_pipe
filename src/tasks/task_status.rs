@@ -48,6 +48,8 @@ impl TaskStatusSaver {
 
             if let Err(e) = checkpoint.save_to(&self.check_point_path) {
                 log::error!("{},{}", e, self.check_point_path);
+            } else {
+                log::info!("checkpoint:\n{:?}", checkpoint);
             };
 
             tokio::time::sleep(tokio::time::Duration::from_secs(self.interval)).await;

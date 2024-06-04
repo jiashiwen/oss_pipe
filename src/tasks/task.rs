@@ -1,6 +1,8 @@
 use super::{CompareTask, TransferTask, TransferType};
 use crate::{
-    commons::{byte_size_str_to_usize, byte_size_usize_to_str, LastModifyFilter},
+    commons::{
+        byte_size_str_to_usize, byte_size_usize_to_str, struct_to_yaml_string, LastModifyFilter,
+    },
     s3::OSSDescription,
 };
 use anyhow::{anyhow, Result};
@@ -67,7 +69,10 @@ pub enum TaskDescription {
 impl TaskDescription {
     pub fn execute(&self) -> Result<()> {
         match self {
-            TaskDescription::Transfer(transfer) => transfer.execute(),
+            TaskDescription::Transfer(transfer) => {
+                log::info!("start task:\n{}", struct_to_yaml_string(transfer).unwrap());
+                transfer.execute()
+            }
             TaskDescription::TruncateBucket(truncate) => truncate.exec_multi_threads(),
             TaskDescription::Compare(compare) => compare.execute(),
         }

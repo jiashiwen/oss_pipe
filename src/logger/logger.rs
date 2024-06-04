@@ -25,11 +25,16 @@ pub fn init_log() {
         .unwrap();
 
     let file_out = FileAppender::builder()
-        .encoder(Box::new(PatternEncoder::new("{d} - {m}{n}")))
+        .encoder(Box::new(PatternEncoder::new("{d} {l} {t} - {m}{n}")))
         .build("logs/app.log")
         .unwrap();
+    // let stdout = ConsoleAppender::builder()
+    //     .encoder(Box::new(JsonEncoder::new()))
+    //     .build();
     let stdout = ConsoleAppender::builder()
-        .encoder(Box::new(JsonEncoder::new()))
+        .encoder(Box::new(PatternEncoder::new(
+            "{l} {d} {t} {f} {L} - {m}{n}",
+        )))
         .build();
 
     // let appender_rolling = Appender::builder().build("rolling_file", Box::new(rolling_file));
