@@ -5,6 +5,7 @@ mod cmd;
 mod commons;
 mod configure;
 
+mod exception;
 mod interact;
 mod logger;
 mod s3;

@@ -12,7 +12,6 @@ use crate::commons::{
 use crate::commons::{struct_to_yaml_string, CommandCompleter};
 use crate::configure::{generate_default_config, set_config_file_path};
 use crate::configure::{get_config_file_path, get_current_config_yml, set_config};
-use crate::interact;
 use crate::interact::INTERACT_STATUS;
 use crate::s3::oss::OSSDescription;
 use crate::s3::oss::OssProvider;
@@ -20,6 +19,7 @@ use crate::tasks::{
     task_id_generator, CompareTask, ObjectStorage, Task, TaskDescription, TaskTruncateBucket,
     TaskType, TransferTask,
 };
+use crate::{exception, interact};
 use clap::{Arg, ArgAction, ArgMatches, Command as Clap_Command};
 use lazy_static::lazy_static;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -180,7 +180,11 @@ fn cmd_match(matches: &ArgMatches) {
                         }
                     }
                     Err(e) => {
-                        log::error!("{}", e);
+                        log::error!(
+                            "{}: {}",
+                            exception::TaskError::TaskYmlFileError(f.to_string()),
+                            e
+                        );
                     }
                 }
                 // println!("{:?}", now.elapsed());
