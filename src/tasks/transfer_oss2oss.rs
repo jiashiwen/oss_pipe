@@ -13,7 +13,7 @@ use crate::{
     },
     s3::{aws_s3::OssClient, OSSDescription},
 };
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use aws_sdk_s3::types::Object;
 use dashmap::DashMap;
@@ -366,7 +366,8 @@ impl TransferTaskActions for TransferOss2Oss {
                 self.attributes.objects_per_batch,
                 None,
             )
-            .await?;
+            .await
+            .context(format!("{}:{}", file!(), line!()))?;
         let mut source_token = source_resp.next_token;
         if let Some(objects) = source_resp.object_list {
             process_source_objects(objects)?;
@@ -464,7 +465,7 @@ impl TransferTaskActions for TransferOss2Oss {
             {
                 Ok(f) => f,
                 Err(e) => {
-                    log::error!("{}", e);
+                    log::error!("{:?}", e);
                     return;
                 }
             };
