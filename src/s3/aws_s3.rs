@@ -259,7 +259,6 @@ impl OssClient {
             .key(key)
             .send()
             .await?;
-
         std::result::Result::Ok(resp)
     }
 

@@ -1,3 +1,5 @@
+use logger::tracing_init;
+
 use crate::logger::init_log;
 mod checkers;
 pub mod checkpoint;
@@ -13,6 +15,7 @@ mod tasks;
 
 fn main() {
     // console_subscriber::init();
-    init_log();
+    // init_log();
+    tracing_init();
     cmd::run_app();
 }

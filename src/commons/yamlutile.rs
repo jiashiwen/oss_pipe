@@ -1,7 +1,9 @@
-use anyhow::{Ok, Result};
+use anyhow::{Context, Result};
 use serde::Deserialize;
 use serde_yaml::from_str;
 use std::fs;
+use tracing::error;
+use tracing_subscriber::fmt::format;
 
 pub fn struct_to_yml_file<T>(value: &T, path: &str) -> Result<()>
 where
@@ -20,11 +22,12 @@ where
     Ok(yml)
 }
 
+#[tracing::instrument]
 pub fn read_yaml_file<T>(path: &str) -> Result<T>
 where
     T: for<'a> Deserialize<'a>,
 {
-    let contents = fs::read_to_string(path)?;
+    let contents = fs::read_to_string(path).context(format!("{}:{}", file!(), line!()))?;
     let r = from_str::<T>(contents.as_str())?;
     Ok(r)
 }

@@ -181,8 +181,8 @@ fn cmd_match(matches: &ArgMatches) {
                     }
                     Err(e) => {
                         log::error!(
-                            "{}: {}",
-                            exception::TaskError::TaskYmlFileError(f.to_string()),
+                            "{:#?}",
+                            // exception::TaskError::TaskYmlFileError(f.to_string()),
                             e
                         );
                     }

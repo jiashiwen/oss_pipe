@@ -6,9 +6,12 @@ use log4rs::append::rolling_file::policy::compound::trigger::size::SizeTrigger;
 use log4rs::append::rolling_file::policy::compound::CompoundPolicy;
 use log4rs::append::rolling_file::RollingFileAppender;
 use log4rs::config::{Appender, Root};
-use log4rs::encode::json::JsonEncoder;
 use log4rs::encode::pattern::PatternEncoder;
 use log4rs::Config;
+use tracing_appender::rolling;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{fmt, Layer};
 
 pub fn init_log() {
     let window_size = 3; // log0, log1, log2
@@ -60,4 +63,31 @@ pub fn init_log() {
         .unwrap();
 
     let _ = log4rs::init_config(config).unwrap();
+}
+
+pub fn tracing_init() {
+    // 格式化输出层，并且输出到终端。
+    let formatting_layer = fmt::layer()
+        .pretty()
+        .with_file(true)
+        .with_line_number(true)
+        .with_writer(std::io::stdout)
+        .with_filter(tracing_subscriber::filter::LevelFilter::INFO)
+        .boxed();
+
+    // 文件输出层
+    let file_appender = rolling::daily("logs/", "oss_pip.log");
+    let file_layer = fmt::layer()
+        .with_ansi(false)
+        .with_file(true)
+        .with_line_number(true)
+        .with_writer(file_appender)
+        .with_filter(tracing_subscriber::filter::LevelFilter::INFO) // 文件输出日志等级
+        .boxed();
+
+    let registry = tracing_subscriber::registry()
+        .with(file_layer)
+        .with(formatting_layer);
+
+    registry.init()
 }
