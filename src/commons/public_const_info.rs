@@ -10,6 +10,3 @@ pub const OFFSET_PREFIX: &'static str = "offset_";
 pub const NOTIFY_FILE_PREFIX: &'static str = "notify_";
 pub const REMOVED_PREFIX: &'static str = "removed_";
 pub const MODIFIED_PREFIX: &'static str = "modified_";
-
-// 公共信息
-pub const INFO_CAPTURE_CHANGED_OBJECT: &'static str = "capture changed object {:?}";

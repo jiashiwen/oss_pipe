@@ -12,14 +12,11 @@ use crate::commons::{
 use crate::commons::{struct_to_yaml_string, CommandCompleter};
 use crate::configure::{generate_default_config, set_config_file_path};
 use crate::configure::{get_config_file_path, get_current_config_yml, set_config};
+use crate::interact;
 use crate::interact::INTERACT_STATUS;
 use crate::s3::oss::OSSDescription;
 use crate::s3::oss::OssProvider;
-use crate::tasks::{
-    task_id_generator, CompareTask, ObjectStorage, Task, TaskDescription, TaskTruncateBucket,
-    TaskType, TransferTask,
-};
-use crate::{exception, interact};
+use crate::tasks::{CompareTask, ObjectStorage, Task, TaskTruncateBucket, TaskType, TransferTask};
 use clap::{Arg, ArgAction, ArgMatches, Command as Clap_Command};
 use lazy_static::lazy_static;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -167,17 +164,10 @@ fn cmd_match(matches: &ArgMatches) {
         if let Some(exec) = task.subcommand_matches("exec") {
             if let Some(f) = exec.get_one::<String>("filepath") {
                 let task = read_yaml_file::<Task>(f);
-                let now = time::Instant::now();
 
                 match task {
                     Ok(t) => {
-                        let r = t.task_desc.execute();
-                        match r {
-                            Ok(_) => log::info!("task {} execute ok!{}", t.task_id, now.elapsed()),
-                            Err(e) => {
-                                log::error!("{}", e);
-                            }
-                        }
+                        t.execute();
                     }
                     Err(e) => {
                         log::error!(
@@ -201,8 +191,9 @@ fn cmd_match(matches: &ArgMatches) {
                     }
                 };
 
-                match task.task_desc {
-                    TaskDescription::Transfer(t) => {
+                // match task.task_desc {
+                match task {
+                    Task::Transfer(t) => {
                         let _ = t.analyze();
                     }
                     _ => {
@@ -214,8 +205,6 @@ fn cmd_match(matches: &ArgMatches) {
     }
 
     if let Some(template) = matches.subcommand_matches("template") {
-        let task_id = task_id_generator();
-
         if let Some(transfer) = template.subcommand_matches("transfer") {
             if let Some(oss2oss) = transfer.subcommand_matches("oss2oss") {
                 let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
@@ -227,6 +216,7 @@ fn cmd_match(matches: &ArgMatches) {
                 };
                 let file = oss2oss.get_one::<String>("file");
                 let mut transfer_oss2oss = TransferTask::default();
+                transfer_oss2oss.name = "transfer_oss2oss".to_string();
                 transfer_oss2oss.attributes.task_parallelism = num_cpus::get();
 
                 let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
@@ -242,11 +232,12 @@ fn cmd_match(matches: &ArgMatches) {
                     timestamp: i128::from(now.as_secs()),
                 });
 
-                let task = Task {
-                    task_id: task_id.to_string(),
-                    name: "transfer oss to oss".to_string(),
-                    task_desc: TaskDescription::Transfer(transfer_oss2oss),
-                };
+                // let task = Task {
+                //     task_id: task_id.to_string(),
+                //     name: "transfer oss to oss".to_string(),
+                //     task_desc: Task::Transfer(transfer_oss2oss),
+                // };
+                let task = Task::Transfer(transfer_oss2oss);
 
                 match file {
                     Some(f) => {
@@ -278,6 +269,7 @@ fn cmd_match(matches: &ArgMatches) {
                 };
                 let file = oss2local.get_one::<String>("file");
                 let mut transfer_oss2local = TransferTask::default();
+                transfer_oss2local.name = "transfer_oss2local".to_string();
                 let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
                 let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
                 transfer_oss2local.attributes.exclude = Some(exclude_vec);
@@ -289,11 +281,12 @@ fn cmd_match(matches: &ArgMatches) {
                     timestamp: i128::from(now.as_secs()),
                 });
 
-                let task = Task {
-                    task_id: task_id.to_string(),
-                    name: "transfer oss to local".to_string(),
-                    task_desc: TaskDescription::Transfer(transfer_oss2local),
-                };
+                // let task = Task {
+                //     task_id: task_id.to_string(),
+                //     name: "transfer oss to local".to_string(),
+                //     task_desc: Task::Transfer(transfer_oss2local),
+                // };
+                let task = Task::Transfer(transfer_oss2local);
 
                 match file {
                     Some(f) => {
@@ -325,6 +318,7 @@ fn cmd_match(matches: &ArgMatches) {
                 };
                 let file = local2oss.get_one::<String>("file");
                 let mut transfer_local2oss = TransferTask::default();
+                transfer_local2oss.name = "transfer_local2oss".to_string();
                 transfer_local2oss.attributes.task_parallelism = num_cpus::get();
                 transfer_local2oss.attributes.multi_part_parallelism = num_cpus::get() * 2;
                 let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
@@ -338,11 +332,12 @@ fn cmd_match(matches: &ArgMatches) {
                     timestamp: i128::from(now.as_secs()),
                 });
 
-                let task = Task {
-                    task_id: task_id.to_string(),
-                    name: "transfer local to oss".to_string(),
-                    task_desc: TaskDescription::Transfer(transfer_local2oss),
-                };
+                // let task = Task {
+                //     task_id: task_id.to_string(),
+                //     name: "transfer local to oss".to_string(),
+                //     task_desc: Task::Transfer(transfer_local2oss),
+                // };
+                let task = Task::Transfer(transfer_local2oss);
 
                 match file {
                     Some(f) => {
@@ -375,6 +370,7 @@ fn cmd_match(matches: &ArgMatches) {
                 };
                 let file = local2local.get_one::<String>("file");
                 let mut transfer_local2local = TransferTask::default();
+                transfer_local2local.name = "transfer_local2local".to_string();
                 transfer_local2local.attributes.task_parallelism = num_cpus::get();
                 let include_vec = vec!["test/t1/*".to_string(), "test/t2/*".to_string()];
                 let exclude_vec = vec!["test/t3/*".to_string(), "test/t4/*".to_string()];
@@ -389,11 +385,12 @@ fn cmd_match(matches: &ArgMatches) {
                     timestamp: i128::from(now.as_secs()),
                 });
 
-                let task = Task {
-                    task_id: task_id.to_string(),
-                    name: "transfer local to local".to_string(),
-                    task_desc: TaskDescription::Transfer(transfer_local2local),
-                };
+                // let task = Task {
+                //     task_id: task_id.to_string(),
+                //     name: "transfer local to local".to_string(),
+                //     task_desc: Task::Transfer(transfer_local2local),
+                // };
+                let task = Task::Transfer(transfer_local2local);
 
                 match file {
                     Some(f) => {
@@ -420,11 +417,13 @@ fn cmd_match(matches: &ArgMatches) {
         if let Some(truncate_bucket) = template.subcommand_matches("truncate_bucket") {
             let file = truncate_bucket.get_one::<String>("file");
             let task_truncate_bucket = TaskTruncateBucket::default();
-            let task = Task {
-                task_id: task_id.to_string(),
-                name: "truncate bucket task".to_string(),
-                task_desc: TaskDescription::TruncateBucket(task_truncate_bucket),
-            };
+            // let task = Task {
+            //     task_id: task_id.to_string(),
+            //     name: "truncate bucket task".to_string(),
+            //     task_desc: Task::TruncateBucket(task_truncate_bucket),
+            // };
+
+            let task = Task::TruncateBucket(task_truncate_bucket);
             match file {
                 Some(f) => {
                     match struct_to_yml_file(&task, f) {
@@ -449,13 +448,14 @@ fn cmd_match(matches: &ArgMatches) {
         if let Some(compare) = template.subcommand_matches("compare") {
             let file = compare.get_one::<String>("file");
             let task_compare = CompareTask::default();
-            // task_compare.source.provider = OssProvider::ALI;
-            // task_compare.source.endpoint = "http://oss-cn-beijing.aliyuncs.com".to_string();
-            let task = Task {
-                task_id: task_id.to_string(),
-                name: "compare task".to_string(),
-                task_desc: TaskDescription::Compare(task_compare),
-            };
+
+            // let task = Task {
+            //     task_id: task_id.to_string(),
+            //     name: "compare task".to_string(),
+            //     task_desc: Task::Compare(task_compare),
+            // };
+
+            let task = Task::Compare(task_compare);
             match file {
                 Some(f) => {
                     match struct_to_yml_file(&task, f) {

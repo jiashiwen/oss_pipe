@@ -150,6 +150,10 @@ impl Default for TransferTaskAttributes {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub struct TransferTask {
+    #[serde(default = "TaskDefaultParameters::id_default")]
+    pub task_id: String,
+    #[serde(default = "TaskDefaultParameters::name_default")]
+    pub name: String,
     pub source: ObjectStorage,
     pub target: ObjectStorage,
     pub attributes: TransferTaskAttributes,
@@ -158,6 +162,8 @@ pub struct TransferTask {
 impl Default for TransferTask {
     fn default() -> Self {
         Self {
+            task_id: TaskDefaultParameters::id_default(),
+            name: TaskDefaultParameters::name_default(),
             source: ObjectStorage::OSS(OSSDescription::default()),
             target: ObjectStorage::OSS(OSSDescription::default()),
             attributes: TransferTaskAttributes::default(),
@@ -197,6 +203,8 @@ impl TransferTask {
                 }
                 ObjectStorage::OSS(oss_t) => {
                     let t = TransferOss2Oss {
+                        task_id: self.task_id.clone(),
+                        name: self.name.clone(),
                         source: oss_s.clone(),
                         target: oss_t.clone(),
                         attributes: self.attributes.clone(),

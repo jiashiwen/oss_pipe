@@ -241,6 +241,10 @@ impl CompareCheckOption {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub struct CompareTask {
+    #[serde(default = "TaskDefaultParameters::id_default")]
+    pub task_id: String,
+    #[serde(default = "TaskDefaultParameters::name_default")]
+    pub name: String,
     pub source: ObjectStorage,
     pub target: ObjectStorage,
     pub check_option: CompareCheckOption,
@@ -250,6 +254,8 @@ pub struct CompareTask {
 impl Default for CompareTask {
     fn default() -> Self {
         Self {
+            task_id: TaskDefaultParameters::id_default(),
+            name: TaskDefaultParameters::name_default(),
             source: ObjectStorage::default(),
             target: ObjectStorage::default(),
             check_option: CompareCheckOption::default(),

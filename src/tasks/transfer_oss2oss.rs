@@ -8,10 +8,11 @@ use crate::{
         get_task_checkpoint, FileDescription, FilePosition, ListedRecord, Opt, RecordDescription,
     },
     commons::{
-        self, json_to_struct, merge_file, promote_processbar, read_lines, struct_to_json_string,
+        json_to_struct, merge_file, promote_processbar, read_lines, struct_to_json_string,
         LastModifyFilter, RegexFilter,
     },
     s3::{aws_s3::OssClient, OSSDescription},
+    tasks::{LogInfo, TaskDefaultParameters},
 };
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
@@ -37,6 +38,10 @@ use walkdir::WalkDir;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub struct TransferOss2Oss {
+    #[serde(default = "TaskDefaultParameters::id_default")]
+    pub task_id: String,
+    #[serde(default = "TaskDefaultParameters::name_default")]
+    pub name: String,
     pub source: OSSDescription,
     pub target: OSSDescription,
     pub attributes: TransferTaskAttributes,
@@ -45,6 +50,8 @@ pub struct TransferOss2Oss {
 impl Default for TransferOss2Oss {
     fn default() -> Self {
         Self {
+            task_id: TaskDefaultParameters::id_default(),
+            name: TaskDefaultParameters::name_default(),
             source: OSSDescription::default(),
             target: OSSDescription::default(),
             attributes: TransferTaskAttributes::default(),
@@ -404,7 +411,12 @@ impl TransferTaskActions for TransferOss2Oss {
             size: total_size,
             total_lines,
         };
-        log::info!("capture changed object {:?}", file_desc);
+        let info = LogInfo {
+            task_id: __self.task_id.clone(),
+            msg: "capture changed object".to_string(),
+            additional: Some(file_desc.clone()),
+        };
+        log::info!("{:?} ", info);
         Ok(file_desc)
     }
 

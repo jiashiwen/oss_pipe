@@ -1,5 +1,6 @@
-use super::{ali_oss::OssAliClient, aws_s3::OssClient, jd_s3::OssJdClient, jrss::JRSSClient};
-use aliyun_oss_client::{BucketName, EndPoint};
+// use super::ali_oss::OssAliClient;
+use super::{aws_s3::OssClient, jd_s3::OssJdClient};
+// use super::jrss::JRSSClient;
 use anyhow::{Ok, Result};
 use async_trait::async_trait;
 use aws_config::{BehaviorVersion, SdkConfig};
@@ -8,7 +9,6 @@ use aws_credential_types::{provider::SharedCredentialsProvider, Credentials};
 use aws_sdk_s3::config::Region;
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
 
 #[async_trait]
 pub trait OSSActions {
@@ -144,38 +144,7 @@ impl OSSDescription {
                 let jdclient = OssJdClient { client };
                 Ok(Box::new(jdclient))
             }
-            OssProvider::ALI => {
-                let bucket = BucketName::new(self.bucket.clone())?;
-                let endpoint = EndPoint::from_str(self.endpoint.as_str())?;
-                let client = aliyun_oss_client::Client::new(
-                    self.access_key_id.clone().into(),
-                    self.secret_access_key.clone().into(),
-                    endpoint,
-                    bucket,
-                );
-                let ali_client = OssAliClient { client };
-                Ok(Box::new(ali_client))
-            }
 
-            OssProvider::JRSS => {
-                let shared_config = SdkConfig::builder()
-                    .credentials_provider(SharedCredentialsProvider::new(Credentials::new(
-                        self.access_key_id.clone(),
-                        self.secret_access_key.clone(),
-                        None,
-                        None,
-                        "Static",
-                    )))
-                    .endpoint_url(self.endpoint.clone())
-                    .region(Region::new(self.region.clone()))
-                    .build();
-
-                let s3_config_builder =
-                    aws_sdk_s3::config::Builder::from(&shared_config).force_path_style(true);
-                let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
-                let jdclient = JRSSClient { client };
-                Ok(Box::new(jdclient))
-            }
             OssProvider::AWS => {
                 let shared_config = SdkConfig::builder()
                     .credentials_provider(SharedCredentialsProvider::new(Credentials::new(
@@ -194,6 +163,8 @@ impl OSSDescription {
                 let aws_client = OssJdClient { client };
                 Ok(Box::new(aws_client))
             }
+            OssProvider::ALI => todo!(),
+            OssProvider::JRSS => todo!(),
             OssProvider::HUAWEI => todo!(),
             OssProvider::COS => todo!(),
             OssProvider::MINIO => todo!(),

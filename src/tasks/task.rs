@@ -1,8 +1,7 @@
 use super::{CompareTask, TransferTask, TransferType};
 use crate::{
     commons::{
-        self, byte_size_str_to_usize, byte_size_usize_to_str, struct_to_yaml_string,
-        LastModifyFilter,
+        byte_size_str_to_usize, byte_size_usize_to_str, struct_to_yaml_string, LastModifyFilter,
     },
     s3::OSSDescription,
 };
@@ -58,7 +57,7 @@ pub enum TaskType {
 // #[serde(untagged)]
 #[serde(rename_all = "lowercase")]
 #[serde(tag = "type")]
-pub enum TaskDescription {
+pub enum Task {
     Transfer(TransferTask),
     Compare(CompareTask),
     TruncateBucket(TaskTruncateBucket),
@@ -66,15 +65,47 @@ pub enum TaskDescription {
 
 // ToDo
 // 抽象 task
-impl TaskDescription {
-    pub fn execute(&self) -> Result<()> {
+impl Task {
+    // pub fn execute(&self) -> Result<()> {
+    pub fn execute(&self) {
+        let now = time::Instant::now();
         match self {
-            TaskDescription::Transfer(transfer) => {
-                log::info!("start task:\n{}", struct_to_yaml_string(transfer).unwrap());
-                transfer.execute()
+            Task::Transfer(transfer) => {
+                log::info!(
+                    "TransferTask Start:\n{}",
+                    struct_to_yaml_string(transfer).unwrap()
+                );
+                match transfer.execute() {
+                    Ok(_) => log::info!(
+                        "TrasferTask {} execute ok!{}",
+                        transfer.task_id,
+                        now.elapsed()
+                    ),
+                    Err(e) => {
+                        log::error!("{}", e);
+                    }
+                }
             }
-            TaskDescription::TruncateBucket(truncate) => truncate.exec_multi_threads(),
-            TaskDescription::Compare(compare) => compare.execute(),
+            Task::TruncateBucket(truncate) => {
+                log::info!(
+                    "TruncateTask Start:\n{}",
+                    struct_to_yaml_string(truncate).unwrap()
+                );
+                match truncate.exec_multi_threads() {
+                    Ok(_) => log::info!("task {} execute ok!{}", truncate.task_id, now.elapsed()),
+                    Err(e) => log::error!("{:?}", e),
+                }
+            }
+            Task::Compare(compare) => {
+                log::info!(
+                    "CompareTask Start:\n{}",
+                    struct_to_yaml_string(compare).unwrap()
+                );
+                match compare.execute() {
+                    Ok(_) => log::info!("task {} execute ok!{}", compare.task_id, now.elapsed()),
+                    Err(e) => log::error!("{:?}", e),
+                }
+            }
         }
     }
 }
@@ -149,16 +180,16 @@ impl TaskDefaultParameters {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "lowercase")]
+// #[derive(Debug, Serialize, Deserialize, Clone)]
+// #[serde(rename_all = "lowercase")]
 // #[serde(tag = "type")]
-pub struct Task {
-    #[serde(default = "TaskDefaultParameters::id_default")]
-    pub task_id: String,
-    #[serde(default = "TaskDefaultParameters::name_default")]
-    pub name: String,
-    pub task_desc: TaskDescription,
-}
+// pub struct Task {
+//     #[serde(default = "TaskDefaultParameters::id_default")]
+//     pub task_id: String,
+//     #[serde(default = "TaskDefaultParameters::name_default")]
+//     pub name: String,
+//     pub task_desc: TaskDescription,
+// }
 
 pub fn de_usize_from_str<'de, D>(deserializer: D) -> Result<usize, D::Error>
 where
@@ -178,6 +209,7 @@ where
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TaskTruncateBucket {
+    pub task_id: String,
     pub oss: OSSDescription,
     #[serde(default = "TaskDefaultParameters::objects_per_batch_default")]
     pub objects_per_batch: i32,
@@ -192,6 +224,7 @@ pub struct TaskTruncateBucket {
 impl Default for TaskTruncateBucket {
     fn default() -> Self {
         Self {
+            task_id: TaskDefaultParameters::id_default(),
             objects_per_batch: TaskDefaultParameters::objects_per_batch_default(),
             task_parallelism: TaskDefaultParameters::task_parallelism_default(),
             max_errors: TaskDefaultParameters::max_errors_default(),

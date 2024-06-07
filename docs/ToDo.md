@@ -79,6 +79,7 @@
   - [ ] 修改源为oss的同步机制，base taget 计算removed 和 modified objects
 - [ ] s3 multipart upload 断点续传，多快上传时，能够从未上传块开始上传 
 - [ ] oss2oss multi thread upload part 改造
+- [ ] 日志优化，每条记录输出任务id；规范info 输出格式，包括，任务id，msg，输出类型等
 ## 文档
 - [ ] 测试方案 -- 详细测试项及测试流程
 - [ ] 设计文档 -- 流程及机制描述
