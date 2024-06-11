@@ -411,12 +411,12 @@ impl TransferTaskActions for TransferOss2Oss {
             size: total_size,
             total_lines,
         };
-        let info = LogInfo {
+        let log_info = LogInfo {
             task_id: __self.task_id.clone(),
             msg: "capture changed object".to_string(),
             additional: Some(file_desc.clone()),
         };
-        log::info!("{:?} ", info);
+        log::info!("{:?} ", log_info);
         Ok(file_desc)
     }
 
@@ -577,8 +577,13 @@ impl TransferTaskActions for TransferOss2Oss {
                     "executing transfer modified finished this batch {} total {};",
                     modified.total_lines, finished_total_objects
                 );
-                log::info!("{}", &msg);
-                // pd.set_message(msg);
+                let log_info = LogInfo::<String> {
+                    task_id: self.task_id.clone(),
+                    msg,
+                    additional: None,
+                };
+
+                log::info!("{:?}", log_info);
             }
 
             let _ = fs::remove_file(&modified.path);

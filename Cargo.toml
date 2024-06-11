@@ -85,6 +85,10 @@ path = "examples/splite_test.rs"
 name = "tracing"
 path = "examples/test_tracing.rs"
 
+[[example]]
+name = "multi_download"
+path = "examples/multi_download_merge.rs"
+
 
 [profile.release]
 lto = true
