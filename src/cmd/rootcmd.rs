@@ -595,6 +595,22 @@ fn cmd_match(matches: &ArgMatches) {
             }
         };
 
+        let chunk_size: usize = match gen_file.get_one::<String>("chunk_size") {
+            Some(s) => {
+                let size = byte_size_str_to_usize(s);
+                match size {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::error!("{}", e);
+                        return;
+                    }
+                }
+            }
+            None => {
+                return;
+            }
+        };
+
         let file_quantity: usize = match gen_file.get_one("file_quantity") {
             Some(s) => *s,
             None => {
@@ -602,7 +618,13 @@ fn cmd_match(matches: &ArgMatches) {
             }
         };
 
-        if let Err(e) = generate_files(dir.as_str(), file_prefix_len, file_size, file_quantity) {
+        if let Err(e) = generate_files(
+            dir.as_str(),
+            file_prefix_len,
+            file_size,
+            chunk_size,
+            file_quantity,
+        ) {
             log::error!("{}", e);
         };
     }

@@ -341,6 +341,7 @@ pub fn generate_files(
     dir: &str,
     file_prefix_len: usize,
     file_size: usize,
+    chunk_size: usize,
     file_quantity: usize,
 ) -> Result<()> {
     let dir_path = Path::new(dir);
@@ -352,29 +353,69 @@ pub fn generate_files(
         .num_threads(num_cpus::get())
         .build()?;
 
+    let batch = file_size / chunk_size;
+    let remainder = file_size % chunk_size;
+    let chunk = rand_string(chunk_size);
+    let last_chunk = match remainder > 0 {
+        true => rand_string(remainder),
+        false => "".to_string(),
+    };
+
     pool.scope(|s| {
         for _ in 0..file_quantity {
+            let ck = chunk.clone();
+            let l_ck = last_chunk.clone();
             s.spawn(move |_| {
-                let file_prefix = rand_string(file_prefix_len);
-                let mut file_name = file_prefix.clone();
+                let mut file_prefix = rand_string(file_prefix_len);
+                // let mut file_name = file_prefix.clone();
                 let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos();
-                file_name.push_str(now.to_string().as_str());
+                file_prefix.push_str(now.to_string().as_str());
 
                 let file_path = match dir.ends_with("/") {
                     true => {
-                        let mut folder = dir.to_string();
-                        folder.push_str(file_name.as_str());
-                        folder
+                        let mut file_path = dir.to_string();
+                        file_path.push_str(file_prefix.as_str());
+                        file_path
                     }
                     false => {
-                        let mut folder = dir.to_string();
-                        folder.push_str("/");
-                        folder.push_str(file_name.as_str());
-                        folder
+                        let mut file_path = dir.to_string();
+                        file_path.push_str("/");
+                        file_path.push_str(file_prefix.as_str());
+                        file_path
+                    }
+                };
+                // 生成文件目录
+                let store_path = Path::new(&file_path);
+                let path = std::path::Path::new(store_path);
+                if let Some(p) = path.parent() {
+                    if let Err(e) = std::fs::create_dir_all(p) {
+                        log::error!("{}", e);
+                        return;
+                    };
+                };
+
+                let mut file = match OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(file_path)
+                {
+                    Ok(f) => f,
+                    Err(e) => {
+                        log::error!("{}", e);
+                        return;
                     }
                 };
 
-                if let Err(e) = generate_file(file_size, 1048576, &file_path) {
+                for _ in 0..batch {
+                    let _ = file.write_all(ck.as_bytes());
+                }
+
+                if remainder > 0 {
+                    let _ = file.write_all(l_ck.as_bytes());
+                }
+
+                if let Err(e) = file.flush() {
                     log::error!("{}", e);
                 };
             });
