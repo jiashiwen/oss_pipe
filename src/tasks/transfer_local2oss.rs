@@ -17,6 +17,7 @@ use crate::commons::{
     LastModifyFilter, Modified, ModifyType, NotifyWatcher, PathType, RegexFilter,
 };
 use crate::s3::aws_s3::OssClient;
+use crate::tasks::TaskDefaultParameters;
 use crate::{checkpoint::ListedRecord, s3::OSSDescription};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -42,6 +43,10 @@ use walkdir::WalkDir;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub struct TransferLocal2Oss {
+    #[serde(default = "TaskDefaultParameters::id_default")]
+    pub task_id: String,
+    #[serde(default = "TaskDefaultParameters::name_default")]
+    pub name: String,
     pub source: String,
     pub target: OSSDescription,
     pub attributes: TransferTaskAttributes,
@@ -50,6 +55,8 @@ pub struct TransferLocal2Oss {
 impl Default for TransferLocal2Oss {
     fn default() -> Self {
         Self {
+            task_id: TaskDefaultParameters::id_default(),
+            name: TaskDefaultParameters::name_default(),
             target: OSSDescription::default(),
             source: "/tmp".to_string(),
             attributes: TransferTaskAttributes::default(),
@@ -428,8 +435,9 @@ impl TransferTaskActions for TransferLocal2Oss {
             interval: 3,
         };
 
+        let task_id = self.task_id.clone();
         task::spawn(async move {
-            task_status_saver.snapshot_to_file().await;
+            task_status_saver.snapshot_to_file(task_id).await;
         });
 
         let error_file_name = gen_file_path(

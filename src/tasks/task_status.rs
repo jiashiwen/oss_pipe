@@ -18,9 +18,10 @@ pub struct TaskStatusSaver {
 }
 
 impl TaskStatusSaver {
-    pub async fn snapshot_to_file(&self) {
+    pub async fn snapshot_to_file(&self, task_id: String) {
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
         let mut checkpoint = CheckPoint {
+            task_id,
             executed_file: self.executed_file.clone(),
             executed_file_position: FilePosition {
                 offset: 0,

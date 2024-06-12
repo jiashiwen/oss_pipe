@@ -89,6 +89,7 @@ impl Default for ObjectStorage {
     }
 }
 
+// ToDo 规范属性名称
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TransferTaskAttributes {
     #[serde(default = "TaskDefaultParameters::objects_per_batch_default")]
@@ -177,6 +178,8 @@ impl TransferTask {
             ObjectStorage::Local(path_s) => match &self.target {
                 ObjectStorage::Local(path_t) => {
                     let t = TransferLocal2Local {
+                        task_id: self.task_id.clone(),
+                        name: self.name.clone(),
                         source: path_s.to_string(),
                         target: path_t.to_string(),
                         attributes: self.attributes.clone(),
@@ -185,6 +188,8 @@ impl TransferTask {
                 }
                 ObjectStorage::OSS(oss_t) => {
                     let t = TransferLocal2Oss {
+                        task_id: self.task_id.clone(),
+                        name: self.name.clone(),
                         source: path_s.to_string(),
                         target: oss_t.clone(),
                         attributes: self.attributes.clone(),
@@ -537,8 +542,9 @@ impl TransferTask {
                     task_stage: TransferStage::Stock,
                     interval: 3,
                 };
+                let task_id = self.task_id.clone();
                 sys_set.spawn(async move {
-                    stock_status_saver.snapshot_to_file().await;
+                    stock_status_saver.snapshot_to_file(task_id).await;
                 });
 
                 // 启动进度条线程
@@ -645,7 +651,9 @@ impl TransferTask {
             drop(lock);
 
             // 记录checkpoint
+
             let mut checkpoint: CheckPoint = CheckPoint {
+                task_id: self.task_id.clone(),
                 executed_file: executed_file.clone(),
                 executed_file_position: list_file_position.clone(),
                 file_for_notify: notify,

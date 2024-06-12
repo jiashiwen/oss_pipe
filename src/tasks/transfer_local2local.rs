@@ -11,6 +11,7 @@ use crate::commons::{
     scan_folder_files_to_file, struct_to_json_string, LastModifyFilter, Modified, ModifyType,
     NotifyWatcher, PathType, RegexFilter,
 };
+use crate::tasks::TaskDefaultParameters;
 use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -34,6 +35,10 @@ use walkdir::WalkDir;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub struct TransferLocal2Local {
+    #[serde(default = "TaskDefaultParameters::id_default")]
+    pub task_id: String,
+    #[serde(default = "TaskDefaultParameters::name_default")]
+    pub name: String,
     pub source: String,
     pub target: String,
     pub attributes: TransferTaskAttributes,
@@ -375,8 +380,9 @@ impl TransferTaskActions for TransferLocal2Local {
             interval: 3,
         };
 
+        let task_id = self.task_id.clone();
         task::spawn(async move {
-            task_status_saver.snapshot_to_file().await;
+            task_status_saver.snapshot_to_file(task_id).await;
         });
 
         let error_file_name = gen_file_path(

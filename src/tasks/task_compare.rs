@@ -400,6 +400,7 @@ impl CompareTask {
             None => File::open(&compare_source_list.path)?,
         };
 
+        let task_id = self.task_id.clone();
         rt.block_on(async {
             // 启动checkpoint记录线程
             let stock_status_saver = TaskStatusSaver {
@@ -412,7 +413,7 @@ impl CompareTask {
                 interval: 3,
             };
             sys_set.spawn(async move {
-                stock_status_saver.snapshot_to_file().await;
+                stock_status_saver.snapshot_to_file(task_id).await;
             });
 
             // 启动进度条线程
@@ -507,6 +508,7 @@ impl CompareTask {
 
             // 记录checkpoint
             let mut checkpoint: CheckPoint = CheckPoint {
+                task_id: self.task_id.clone(),
                 executed_file: compare_source_list.clone(),
                 executed_file_position: source_list_file_position.clone(),
                 file_for_notify: None,

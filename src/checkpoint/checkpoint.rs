@@ -1,7 +1,7 @@
 use super::FilePosition;
 use crate::{
     commons::{read_yaml_file, struct_to_yaml_string},
-    tasks::TransferStage,
+    tasks::{TaskDefaultParameters, TransferStage},
 };
 use anyhow::{Error, Ok, Result};
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,7 @@ impl Default for FileDescription {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckPoint {
+    pub task_id: String,
     //当前全量对象列表
     // pub current_stock_object_list_file: String,
     // 对象列表命名规则：OBJECT_LIST_FILE_PREFIX+秒级unix 时间戳 'objeclt_list_unixtimestampe'
@@ -47,6 +48,7 @@ pub struct CheckPoint {
 impl Default for CheckPoint {
     fn default() -> Self {
         Self {
+            task_id: TaskDefaultParameters::id_default(),
             executed_file: Default::default(),
             executed_file_position: FilePosition {
                 offset: 0,
@@ -55,7 +57,7 @@ impl Default for CheckPoint {
             file_for_notify: Default::default(),
             task_stage: TransferStage::Stock,
             modify_checkpoint_timestamp: 0,
-            task_begin_timestamp: 0, // current_stock_object_list_file: "".to_string(),
+            task_begin_timestamp: 0,
         }
     }
 }
@@ -121,6 +123,7 @@ mod test {
     use crate::checkpoint::checkpoint::FileDescription;
     use crate::checkpoint::FilePosition;
     use crate::commons::scan_folder_files_to_file;
+    use crate::tasks::TaskDefaultParameters;
 
     //cargo test checkpoint::checkpoint::test::test_get_task_checkpoint -- --nocapture
     #[test]
@@ -162,6 +165,7 @@ mod test {
                     task_stage: crate::tasks::TransferStage::Stock,
                     modify_checkpoint_timestamp: i128::from(now.as_secs()),
                     task_begin_timestamp: i128::from(now.as_secs()),
+                    task_id: TaskDefaultParameters::id_default(),
                 };
 
                 let _ = checkpoint.save_to(save_path);
