@@ -1,5 +1,8 @@
-/target
+debug/
+target/
+*.pdb
 .history
+logs
 /logs/*
 /task_example_yml   
 /task_yml
