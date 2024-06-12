@@ -97,9 +97,11 @@ name = "tracing"
 path = "examples/test_tracing.rs"
 
 [[example]]
-name = "multi_download"
+name = "merge"
 path = "examples/multi_download_merge.rs"
-
+[[example]]
+name = "fill"
+path = "examples/multi_download_fill.rs"
 
 [profile.release]
 lto = true

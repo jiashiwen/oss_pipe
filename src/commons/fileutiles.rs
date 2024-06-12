@@ -197,9 +197,9 @@ pub fn scan_folder_files_to_file(
 }
 
 // 生成指定字节数的文件
-pub fn generate_file(file_size: usize, batch: usize, file_name: &str) -> Result<()> {
-    let str_len = file_size / batch;
-    let remainder = file_size % batch;
+pub fn generate_file(file_size: usize, chunk_size: usize, file_name: &str) -> Result<()> {
+    let str_len = file_size / chunk_size;
+    let remainder = file_size % chunk_size;
 
     // 生成文件目录
     let store_path = Path::new(file_name);
@@ -214,7 +214,7 @@ pub fn generate_file(file_size: usize, batch: usize, file_name: &str) -> Result<
         .truncate(true)
         .open(file_name)?;
     let mut file = LineWriter::new(file_ref);
-    let str = rand_string(batch);
+    let str = rand_string(chunk_size);
     for _ in 0..str_len {
         let _ = file.write_all(str.as_bytes());
     }
@@ -225,6 +225,39 @@ pub fn generate_file(file_size: usize, batch: usize, file_name: &str) -> Result<
     }
 
     file.flush()?;
+
+    Ok(())
+}
+
+// 用 0 填充临时文件
+pub fn fill_file_with_zero(file_size: usize, chunk_size: usize, file_name: &str) -> Result<()> {
+    let batch = file_size / chunk_size;
+    let remainder = file_size % chunk_size;
+
+    // 生成文件目录
+    let store_path = Path::new(file_name);
+    let path = std::path::Path::new(store_path);
+    if let Some(p) = path.parent() {
+        std::fs::create_dir_all(p)?;
+    };
+
+    let mut file_ref = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(file_name)?;
+    // let mut file = LineWriter::new(file_ref);
+    let buffer = vec![0; chunk_size];
+    for _ in 0..batch {
+        let _ = file_ref.write_all(&buffer);
+    }
+
+    if remainder > 0 {
+        let buffer = vec![0; remainder];
+        let _ = file_ref.write_all(&buffer);
+    }
+
+    file_ref.flush()?;
 
     Ok(())
 }
@@ -350,7 +383,7 @@ pub fn gen_file_part_plan(file_path: &str, chunk_size: usize) -> Result<Vec<File
 
 #[cfg(test)]
 mod test {
-    use crate::commons::{fileutiles::generate_file, multi_parts_copy_file};
+    use crate::commons::{fileutiles::generate_file, fill_file_with_zero, multi_parts_copy_file};
 
     use super::generate_line_file;
 
@@ -375,10 +408,10 @@ mod test {
         println!("test scan result {:?}", r);
     }
 
-    //cargo test commons::fileutiles::test::test_analyze_folder_files_size -- --nocapture
+    //cargo test commons::fileutiles::test::test_fill_file_with_zero -- --nocapture
     #[test]
-    fn test_analyze_folder_files_size() {
-        // let r = analyze_folder_files_size("/tmp/");
-        // println!("test older_files_last_modify_greater_then_to_file {:?}", r);
+    fn test_fill_file_with_zero() {
+        let r = fill_file_with_zero(1024 * 1024 * 1024 * 10, 1024 * 1024, "/tmp/zero_file");
+        println!("test_fill_file_with_zero {:?}", r);
     }
 }

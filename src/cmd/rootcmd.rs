@@ -533,8 +533,21 @@ fn cmd_match(matches: &ArgMatches) {
                 return;
             }
         };
-        let batch: usize = match gen_file.get_one("batch") {
-            Some(s) => *s,
+        let chunk: usize = match gen_file.get_one::<String>("chunk_size") {
+            // Some(s) => *s,
+            // None => {
+            //     return;
+            // }
+            Some(s) => {
+                let size = byte_size_str_to_usize(s);
+                match size {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::error!("{}", e);
+                        return;
+                    }
+                }
+            }
             None => {
                 return;
             }
@@ -547,7 +560,7 @@ fn cmd_match(matches: &ArgMatches) {
             }
         };
 
-        if let Err(e) = generate_file(file_size, batch, file) {
+        if let Err(e) = generate_file(file_size, chunk, file) {
             log::error!("{}", e);
         };
     }
