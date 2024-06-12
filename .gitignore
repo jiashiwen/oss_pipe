@@ -11,5 +11,5 @@ osscfg_default.yml
 osscfg.yml
 config.yml
 .vscode
-.DS_Store
+**.DS_Store
 Cargo.lock
