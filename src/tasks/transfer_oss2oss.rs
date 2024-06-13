@@ -765,16 +765,6 @@ impl TransferOss2OssRecordsExecutor {
             }
         }
 
-        // target_oss
-        //     .transfer_object(
-        //         self.target.bucket.as_str(),
-        //         target_key,
-        //         self.attributes.large_file_size,
-        //         self.attributes.multi_part_chunk_size,
-        //         obj_out_put,
-        //     )
-        //     .await
-
         let content_len = match s_obj_output.content_length() {
             Some(l) => l,
             None => return Err(anyhow!("content length is None")),
@@ -796,8 +786,9 @@ impl TransferOss2OssRecordsExecutor {
                     .await
             }
             false => {
-                let s_client = source_oss.client.clone();
-                let s_c = Arc::new(s_client);
+                // let s_client = source_oss.client.clone();
+                // let s_c = Arc::new(s_client);
+                let s_c = Arc::new(source_oss.client.clone());
                 let e_t = Arc::clone(&executing_transfers);
                 target_oss
                     .multipart_upload_obj_paralle_by_range(

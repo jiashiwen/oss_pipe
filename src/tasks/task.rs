@@ -12,6 +12,7 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 use snowflake::SnowflakeIdGenerator;
+use std::time::Instant;
 use std::{
     fs::{self, File},
     io::{self, BufRead},
@@ -68,7 +69,7 @@ pub enum Task {
 impl Task {
     // pub fn execute(&self) -> Result<()> {
     pub fn execute(&self) {
-        let now = time::Instant::now();
+        let now = Instant::now();
         match self {
             Task::Transfer(transfer) => {
                 log::info!(
@@ -77,7 +78,7 @@ impl Task {
                 );
                 match transfer.execute() {
                     Ok(_) => log::info!(
-                        "TrasferTask {} execute ok!{}",
+                        "TrasferTask {} execute ok!{:?}",
                         transfer.task_id,
                         now.elapsed()
                     ),
@@ -92,7 +93,7 @@ impl Task {
                     struct_to_yaml_string(truncate).unwrap()
                 );
                 match truncate.exec_multi_threads() {
-                    Ok(_) => log::info!("task {} execute ok!{}", truncate.task_id, now.elapsed()),
+                    Ok(_) => log::info!("task {} execute ok!{:?}", truncate.task_id, now.elapsed()),
                     Err(e) => log::error!("{:?}", e),
                 }
             }
@@ -102,7 +103,7 @@ impl Task {
                     struct_to_yaml_string(compare).unwrap()
                 );
                 match compare.execute() {
-                    Ok(_) => log::info!("task {} execute ok!{}", compare.task_id, now.elapsed()),
+                    Ok(_) => log::info!("task {} execute ok!{:?}", compare.task_id, now.elapsed()),
                     Err(e) => log::error!("{:?}", e),
                 }
             }

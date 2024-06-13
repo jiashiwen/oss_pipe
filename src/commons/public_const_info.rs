@@ -10,3 +10,4 @@ pub const OFFSET_PREFIX: &'static str = "offset_";
 pub const NOTIFY_FILE_PREFIX: &'static str = "notify_";
 pub const REMOVED_PREFIX: &'static str = "removed_";
 pub const MODIFIED_PREFIX: &'static str = "modified_";
+pub const DOWNLOAD_TMP_FILE_SUBFFIX: &'static str = ".filling_tmp";

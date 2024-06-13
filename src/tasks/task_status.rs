@@ -1,7 +1,10 @@
 use super::{TransferStage, OFFSET_PREFIX};
 use crate::checkpoint::{CheckPoint, FileDescription, FilePosition};
 use dashmap::DashMap;
+use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use std::{
+    cmp::min,
+    fmt::Write,
     sync::{atomic::AtomicBool, Arc},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -39,6 +42,7 @@ impl TaskStatusSaver {
                 offset: 0,
                 line_num: 0,
             };
+
             // 获取最小offset的FilePosition
             self.list_file_positon_map
                 .iter()
@@ -55,11 +59,52 @@ impl TaskStatusSaver {
             if let Err(e) = checkpoint.save_to(&self.check_point_path) {
                 log::error!("{},{}", e, self.check_point_path);
             } else {
-                log::info!("checkpoint:\n{:?}", checkpoint);
+                log::debug!("checkpoint:\n{:?}", checkpoint);
             };
 
             tokio::time::sleep(tokio::time::Duration::from_secs(self.interval)).await;
             yield_now().await;
         }
     }
+}
+
+// 存量传输进度统计
+pub async fn stock_progress_statistics(
+    total: u64,
+    stop_mark: Arc<AtomicBool>,
+    status_map: Arc<DashMap<String, FilePosition>>,
+    key_prefix: &str,
+    with_progressbar: bool,
+) {
+    let pb = ProgressBar::new(total);
+    let progress_style = ProgressStyle::with_template(
+        "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} ({eta})",
+    )
+    .unwrap()
+    .with_key("eta", |state: &ProgressState, w: &mut dyn Write| {
+        write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap()
+    })
+    .progress_chars("#>-");
+    pb.set_style(progress_style);
+
+    while !stop_mark.load(std::sync::atomic::Ordering::Relaxed) {
+        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+        let line_num = status_map
+            .iter()
+            .filter(|f| f.key().starts_with(key_prefix))
+            .map(|m| m.line_num)
+            .min();
+        match line_num {
+            Some(current) => {
+                let new = min(current, total);
+                pb.set_position(new);
+                log::info!("total:{},executed:{}", total, new)
+            }
+            None => {}
+        }
+        yield_now().await;
+    }
+    log::info!("total:{},executed:{}", total, total);
+    pb.set_position(total);
+    pb.finish_with_message("Finish");
 }

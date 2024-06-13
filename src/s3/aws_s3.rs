@@ -1,6 +1,9 @@
 use crate::{
     checkpoint::FileDescription,
-    commons::{gen_file_part_plan, size_distributed, FilePart, LastModifyFilter, RegexFilter},
+    commons::{
+        fill_file_with_zero, gen_file_part_plan, size_distributed, FilePart, LastModifyFilter,
+        RegexFilter, DOWNLOAD_TMP_FILE_SUBFFIX,
+    },
 };
 use anyhow::{anyhow, Result};
 use aws_sdk_s3::operation::{
@@ -21,7 +24,7 @@ use dashmap::DashMap;
 
 use std::{
     collections::BTreeMap,
-    fs::{File, OpenOptions},
+    fs::{self, File, OpenOptions},
     io::{LineWriter, Read, Seek, SeekFrom, Write},
     path::Path,
     sync::{atomic::AtomicBool, Arc},
@@ -45,6 +48,7 @@ pub struct ObjectRange {
     pub end: usize,
 }
 
+//Todo 尝试修改为Arc::<Client>
 #[derive(Debug, Clone)]
 pub struct OssClient {
     pub client: Client,
@@ -220,16 +224,7 @@ impl OssClient {
                 .await?;
             return Ok(());
         }
-        // self.multipart_upload_local_file_paralle(
-        //     joinset,
-        //     executing_uploads,
-        //     max_parallelism,
-        //     bucket,
-        //     key,
-        //     local_file,
-        //     chunk_size,
-        // )
-        // .await
+
         self.multipart_upload_local_file_paralle_batch(
             local_file,
             bucket,
@@ -240,6 +235,99 @@ impl OssClient {
             multi_part_parallelism,
         )
         .await
+    }
+
+    pub async fn download_object_by_range(
+        &self,
+        // s_client: Arc<Client>,
+        s_bucket: &str,
+        s_key: &str,
+        file_path: &str,
+        executing_transfers: Arc<RwLock<usize>>,
+        multi_part_chunk_size: usize,
+        multi_part_chunks_per_batch: usize,
+        multi_part_parallelism: usize,
+    ) -> Result<()> {
+        let s_client = Arc::new(self.client.clone());
+        let filling_file = file_path.to_string() + DOWNLOAD_TMP_FILE_SUBFFIX;
+
+        let s_obj = s_client
+            .get_object()
+            .bucket(s_bucket)
+            .key(s_key)
+            .send()
+            .await?;
+        let vec_obj_range = gen_object_part_plan(&s_obj, multi_part_chunk_size)?;
+        let content_len = match s_obj.content_length() {
+            Some(l) => l,
+            None => return Err(anyhow!("content length is None")),
+        };
+        let filling_file_size = TryInto::<usize>::try_into(content_len)?;
+        fill_file_with_zero(filling_file_size, multi_part_chunk_size, &filling_file)?;
+
+        let mut obj_range_batch = vec![];
+        let vec_obj_range_len = vec_obj_range.len();
+        let err_mark = Arc::new(AtomicBool::new(false));
+        let mut joinset = JoinSet::new();
+
+        for range in vec_obj_range {
+            let part_num = range.part_num;
+            obj_range_batch.push(range);
+            if obj_range_batch.len().eq(&multi_part_chunks_per_batch)
+                || vec_obj_range_len.eq(&TryInto::<usize>::try_into(part_num)?)
+            {
+                while executing_transfers.read().await.ge(&multi_part_parallelism) {
+                    task::yield_now().await;
+                }
+
+                let e_t = Arc::clone(&executing_transfers);
+                let s_c = Arc::clone(&s_client);
+                let s_b = s_bucket.to_string();
+                let s_k = s_key.to_string();
+                let f_n = filling_file.to_string();
+                let v_o_r = obj_range_batch.clone();
+                let e_m = Arc::clone(&err_mark);
+
+                joinset.spawn(async move {
+                    {
+                        let mut num = e_t.write().await;
+                        *num += 1;
+                    }
+
+                    if let Err(e) = fill_parts_to_file_batch_by_range(
+                        s_c,
+                        &s_b,
+                        &s_k,
+                        &f_n,
+                        multi_part_chunk_size,
+                        v_o_r,
+                    )
+                    .await
+                    {
+                        log::error!("{:?}", e);
+                        e_m.store(true, std::sync::atomic::Ordering::SeqCst);
+                    };
+
+                    let mut num = e_t.write().await;
+                    *num -= 1;
+                });
+                obj_range_batch.clear();
+            }
+        }
+
+        while joinset.len() > 0 {
+            if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(anyhow!("upload error"));
+            }
+            joinset.join_next().await;
+        }
+
+        if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(anyhow!("upload error"));
+        }
+        fs::rename(filling_file, file_path)?;
+
+        Ok(())
     }
 }
 
@@ -550,7 +638,7 @@ impl OssClient {
         }
 
         let completed_parts = self
-            .upload_object_parts_by_range(
+            .transfer_object_parts_by_range(
                 s_client,
                 s_bucket,
                 s_key,
@@ -654,7 +742,7 @@ impl OssClient {
         Ok(complete_multi_part_upload_output)
     }
 
-    pub async fn upload_object_parts_by_range(
+    pub async fn transfer_object_parts_by_range(
         &self,
         s_client: Arc<Client>,
         s_bucket: &str,
@@ -713,7 +801,7 @@ impl OssClient {
                         let mut num = e_t.write().await;
                         *num += 1;
                     }
-                    if let Err(e) = upload_parts_batch_by_range(
+                    if let Err(e) = transfer_parts_batch_by_range(
                         s_c, t_c, &s_b, &t_b, &s_k, &t_k, &up_id, v_o_r, c_b_t,
                     )
                     .await
@@ -750,6 +838,7 @@ impl OssClient {
         Ok(completed_parts)
     }
 
+    //Todo 增加client:Arc<Client> 参数，修改self.client.clone();在上一层生成Arc<Client>
     pub async fn upload_file_parts(
         &self,
         file_name: &str,
@@ -1005,7 +1094,7 @@ impl OssClient {
     }
 }
 
-pub async fn upload_parts_batch_by_range(
+pub async fn transfer_parts_batch_by_range(
     s_client: Arc<Client>,
     t_client: Arc<Client>,
     s_bucket: &str,
@@ -1049,7 +1138,7 @@ pub async fn upload_parts_batch_by_range(
 }
 
 pub async fn upload_file_parts_batch(
-    client: Arc<Client>,
+    target_client: Arc<Client>,
     file_name: &str,
     bucket: &str,
     key: &str,
@@ -1068,7 +1157,7 @@ pub async fn upload_file_parts_batch(
         let stream = ByteStream::new(SdkBody::from(body));
         let presigning = PresigningConfig::expires_in(std::time::Duration::from_secs(3000))?;
 
-        let upload_part_res = client
+        let upload_part_res = target_client
             .upload_part()
             .bucket(bucket)
             .key(key)
@@ -1091,21 +1180,26 @@ pub async fn upload_file_parts_batch(
 
 pub async fn download_object(
     get_object: GetObjectOutput,
-    file: &mut File,
+    // file: &mut File,
+    file_path: &str,
     splite_size: usize,
     chunk_size: usize,
 ) -> Result<()> {
+    let mut t_file = OpenOptions::new()
+        .truncate(true)
+        .create(true)
+        .write(true)
+        .open(file_path)?;
     let content_len = match get_object.content_length() {
         Some(l) => l,
         None => return Err(anyhow!("content length is None")),
     };
     let mut content_len_usize: usize = content_len.try_into()?;
-    // let mut content_len_usize: usize = get_object.content_length().try_into()?;
     if content_len_usize.le(&splite_size) {
         let content = get_object.body.collect().await?;
         let bytes = content.into_bytes();
-        file.write_all(&bytes)?;
-        file.flush()?;
+        t_file.write_all(&bytes)?;
+        t_file.flush()?;
         return Ok(());
     }
 
@@ -1114,18 +1208,159 @@ pub async fn download_object(
         if content_len_usize > chunk_size {
             let mut buffer = vec![0; chunk_size];
             let _ = byte_stream_async_reader.read_exact(&mut buffer).await?;
-            file.write_all(&buffer)?;
+            t_file.write_all(&buffer)?;
             content_len_usize -= chunk_size;
             continue;
         } else {
             let mut buffer = vec![0; content_len_usize];
             let _ = byte_stream_async_reader.read_exact(&mut buffer).await?;
-            file.write_all(&buffer)?;
+            t_file.write_all(&buffer)?;
             break;
         }
     }
 
-    file.flush()?;
+    t_file.flush()?;
+    Ok(())
+}
+
+// pub async fn download_object_parts_by_range(
+//     s_client: Arc<Client>,
+//     s_bucket: &str,
+//     s_key: &str,
+//     file_path: &str,
+//     executing_transfers: Arc<RwLock<usize>>,
+//     multi_part_chunk_size: usize,
+//     multi_part_chunks_per_batch: usize,
+//     multi_part_parallelism: usize,
+// ) -> Result<()> {
+//     let filling_file = file_path.to_string() + ".oss_pipe_tmp";
+//     let s_obj = s_client
+//         .get_object()
+//         .bucket(s_bucket)
+//         .key(s_key)
+//         .send()
+//         .await?;
+//     let vec_obj_range = gen_object_part_plan(&s_obj, multi_part_chunk_size)?;
+//     let content_len = match s_obj.content_length() {
+//         Some(l) => l,
+//         None => return Err(anyhow!("content length is None")),
+//     };
+//     let filling_file_size = TryInto::<usize>::try_into(content_len)?;
+//     fill_file_with_zero(filling_file_size, multi_part_chunk_size, &filling_file)?;
+
+//     let mut obj_range_batch = vec![];
+//     let vec_obj_range_len = vec_obj_range.len();
+//     let err_mark = Arc::new(AtomicBool::new(false));
+//     let mut joinset = JoinSet::new();
+
+//     for range in vec_obj_range {
+//         let part_num = range.part_num;
+//         obj_range_batch.push(range);
+//         if obj_range_batch.len().eq(&multi_part_chunks_per_batch)
+//             || vec_obj_range_len.eq(&TryInto::<usize>::try_into(part_num)?)
+//         {
+//             while executing_transfers.read().await.ge(&multi_part_parallelism) {
+//                 task::yield_now().await;
+//             }
+
+//             let e_t = Arc::clone(&executing_transfers);
+//             let s_c = Arc::clone(&s_client);
+//             let s_b = s_bucket.to_string();
+//             let s_k = s_key.to_string();
+//             let f_n = filling_file.to_string();
+//             let v_o_r = obj_range_batch.clone();
+//             let e_m = Arc::clone(&err_mark);
+
+//             joinset.spawn(async move {
+//                 {
+//                     let mut num = e_t.write().await;
+//                     *num += 1;
+//                 }
+
+//                 if let Err(e) = fill_parts_to_file_batch_by_range(
+//                     s_c,
+//                     &s_b,
+//                     &s_k,
+//                     &f_n,
+//                     multi_part_chunk_size,
+//                     v_o_r,
+//                 )
+//                 .await
+//                 {
+//                     log::error!("{:?}", e);
+//                     e_m.store(true, std::sync::atomic::Ordering::SeqCst);
+//                 };
+
+//                 let mut num = e_t.write().await;
+//                 *num -= 1;
+//             });
+//             obj_range_batch.clear();
+//         }
+//     }
+
+//     while joinset.len() > 0 {
+//         if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
+//             return Err(anyhow!("upload error"));
+//         }
+//         joinset.join_next().await;
+//     }
+
+//     if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
+//         return Err(anyhow!("upload error"));
+//     }
+//     fs::rename(filling_file, file_path)?;
+
+//     Ok(())
+// }
+
+pub async fn fill_parts_to_file_batch_by_range(
+    s_client: Arc<Client>,
+    s_bucket: &str,
+    s_key: &str,
+    file_path: &str,
+    chunk_size: usize,
+    parts_vec: Vec<ObjectRange>,
+) -> Result<()> {
+    for p in parts_vec {
+        let range_str = gen_range_string(p.begin, p.end);
+        let s_obj = s_client
+            .get_object()
+            .bucket(s_bucket)
+            .key(s_key)
+            .range(range_str)
+            .send()
+            .await?;
+        let content_len = match s_obj.content_length() {
+            Some(l) => l,
+            None => return Err(anyhow!("content length is None")),
+        };
+
+        let mut t_file = OpenOptions::new().write(true).open(&file_path)?;
+
+        let seek_offset = TryInto::<u64>::try_into(p.begin)?;
+        t_file.seek(SeekFrom::Start(seek_offset))?;
+
+        let mut content_len_usize: usize = content_len.try_into()?;
+
+        let mut byte_stream_async_reader = s_obj.body.into_async_read();
+        loop {
+            if content_len_usize > chunk_size {
+                let mut buffer = vec![0; chunk_size];
+                let _ = byte_stream_async_reader.read_exact(&mut buffer).await?;
+                t_file.write_all(&buffer)?;
+                content_len_usize -= chunk_size;
+                continue;
+            } else {
+                let mut buffer = vec![0; content_len_usize];
+                let _ = byte_stream_async_reader.read_exact(&mut buffer).await?;
+                t_file.write_all(&buffer)?;
+                break;
+            }
+        }
+
+        t_file.flush()?;
+    }
+
     Ok(())
 }
 
