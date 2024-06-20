@@ -604,54 +604,55 @@ impl OssClient {
         Ok(())
     }
 
-    pub async fn multipart_upload_obj_paralle_by_range(
-        &self,
-        s_client: Arc<Client>,
-        s_bucket: &str,
-        s_key: &str,
-        t_bucket: &str,
-        t_key: &str,
-        expires: Option<aws_smithy_types::DateTime>,
-        executing_transfers: Arc<RwLock<usize>>,
-        multi_part_chunk_size: usize,
-        multi_part_chunks_per_batch: usize,
-        multi_part_parallelism: usize,
-    ) -> Result<()> {
-        let multipart_upload_res: CreateMultipartUploadOutput = self
-            .create_multipart_upload(t_bucket, t_key, expires)
-            .await?;
+    // pub async fn multipart_upload_obj_paralle_by_range(
+    //     &self,
+    //     // s_client: Arc<Client>,
+    //     s_client: Arc<OssClient>,
+    //     s_bucket: &str,
+    //     s_key: &str,
+    //     t_bucket: &str,
+    //     t_key: &str,
+    //     expires: Option<aws_smithy_types::DateTime>,
+    //     executing_transfers: Arc<RwLock<usize>>,
+    //     multi_part_chunk_size: usize,
+    //     multi_part_chunks_per_batch: usize,
+    //     multi_part_parallelism: usize,
+    // ) -> Result<()> {
+    //     let multipart_upload_res: CreateMultipartUploadOutput = self
+    //         .create_multipart_upload(t_bucket, t_key, expires)
+    //         .await?;
 
-        let upload_id = match multipart_upload_res.upload_id() {
-            Some(id) => id,
-            None => {
-                return Err(anyhow!("upload id is None"));
-            }
-        };
+    //     let upload_id = match multipart_upload_res.upload_id() {
+    //         Some(id) => id,
+    //         None => {
+    //             return Err(anyhow!("upload id is None"));
+    //         }
+    //     };
 
-        while executing_transfers.read().await.ge(&multi_part_parallelism) {
-            task::yield_now().await;
-        }
+    //     while executing_transfers.read().await.ge(&multi_part_parallelism) {
+    //         task::yield_now().await;
+    //     }
 
-        let completed_parts = self
-            .transfer_object_parts_by_range(
-                s_client,
-                s_bucket,
-                s_key,
-                t_bucket,
-                t_key,
-                upload_id,
-                Arc::clone(&executing_transfers),
-                multi_part_chunk_size,
-                multi_part_chunks_per_batch,
-                multi_part_parallelism,
-            )
-            .await?;
+    //     let completed_parts = self
+    //         .transfer_object_parts_by_range(
+    //             s_client,
+    //             s_bucket,
+    //             s_key,
+    //             t_bucket,
+    //             t_key,
+    //             upload_id,
+    //             Arc::clone(&executing_transfers),
+    //             multi_part_chunk_size,
+    //             multi_part_chunks_per_batch,
+    //             multi_part_parallelism,
+    //         )
+    //         .await?;
 
-        // 完成上传文件合并
-        self.complete_multipart_upload(t_bucket, t_key, upload_id, completed_parts)
-            .await?;
-        Ok(())
-    }
+    //     // 完成上传文件合并
+    //     self.complete_multipart_upload(t_bucket, t_key, upload_id, completed_parts)
+    //         .await?;
+    //     Ok(())
+    // }
 
     #[inline]
     pub async fn create_multipart_upload(
@@ -737,101 +738,103 @@ impl OssClient {
         Ok(complete_multi_part_upload_output)
     }
 
-    pub async fn transfer_object_parts_by_range(
-        &self,
-        s_client: Arc<Client>,
-        s_bucket: &str,
-        s_key: &str,
-        t_bucket: &str,
-        t_key: &str,
-        upload_id: &str,
-        executing_transfers: Arc<RwLock<usize>>,
-        multi_part_chunk_size: usize,
-        multi_part_chunks_per_batch: usize,
-        multi_part_parallelism: usize,
-    ) -> Result<Vec<CompletedPart>> {
-        let s_obj = s_client
-            .get_object()
-            .bucket(s_bucket)
-            .key(s_key)
-            .send()
-            .await?;
-        let vec_obj_range = gen_object_part_plan(&s_obj, multi_part_chunk_size)?;
+    // pub async fn transfer_object_parts_by_range(
+    //     &self,
+    //     // s_client: Arc<Client>,
+    //     s_client: Arc<OssClient>,
+    //     s_bucket: &str,
+    //     s_key: &str,
+    //     t_bucket: &str,
+    //     t_key: &str,
+    //     upload_id: &str,
+    //     executing_transfers: Arc<RwLock<usize>>,
+    //     multi_part_chunk_size: usize,
+    //     multi_part_chunks_per_batch: usize,
+    //     multi_part_parallelism: usize,
+    // ) -> Result<Vec<CompletedPart>> {
+    //     let s_obj = s_client
+    //         .client
+    //         .get_object()
+    //         .bucket(s_bucket)
+    //         .key(s_key)
+    //         .send()
+    //         .await?;
+    //     let vec_obj_range = gen_object_part_plan(&s_obj, multi_part_chunk_size)?;
 
-        let client = self.client.clone();
-        let arc_t_client = Arc::new(client);
-        let err_mark = Arc::new(AtomicBool::new(false));
-        let mut joinset = JoinSet::new();
+    //     let client = self.clone();
+    //     let arc_t_client = Arc::new(client);
+    //     let err_mark = Arc::new(AtomicBool::new(false));
+    //     let mut joinset = JoinSet::new();
 
-        let completed_parts_btree: Arc<Mutex<BTreeMap<i32, CompletedPart>>> =
-            Arc::new(Mutex::new(BTreeMap::new()));
+    //     let completed_parts_btree: Arc<Mutex<BTreeMap<i32, CompletedPart>>> =
+    //         Arc::new(Mutex::new(BTreeMap::new()));
 
-        let mut vec_obj_range_tmp = vec![];
-        let vec_obj_range_len = vec_obj_range.len();
+    //     let mut vec_obj_range_tmp = vec![];
+    //     let vec_obj_range_len = vec_obj_range.len();
 
-        for range in vec_obj_range {
-            let part_num = range.part_num;
-            vec_obj_range_tmp.push(range);
-            if vec_obj_range_tmp.len().eq(&multi_part_chunks_per_batch)
-                || vec_obj_range_len.eq(&TryInto::<usize>::try_into(part_num)?)
-            {
-                while executing_transfers.read().await.ge(&multi_part_parallelism) {
-                    task::yield_now().await;
-                }
+    //     for range in vec_obj_range {
+    //         let part_num = range.part_num;
+    //         vec_obj_range_tmp.push(range);
+    //         if vec_obj_range_tmp.len().eq(&multi_part_chunks_per_batch)
+    //             || vec_obj_range_len.eq(&TryInto::<usize>::try_into(part_num)?)
+    //         {
+    //             while executing_transfers.read().await.ge(&multi_part_parallelism) {
+    //                 task::yield_now().await;
+    //             }
 
-                let e_t = Arc::clone(&executing_transfers);
-                let s_c = Arc::clone(&s_client);
-                let t_c = Arc::clone(&arc_t_client);
-                let s_b = s_bucket.to_string();
-                let t_b = t_bucket.to_string();
-                let s_k = s_key.to_string();
-                let t_k = t_key.to_string();
-                let up_id = upload_id.to_string();
-                let v_o_r = vec_obj_range_tmp.clone();
-                let c_b_t = Arc::clone(&completed_parts_btree);
-                let e_m = Arc::clone(&err_mark);
+    //             let e_t = Arc::clone(&executing_transfers);
+    //             let s_c = Arc::clone(&s_client);
+    //             let t_c = Arc::clone(&arc_t_client);
+    //             let s_b = s_bucket.to_string();
+    //             let t_b = t_bucket.to_string();
+    //             let s_k = s_key.to_string();
+    //             let t_k = t_key.to_string();
+    //             let up_id = upload_id.to_string();
+    //             let v_o_r = vec_obj_range_tmp.clone();
+    //             let c_b_t = Arc::clone(&completed_parts_btree);
+    //             let e_m = Arc::clone(&err_mark);
 
-                joinset.spawn(async move {
-                    {
-                        let mut num = e_t.write().await;
-                        *num += 1;
-                    }
-                    if let Err(e) = transfer_parts_batch_by_range(
-                        s_c, t_c, &s_b, &t_b, &s_k, &t_k, &up_id, v_o_r, c_b_t,
-                    )
-                    .await
-                    {
-                        log::error!("{:?}", e);
-                        e_m.store(true, std::sync::atomic::Ordering::SeqCst);
-                    };
+    //             joinset.spawn(async move {
+    //                 {
+    //                     let mut num = e_t.write().await;
+    //                     *num += 1;
+    //                 }
+    //                 if let Err(e) = transfer_parts_batch_by_range(
+    //                     s_c, t_c, &s_b, &t_b, &s_k, &t_k, &up_id, v_o_r, c_b_t,
+    //                 )
+    //                 .await
+    //                 {
+    //                     log::error!("{:?}", e);
+    //                     e_m.store(true, std::sync::atomic::Ordering::SeqCst);
+    //                 };
 
-                    let mut num = e_t.write().await;
-                    *num -= 1;
-                });
-                vec_obj_range_tmp.clear();
-            }
-        }
+    //                 let mut num = e_t.write().await;
+    //                 *num -= 1;
+    //             });
+    //             vec_obj_range_tmp.clear();
+    //         }
+    //     }
 
-        while joinset.len() > 0 {
-            if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
-                return Err(anyhow!("upload error"));
-            }
-            joinset.join_next().await;
-        }
+    //     while joinset.len() > 0 {
+    //         if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
+    //             return Err(anyhow!("upload error"));
+    //         }
+    //         joinset.join_next().await;
+    //     }
 
-        if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
-            return Err(anyhow!("upload error"));
-        }
+    //     if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
+    //         return Err(anyhow!("upload error"));
+    //     }
 
-        let completed_parts = completed_parts_btree
-            .lock()
-            .await
-            .clone()
-            .into_values()
-            .collect::<Vec<CompletedPart>>();
+    //     let completed_parts = completed_parts_btree
+    //         .lock()
+    //         .await
+    //         .clone()
+    //         .into_values()
+    //         .collect::<Vec<CompletedPart>>();
 
-        Ok(completed_parts)
-    }
+    //     Ok(completed_parts)
+    // }
 
     //Todo 增加client:Arc<Client> 参数，修改self.client.clone();在上一层生成Arc<Client>
     // Arc::clone 更改为 变量.clone()
@@ -1091,9 +1094,155 @@ impl OssClient {
     }
 }
 
+pub async fn multipart_transfer_obj_paralle_by_range(
+    s_client: Arc<OssClient>,
+    s_bucket: &str,
+    s_key: &str,
+    t_client: Arc<OssClient>,
+    t_bucket: &str,
+    t_key: &str,
+    expires: Option<aws_smithy_types::DateTime>,
+    executing_transfers: Arc<RwLock<usize>>,
+    multi_part_chunk_size: usize,
+    multi_part_chunks_per_batch: usize,
+    multi_part_parallelism: usize,
+) -> Result<()> {
+    let multipart_upload_res: CreateMultipartUploadOutput = t_client
+        .create_multipart_upload(t_bucket, t_key, expires)
+        .await?;
+
+    let upload_id = match multipart_upload_res.upload_id() {
+        Some(id) => id,
+        None => {
+            return Err(anyhow!("upload id is None"));
+        }
+    };
+
+    while executing_transfers.read().await.ge(&multi_part_parallelism) {
+        task::yield_now().await;
+    }
+
+    let completed_parts = transfer_object_parts_by_range(
+        s_client,
+        s_bucket,
+        s_key,
+        t_client.clone(),
+        t_bucket,
+        t_key,
+        upload_id,
+        Arc::clone(&executing_transfers),
+        multi_part_chunk_size,
+        multi_part_chunks_per_batch,
+        multi_part_parallelism,
+    )
+    .await?;
+
+    // 完成上传文件合并
+    t_client
+        .complete_multipart_upload(t_bucket, t_key, upload_id, completed_parts)
+        .await?;
+    Ok(())
+}
+
+pub async fn transfer_object_parts_by_range(
+    s_client: Arc<OssClient>,
+    s_bucket: &str,
+    s_key: &str,
+    t_client: Arc<OssClient>,
+    t_bucket: &str,
+    t_key: &str,
+    upload_id: &str,
+    executing_transfers: Arc<RwLock<usize>>,
+    multi_part_chunk_size: usize,
+    multi_part_chunks_per_batch: usize,
+    multi_part_parallelism: usize,
+) -> Result<Vec<CompletedPart>> {
+    let s_obj = s_client
+        .client
+        .get_object()
+        .bucket(s_bucket)
+        .key(s_key)
+        .send()
+        .await?;
+    let vec_obj_range = gen_object_part_plan(&s_obj, multi_part_chunk_size)?;
+    let err_mark = Arc::new(AtomicBool::new(false));
+    let mut joinset = JoinSet::new();
+
+    let completed_parts_btree: Arc<Mutex<BTreeMap<i32, CompletedPart>>> =
+        Arc::new(Mutex::new(BTreeMap::new()));
+
+    let mut vec_obj_range_tmp = vec![];
+    let vec_obj_range_len = vec_obj_range.len();
+
+    for range in vec_obj_range {
+        let part_num = range.part_num;
+        vec_obj_range_tmp.push(range);
+        if vec_obj_range_tmp.len().eq(&multi_part_chunks_per_batch)
+            || vec_obj_range_len.eq(&TryInto::<usize>::try_into(part_num)?)
+        {
+            while executing_transfers.read().await.ge(&multi_part_parallelism) {
+                task::yield_now().await;
+            }
+
+            let e_t = Arc::clone(&executing_transfers);
+            let s_c = Arc::clone(&s_client);
+            let t_c = t_client.clone();
+            let s_b = s_bucket.to_string();
+            let t_b = t_bucket.to_string();
+            let s_k = s_key.to_string();
+            let t_k = t_key.to_string();
+            let up_id = upload_id.to_string();
+            let v_o_r = vec_obj_range_tmp.clone();
+            let c_b_t = Arc::clone(&completed_parts_btree);
+            let e_m = Arc::clone(&err_mark);
+
+            joinset.spawn(async move {
+                {
+                    let mut num = e_t.write().await;
+                    *num += 1;
+                }
+                if let Err(e) = transfer_parts_batch_by_range(
+                    s_c, t_c, &s_b, &t_b, &s_k, &t_k, &up_id, v_o_r, c_b_t,
+                )
+                .await
+                {
+                    log::error!("{:?}", e);
+                    e_m.store(true, std::sync::atomic::Ordering::SeqCst);
+                };
+
+                let mut num = e_t.write().await;
+                *num -= 1;
+            });
+            vec_obj_range_tmp.clear();
+        }
+    }
+
+    while joinset.len() > 0 {
+        if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(anyhow!("upload error"));
+        }
+        joinset.join_next().await;
+    }
+
+    if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err(anyhow!("upload error"));
+    }
+
+    let completed_parts = completed_parts_btree
+        .lock()
+        .await
+        .clone()
+        .into_values()
+        .collect::<Vec<CompletedPart>>();
+
+    Ok(completed_parts)
+}
+
 pub async fn transfer_parts_batch_by_range(
-    s_client: Arc<Client>,
-    t_client: Arc<Client>,
+    // s_client: Arc<Client>,
+    // t_client: Arc<Client>,
+    s_client: Arc<OssClient>,
+    t_client: Arc<OssClient>,
     s_bucket: &str,
     t_bucket: &str,
     s_key: &str,
@@ -1105,6 +1254,7 @@ pub async fn transfer_parts_batch_by_range(
     for p in parts_vec {
         let range_str = gen_range_string(p.begin, p.end);
         let s_obj = s_client
+            .client
             .get_object()
             .bucket(s_bucket)
             .key(s_key)
@@ -1114,6 +1264,7 @@ pub async fn transfer_parts_batch_by_range(
         let presigning = PresigningConfig::expires_in(std::time::Duration::from_secs(3000))?;
 
         let upload_part_res = t_client
+            .client
             .upload_part()
             .bucket(t_bucket)
             .key(t_key)
@@ -1218,96 +1369,6 @@ pub async fn download_object(
     t_file.flush()?;
     Ok(())
 }
-
-// pub async fn download_object_parts_by_range(
-//     s_client: Arc<Client>,
-//     s_bucket: &str,
-//     s_key: &str,
-//     file_path: &str,
-//     executing_transfers: Arc<RwLock<usize>>,
-//     multi_part_chunk_size: usize,
-//     multi_part_chunks_per_batch: usize,
-//     multi_part_parallelism: usize,
-// ) -> Result<()> {
-//     let filling_file = file_path.to_string() + ".oss_pipe_tmp";
-//     let s_obj = s_client
-//         .get_object()
-//         .bucket(s_bucket)
-//         .key(s_key)
-//         .send()
-//         .await?;
-//     let vec_obj_range = gen_object_part_plan(&s_obj, multi_part_chunk_size)?;
-//     let content_len = match s_obj.content_length() {
-//         Some(l) => l,
-//         None => return Err(anyhow!("content length is None")),
-//     };
-//     let filling_file_size = TryInto::<usize>::try_into(content_len)?;
-//     fill_file_with_zero(filling_file_size, multi_part_chunk_size, &filling_file)?;
-
-//     let mut obj_range_batch = vec![];
-//     let vec_obj_range_len = vec_obj_range.len();
-//     let err_mark = Arc::new(AtomicBool::new(false));
-//     let mut joinset = JoinSet::new();
-
-//     for range in vec_obj_range {
-//         let part_num = range.part_num;
-//         obj_range_batch.push(range);
-//         if obj_range_batch.len().eq(&multi_part_chunks_per_batch)
-//             || vec_obj_range_len.eq(&TryInto::<usize>::try_into(part_num)?)
-//         {
-//             while executing_transfers.read().await.ge(&multi_part_parallelism) {
-//                 task::yield_now().await;
-//             }
-
-//             let e_t = Arc::clone(&executing_transfers);
-//             let s_c = Arc::clone(&s_client);
-//             let s_b = s_bucket.to_string();
-//             let s_k = s_key.to_string();
-//             let f_n = filling_file.to_string();
-//             let v_o_r = obj_range_batch.clone();
-//             let e_m = Arc::clone(&err_mark);
-
-//             joinset.spawn(async move {
-//                 {
-//                     let mut num = e_t.write().await;
-//                     *num += 1;
-//                 }
-
-//                 if let Err(e) = fill_parts_to_file_batch_by_range(
-//                     s_c,
-//                     &s_b,
-//                     &s_k,
-//                     &f_n,
-//                     multi_part_chunk_size,
-//                     v_o_r,
-//                 )
-//                 .await
-//                 {
-//                     log::error!("{:?}", e);
-//                     e_m.store(true, std::sync::atomic::Ordering::SeqCst);
-//                 };
-
-//                 let mut num = e_t.write().await;
-//                 *num -= 1;
-//             });
-//             obj_range_batch.clear();
-//         }
-//     }
-
-//     while joinset.len() > 0 {
-//         if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
-//             return Err(anyhow!("upload error"));
-//         }
-//         joinset.join_next().await;
-//     }
-
-//     if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
-//         return Err(anyhow!("upload error"));
-//     }
-//     fs::rename(filling_file, file_path)?;
-
-//     Ok(())
-// }
 
 pub async fn fill_parts_to_file_batch_by_range(
     s_client: Arc<Client>,

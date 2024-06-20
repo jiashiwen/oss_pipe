@@ -11,12 +11,15 @@ use crate::{
         json_to_struct, merge_file, promote_processbar, read_lines, struct_to_json_string,
         LastModifyFilter, RegexFilter,
     },
-    s3::{oss_client::OssClient, OSSDescription},
+    s3::{
+        oss_client::{multipart_transfer_obj_paralle_by_range, OssClient},
+        OSSDescription,
+    },
     tasks::{LogInfo, TaskDefaultParameters},
 };
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
-use aws_sdk_s3::types::Object;
+use aws_sdk_s3::{types::Object, Client};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
@@ -672,8 +675,10 @@ impl TransferOss2OssRecordsExecutor {
             .truncate(true)
             .open(error_file_name.as_str())?;
 
-        let c_s = self.source.gen_oss_client()?;
-        let c_t = self.target.gen_oss_client()?;
+        let source_client = self.source.gen_oss_client()?;
+        let target_client = self.target.gen_oss_client()?;
+        let s_c = Arc::new(source_client);
+        let t_c = Arc::new(target_client);
         for record in records {
             // 插入文件offset记录
             self.offset_map.insert(
@@ -691,7 +696,7 @@ impl TransferOss2OssRecordsExecutor {
             target_key.push_str(&record.key);
             let e_u = Arc::clone(&executing_transfers);
             if let Err(e) = self
-                .listed_record_handler(e_u, &record, &c_s, &c_t, &target_key)
+                .listed_record_handler(e_u, &record, &s_c, &t_c, &target_key)
                 .await
             {
                 let recorddesc = RecordDescription {
@@ -734,8 +739,10 @@ impl TransferOss2OssRecordsExecutor {
         &self,
         executing_transfers: Arc<RwLock<usize>>,
         record: &ListedRecord,
-        source_oss: &OssClient,
-        target_oss: &OssClient,
+        // source_oss: &OssClient,
+        // target_oss: &OssClient,
+        source_oss: &Arc<OssClient>,
+        target_oss: &Arc<OssClient>,
         target_key: &str,
     ) -> Result<()> {
         let s_obj_output = match source_oss
@@ -788,22 +795,38 @@ impl TransferOss2OssRecordsExecutor {
                     .await
             }
             false => {
-                let s_c = Arc::new(source_oss.client.clone());
+                // let s_c = Arc::new(source_oss.client.clone());
+                // let s_c = source_oss.clone();
                 let e_t = Arc::clone(&executing_transfers);
-                target_oss
-                    .multipart_upload_obj_paralle_by_range(
-                        s_c,
-                        &self.source.bucket,
-                        record.key.as_str(),
-                        &self.target.bucket,
-                        target_key,
-                        expr,
-                        e_t,
-                        self.attributes.multi_part_chunk_size,
-                        self.attributes.multi_part_chunks_per_batch,
-                        self.attributes.multi_part_parallelism,
-                    )
-                    .await
+                // target_oss
+                //     .multipart_upload_obj_paralle_by_range(
+                //         s_c,
+                //         &self.source.bucket,
+                //         record.key.as_str(),
+                //         &self.target.bucket,
+                //         target_key,
+                //         expr,
+                //         e_t,
+                //         self.attributes.multi_part_chunk_size,
+                //         self.attributes.multi_part_chunks_per_batch,
+                //         self.attributes.multi_part_parallelism,
+                //     )
+                //     .await
+
+                multipart_transfer_obj_paralle_by_range(
+                    source_oss.clone(),
+                    &self.source.bucket,
+                    record.key.as_str(),
+                    target_oss.clone(),
+                    &self.target.bucket,
+                    target_key,
+                    expr,
+                    e_t,
+                    self.attributes.multi_part_chunk_size,
+                    self.attributes.multi_part_chunks_per_batch,
+                    self.attributes.multi_part_parallelism,
+                )
+                .await
             }
         };
     }
