@@ -13,7 +13,7 @@ use crate::commons::scan_folder_files_to_file;
 use crate::commons::LastModifyFilter;
 use crate::{
     checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
-    s3::{aws_s3::OssClient, OSSDescription},
+    s3::{oss_client::OssClient, OSSDescription},
 };
 use anyhow::anyhow;
 use anyhow::Result;

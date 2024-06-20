@@ -12,7 +12,7 @@ use crate::{
         LastModifyFilter, RegexFilter,
     },
     s3::{
-        aws_s3::{download_object, OssClient},
+        oss_client::{download_object, OssClient},
         OSSDescription,
     },
 };
@@ -698,11 +698,6 @@ impl Oss2LocalListedRecordsExecutor {
             None => return Err(anyhow!("content length is None")),
         };
         let content_len_usize: usize = content_len.try_into()?;
-        // let mut t_file = OpenOptions::new()
-        //     .truncate(true)
-        //     .create(true)
-        //     .write(true)
-        //     .open(target_file)?;
 
         match content_len_usize.le(&self.attributes.large_file_size) {
             true => {

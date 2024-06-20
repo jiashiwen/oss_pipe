@@ -4,6 +4,7 @@ use crate::{
         byte_size_str_to_usize, byte_size_usize_to_str, struct_to_yaml_string, LastModifyFilter,
     },
     s3::OSSDescription,
+    tasks::LogInfo,
 };
 use anyhow::{anyhow, Result};
 use aws_sdk_s3::types::ObjectIdentifier;
@@ -64,24 +65,24 @@ pub enum Task {
     TruncateBucket(TaskTruncateBucket),
 }
 
-// ToDo
-// 抽象 task
 impl Task {
-    // pub fn execute(&self) -> Result<()> {
     pub fn execute(&self) {
         let now = Instant::now();
         match self {
             Task::Transfer(transfer) => {
                 log::info!(
-                    "TransferTask Start:\n{}",
+                    "Transfer Task Start:\n{}",
                     struct_to_yaml_string(transfer).unwrap()
                 );
                 match transfer.execute() {
-                    Ok(_) => log::info!(
-                        "TrasferTask {} execute ok!{:?}",
-                        transfer.task_id,
-                        now.elapsed()
-                    ),
+                    Ok(_) => {
+                        let log_info = LogInfo {
+                            task_id: transfer.task_id.clone(),
+                            msg: "execute ok!".to_string(),
+                            additional: Some(now.elapsed()),
+                        };
+                        log::info!("{:?}", log_info)
+                    }
                     Err(e) => {
                         log::error!("{}", e);
                     }
@@ -89,21 +90,35 @@ impl Task {
             }
             Task::TruncateBucket(truncate) => {
                 log::info!(
-                    "TruncateTask Start:\n{}",
+                    "Truncate Task Start:\n{}",
                     struct_to_yaml_string(truncate).unwrap()
                 );
                 match truncate.exec_multi_threads() {
-                    Ok(_) => log::info!("task {} execute ok!{:?}", truncate.task_id, now.elapsed()),
+                    Ok(_) => {
+                        let log_info = LogInfo {
+                            task_id: truncate.task_id.clone(),
+                            msg: "execute ok!".to_string(),
+                            additional: Some(now.elapsed()),
+                        };
+                        log::info!("{:?}", log_info)
+                    }
                     Err(e) => log::error!("{:?}", e),
                 }
             }
             Task::Compare(compare) => {
                 log::info!(
-                    "CompareTask Start:\n{}",
+                    "Compare Task Start:\n{}",
                     struct_to_yaml_string(compare).unwrap()
                 );
                 match compare.execute() {
-                    Ok(_) => log::info!("task {} execute ok!{:?}", compare.task_id, now.elapsed()),
+                    Ok(_) => {
+                        let log_info = LogInfo {
+                            task_id: compare.task_id.clone(),
+                            msg: "execute ok!".to_string(),
+                            additional: Some(now.elapsed()),
+                        };
+                        log::info!("{:?}", log_info)
+                    }
                     Err(e) => log::error!("{:?}", e),
                 }
             }

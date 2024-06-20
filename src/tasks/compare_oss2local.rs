@@ -12,7 +12,7 @@ use crate::checkpoint::FileDescription;
 use crate::commons::LastModifyFilter;
 use crate::{
     checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
-    s3::{aws_s3::OssClient, OSSDescription},
+    s3::{oss_client::OssClient, OSSDescription},
 };
 use anyhow::anyhow;
 use anyhow::Result;

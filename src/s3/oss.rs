@@ -1,11 +1,8 @@
-// use super::ali_oss::OssAliClient;
-use super::{aws_s3::OssClient, jd_s3::OssJdClient};
-// use super::jrss::JRSSClient;
+use super::{jd_s3::OssJdClient, oss_client::OssClient};
 use anyhow::{Ok, Result};
 use async_trait::async_trait;
 use aws_config::{BehaviorVersion, SdkConfig};
 use aws_credential_types::{provider::SharedCredentialsProvider, Credentials};
-// use aws_sdk_s3::Region;
 use aws_sdk_s3::config::Region;
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
@@ -397,8 +394,6 @@ mod test {
             .enable_time()
             .build()
             .unwrap();
-        // let mut v_handle: Box<Vec<task::JoinHandle<()>>> = Box::new(vec![]);
-        // let mut set = JoinSet::new();
         rt.block_on(async {
             let mut set = JoinSet::new();
             for i in 0..100 {

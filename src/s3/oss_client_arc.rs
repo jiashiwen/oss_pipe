@@ -36,12 +36,6 @@ use tokio::{
 };
 
 #[derive(Debug, Clone)]
-pub struct StreamPart {
-    pub part_num: i32,
-    pub bytes: Vec<u8>,
-}
-
-#[derive(Debug, Clone)]
 pub struct ObjectRange {
     pub part_num: i32,
     pub begin: usize,
@@ -50,9 +44,15 @@ pub struct ObjectRange {
 
 //Todo 尝试修改为Arc::<Client>
 #[derive(Debug, Clone)]
-pub struct OssClient {
-    pub client: Client,
+pub struct OssClientArc {
+    // pub client: Client,
+    pub client: Arc<Client>,
 }
+
+// #[derive(Debug, Clone)]
+// pub struct OssClientArc {
+//     pub client: Arc<Client>,
+// }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct OssObjList {
@@ -60,7 +60,7 @@ pub struct OssObjList {
     pub next_token: Option<String>,
 }
 
-impl OssClient {
+impl OssClientArc {
     pub async fn append_object_list_to_file(
         &self,
         bucket: String,
@@ -229,7 +229,8 @@ impl OssClient {
             local_file,
             bucket,
             key,
-            Arc::clone(&executing_transfers),
+            // Arc::clone(&executing_transfers),
+            executing_transfers.clone(),
             multi_part_chunk_size,
             multi_part_chunk_per_batch,
             multi_part_parallelism,
@@ -248,10 +249,11 @@ impl OssClient {
         multi_part_chunks_per_batch: usize,
         multi_part_parallelism: usize,
     ) -> Result<()> {
-        let s_client = Arc::new(self.client.clone());
+        // let s_client = Arc::new(self.client.clone());
         let filling_file = file_path.to_string() + DOWNLOAD_TMP_FILE_SUBFFIX;
 
-        let s_obj = s_client
+        let s_obj = self
+            .client
             .get_object()
             .bucket(s_bucket)
             .key(s_key)
@@ -281,7 +283,8 @@ impl OssClient {
                 }
 
                 let e_t = Arc::clone(&executing_transfers);
-                let s_c = Arc::clone(&s_client);
+                // let s_c = Arc::clone(&s_client);
+                let s_c = self.client.clone();
                 let s_b = s_bucket.to_string();
                 let s_k = s_key.to_string();
                 let f_n = filling_file.to_string();
@@ -331,7 +334,7 @@ impl OssClient {
     }
 }
 
-impl OssClient {
+impl OssClientArc {
     pub async fn get_object(
         &self,
         bucket: &str,
@@ -763,8 +766,8 @@ impl OssClient {
             .await?;
         let vec_obj_range = gen_object_part_plan(&s_obj, multi_part_chunk_size)?;
 
-        let client = self.client.clone();
-        let arc_t_client = Arc::new(client);
+        // let client = self.client.clone();
+        // let arc_t_client = Arc::new(client);
         let err_mark = Arc::new(AtomicBool::new(false));
         let mut joinset = JoinSet::new();
 
@@ -786,7 +789,8 @@ impl OssClient {
 
                 let e_t = Arc::clone(&executing_transfers);
                 let s_c = Arc::clone(&s_client);
-                let t_c = Arc::clone(&arc_t_client);
+                // let t_c = Arc::clone(&arc_t_client);
+                let t_c = self.client.clone();
                 let s_b = s_bucket.to_string();
                 let t_b = t_bucket.to_string();
                 let s_k = s_key.to_string();
@@ -839,6 +843,7 @@ impl OssClient {
     }
 
     //Todo 增加client:Arc<Client> 参数，修改self.client.clone();在上一层生成Arc<Client>
+    // Arc::clone 更改为 变量.clone()
     pub async fn upload_file_parts(
         &self,
         file_name: &str,
@@ -852,7 +857,7 @@ impl OssClient {
     ) -> Result<Vec<CompletedPart>> {
         let file_parts = gen_file_part_plan(file_name, multi_part_chunk_size)?;
         let client = self.client.clone();
-        let arc_client = Arc::new(client);
+        // let arc_client = Arc::new(client);
         let err_mark = Arc::new(AtomicBool::new(false));
         let mut joinset = JoinSet::new();
 
@@ -872,8 +877,10 @@ impl OssClient {
             parts_vec.push(f_p);
 
             if (parts_vec.len() % batch).eq(&0) || part_num_usize.eq(&file_parts_len) {
-                let e_t = Arc::clone(&executing_transfers);
-                let c = Arc::clone(&arc_client);
+                // let e_t = Arc::clone(&executing_transfers);
+                let e_t = executing_transfers.clone();
+                // let t_c = Arc::clone(&arc_client);
+                let t_c = self.client.clone();
                 let err_mark = Arc::clone(&err_mark);
                 let f = file_name.to_string();
                 let b = bucket.to_string();
@@ -893,7 +900,7 @@ impl OssClient {
                     }
 
                     if let Err(e) = upload_file_parts_batch(
-                        c,
+                        t_c,
                         &f,
                         &b,
                         &k,
@@ -1180,7 +1187,6 @@ pub async fn upload_file_parts_batch(
 
 pub async fn download_object(
     get_object: GetObjectOutput,
-    // file: &mut File,
     file_path: &str,
     splite_size: usize,
     chunk_size: usize,

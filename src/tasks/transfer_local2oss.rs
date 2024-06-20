@@ -16,7 +16,7 @@ use crate::commons::{
     analyze_folder_files_size, json_to_struct, read_lines, scan_folder_files_to_file,
     LastModifyFilter, Modified, ModifyType, NotifyWatcher, PathType, RegexFilter,
 };
-use crate::s3::aws_s3::OssClient;
+use crate::s3::oss_client::OssClient;
 use crate::tasks::TaskDefaultParameters;
 use crate::{checkpoint::ListedRecord, s3::OSSDescription};
 use anyhow::{anyhow, Result};

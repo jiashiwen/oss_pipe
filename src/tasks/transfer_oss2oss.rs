@@ -11,7 +11,7 @@ use crate::{
         json_to_struct, merge_file, promote_processbar, read_lines, struct_to_json_string,
         LastModifyFilter, RegexFilter,
     },
-    s3::{aws_s3::OssClient, OSSDescription},
+    s3::{oss_client::OssClient, OSSDescription},
     tasks::{LogInfo, TaskDefaultParameters},
 };
 use anyhow::{anyhow, Context, Result};
@@ -412,7 +412,7 @@ impl TransferTaskActions for TransferOss2Oss {
             total_lines,
         };
         let log_info = LogInfo {
-            task_id: __self.task_id.clone(),
+            task_id: self.task_id.clone(),
             msg: "capture changed object".to_string(),
             additional: Some(file_desc.clone()),
         };
@@ -728,6 +728,8 @@ impl TransferOss2OssRecordsExecutor {
         Ok(())
     }
 
+    //Todo
+    // 尝试 source_oss、target_oss 参数 使用Arc<Client>
     async fn listed_record_handler(
         &self,
         executing_transfers: Arc<RwLock<usize>>,
@@ -786,8 +788,6 @@ impl TransferOss2OssRecordsExecutor {
                     .await
             }
             false => {
-                // let s_client = source_oss.client.clone();
-                // let s_c = Arc::new(s_client);
                 let s_c = Arc::new(source_oss.client.clone());
                 let e_t = Arc::clone(&executing_transfers);
                 target_oss
