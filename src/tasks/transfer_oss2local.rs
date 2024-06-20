@@ -72,7 +72,7 @@ impl TransferTaskActions for TransferOss2Local {
             )
             .await
     }
-    fn error_record_retry(&self) -> Result<()> {
+    fn error_record_retry(&self, executing_transfers: Arc<RwLock<usize>>) -> Result<()> {
         // 遍历错误记录
         // 每个错误文件重新处理
         for entry in WalkDir::new(self.attributes.meta_dir.as_str())
@@ -334,6 +334,7 @@ impl TransferTaskActions for TransferOss2Local {
     async fn record_descriptions_transfor(
         &self,
         joinset: &mut JoinSet<()>,
+        executing_transfers: Arc<RwLock<usize>>,
         records: Vec<RecordDescription>,
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
@@ -370,6 +371,7 @@ impl TransferTaskActions for TransferOss2Local {
     async fn execute_increment(
         &self,
         mut execute_set: &mut JoinSet<()>,
+        executing_transfers: Arc<RwLock<usize>>,
         assistant: Arc<Mutex<IncrementAssistant>>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,

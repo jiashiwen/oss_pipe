@@ -313,6 +313,8 @@ impl TransferTask {
         // 生成执行文件
         rt.block_on(async {
             if self.attributes.start_from_checkpoint {
+                // 正在执行的任务数量，用于控制分片上传并行度
+                let executing_transfers = Arc::new(RwLock::new(0));
                 // 变更object_list_file_name文件名
                 let checkpoint = match get_task_checkpoint(check_point_file.as_str()) {
                     Ok(c) => c,
@@ -324,7 +326,7 @@ impl TransferTask {
                 };
 
                 // 执行error retry
-                match task.error_record_retry() {
+                match task.error_record_retry(executing_transfers) {
                     Ok(_) => {}
                     Err(e) => {
                         log::error!("{}", e);
@@ -492,6 +494,7 @@ impl TransferTask {
                         task_modify
                             .record_descriptions_transfor(
                                 &mut execut_set,
+                                Arc::clone(&executing_transfers),
                                 vk,
                                 Arc::clone(&snapshot_stop_mark),
                                 Arc::clone(&err_counter),
@@ -518,6 +521,7 @@ impl TransferTask {
                     task_modify
                         .record_descriptions_transfor(
                             &mut execut_set,
+                            Arc::clone(&executing_transfers),
                             vk,
                             Arc::clone(&snapshot_stop_mark),
                             Arc::clone(&err_counter),
@@ -676,11 +680,13 @@ impl TransferTask {
             rt.block_on(async {
                 let stop_mark = Arc::new(AtomicBool::new(false));
                 let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
+                let executing_transfers = Arc::new(RwLock::new(0));
                 let task_increment = self.gen_transfer_actions();
 
                 let _ = task_increment
                     .execute_increment(
                         &mut execut_set,
+                        executing_transfers,
                         Arc::clone(&increment_assistant),
                         Arc::clone(&err_counter),
                         Arc::clone(&offset_map),

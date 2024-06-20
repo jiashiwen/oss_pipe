@@ -23,7 +23,7 @@ use tokio::{
 pub trait TransferTaskActions {
     async fn analyze_source(&self) -> Result<DashMap<String, i128>>;
     // 错误记录重试
-    fn error_record_retry(&self) -> Result<()>;
+    fn error_record_retry(&self, executing_transfers: Arc<RwLock<usize>>) -> Result<()>;
     // 记录列表执行器
     async fn listed_records_transfor(
         &self,
@@ -40,6 +40,7 @@ pub trait TransferTaskActions {
     async fn record_descriptions_transfor(
         &self,
         execute_set: &mut JoinSet<()>,
+        executing_transfers: Arc<RwLock<usize>>,
         records: Vec<RecordDescription>,
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
@@ -67,6 +68,7 @@ pub trait TransferTaskActions {
     async fn execute_increment(
         &self,
         execute_set: &mut JoinSet<()>,
+        executing_transfers: Arc<RwLock<usize>>,
         assistant: Arc<Mutex<IncrementAssistant>>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
