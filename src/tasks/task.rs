@@ -196,17 +196,6 @@ impl TaskDefaultParameters {
     }
 }
 
-// #[derive(Debug, Serialize, Deserialize, Clone)]
-// #[serde(rename_all = "lowercase")]
-// #[serde(tag = "type")]
-// pub struct Task {
-//     #[serde(default = "TaskDefaultParameters::id_default")]
-//     pub task_id: String,
-//     #[serde(default = "TaskDefaultParameters::name_default")]
-//     pub name: String,
-//     pub task_desc: TaskDescription,
-// }
-
 pub fn de_usize_from_str<'de, D>(deserializer: D) -> Result<usize, D::Error>
 where
     D: Deserializer<'de>,
@@ -302,11 +291,9 @@ impl TaskTruncateBucket {
             for line in lines {
                 if let Result::Ok(key) = line {
                     if !key.ends_with("/") {
-                        // let obj_id = ObjectIdentifier::builder().set_key(Some(key)).build();
                         if let Ok(obj_id) = ObjectIdentifier::builder().set_key(Some(key)).build() {
                             vec_keys.push(obj_id);
                         }
-                        // vec_keys.push(obj_id);
                     }
                 };
                 if vec_keys
