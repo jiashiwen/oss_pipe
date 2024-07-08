@@ -292,7 +292,6 @@ impl TransferTaskActions for TransferLocal2Local {
         let total_lines = removed_lines + modified_lines;
 
         fs::rename(&removed, &modified)?;
-        // fs::remove_file(&modified)?;
         let file_desc = FileDescription {
             path: modified.to_string(),
             size: total_size,

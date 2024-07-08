@@ -208,13 +208,6 @@ fn cmd_match(matches: &ArgMatches) {
         if let Some(transfer) = template.subcommand_matches("transfer") {
             if let Some(oss2oss) = transfer.subcommand_matches("oss2oss") {
                 let now = time::OffsetDateTime::now_utc().unix_timestamp();
-                // let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
-                //     Ok(n) => n,
-                //     Err(e) => {
-                //         log::error!("{}", e);
-                //         return;
-                //     }
-                // };
                 let file = oss2oss.get_one::<String>("file");
                 let mut transfer_oss2oss = TransferTask::default();
                 transfer_oss2oss.name = "transfer_oss2oss".to_string();
