@@ -93,9 +93,9 @@ attributes:
 	   <td>source-provider</td>
 	   <td>String</td>
        <td>是</td>
-       <td>当源为对象存储时，描述对象存储提供商。值为ALI、JD等，支持的对象存储提供商通过oss_pipe parameters provider 查询</td>
+       <td>当源为对象存储时，描述对象存储提供商。值为JD/JRSS/ALI/AWS/HUAWEI/COS/MINIO，支持的对象存储提供商通过oss_pipe parameters provider 查询</td>
        <td>source:<br>
-        &nbsp;&nbsp;&nbsp;&nbsp;provider: JD/JRSS/ALI/AWS/HUAWEI/COS/MINIO</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;provider: AWS</td>
 	</tr>
     <tr>
 	   <td>source-access_key_id</td>
@@ -156,9 +156,9 @@ attributes:
 	   <td>target-provider</td>
 	   <td>String</td>
        <td>是</td>
-       <td>当目标为对象存储时，描述对象存储提供商。值为ALI、JD等，支持的对象存储提供商通过oss_pipe parameters provider 查询</td>
+       <td>当目标为对象存储时，描述对象存储提供商。值为JD/JRSS/ALI/AWS/HUAWEI/COS/MINIO，支持的对象存储提供商通过oss_pipe parameters provider 查询</td>
        <td>target:<br>
-        &#20;&#20;&#20;&#20;provider: JD/JRSS/ALI/AWS/HUAWEI/COS/MINIO<</td>
+        &#20;&#20;&#20;&#20;provider: AWS</td>
 	</tr>
     <tr>
 	   <td>target-access_key_id</td>
