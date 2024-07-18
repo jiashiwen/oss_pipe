@@ -103,7 +103,7 @@ attributes:
        <td>是</td>
        <td>当源为对象存储时，指定对象存储的 access_key。</td>
        <td>source:<br>
-        &#20;&#20;&#20;&#20;access_key_id: xxxx</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;access_key_id: xxxx</td>
 	</tr>
     <tr>
 	   <td>source-secret_access_key</td>
@@ -111,7 +111,7 @@ attributes:
        <td>是</td>
        <td>当源为对象存储时，指定对象存储的 secret key</td>
        <td>source:<br>
-        &#20;&#20;&#20;&#20; secret_access_key: xxxx</td>
+        &nbsp;&nbsp;&nbsp;&nbsp; secret_access_key: xxxx</td>
 	</tr>
     <tr>
 	   <td>source-endpoint</td>
@@ -119,7 +119,7 @@ attributes:
        <td>是</td>
        <td>当源为对象存储时，对象存储endpoint</td>
        <td>source:<br>
-        &#20;&#20;&#20;&#20;endpoint: http://oss-cn-beijing.aliyuncs.com</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;endpoint: http://oss-cn-beijing.aliyuncs.com</td>
 	</tr>
     <tr>
 	   <td>source-region</td>
@@ -127,7 +127,7 @@ attributes:
        <td>是</td>
        <td>当源为对象存储时，对象存储region</td>
        <td>source:<br>
-        &#20;&#20;&#20;&#20;region: cn-north-1</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;region: cn-north-1</td>
 	</tr>
     <tr>
 	   <td>source-bucket</td>
@@ -135,7 +135,7 @@ attributes:
        <td>是</td>
        <td>当源为对象存储时，对象存储bucket</td>
        <td>source:<br>
-        &#20;&#20;&#20;&#20;bucket: bucket_name</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;bucket: bucket_name</td>
 	</tr>
     <tr>
 	   <td>source-prefix</td>
@@ -143,7 +143,7 @@ attributes:
        <td>否</td>
        <td>当源为对象存储时，指定prefix时，只对该prefix下的对象进行操作</td>
        <td>source:<br>
-        &#20;&#20;&#20;&#20;prefix: source/test/prefix/</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;prefix: source/test/prefix/</td>
 	</tr>
     <tr>
 	   <td>target</td>
@@ -158,7 +158,7 @@ attributes:
        <td>是</td>
        <td>当目标为对象存储时，描述对象存储提供商。值为JD/JRSS/ALI/AWS/HUAWEI/COS/MINIO，支持的对象存储提供商通过oss_pipe parameters provider 查询</td>
        <td>target:<br>
-        &#20;&#20;&#20;&#20;provider: AWS</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;provider: AWS</td>
 	</tr>
     <tr>
 	   <td>target-access_key_id</td>
@@ -166,7 +166,7 @@ attributes:
        <td>是</td>
        <td>当目标为对象存储时，指定对象存储的 access_key。</td>
        <td>target:<br>
-        &#20;&#20;&#20;&#20;access_key_id: xxxx</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;access_key_id: xxxx</td>
 	</tr>
     <tr>
 	   <td>target-secret_access_key</td>
@@ -174,7 +174,7 @@ attributes:
        <td>是</td>
        <td>当源为对象存储时，指定对象存储的 secret key</td>
        <td>target:<br>
-        &#20;&#20;&#20;&#20; secret_access_key: xxxx</td>
+        &nbsp;&nbsp;&nbsp;&nbsp; secret_access_key: xxxx</td>
 	</tr>
     <tr>
 	   <td>target-endpoint</td>
@@ -182,7 +182,7 @@ attributes:
        <td>是</td>
        <td>当目标为对象存储时，对象存储endpoint</td>
        <td>target:<br>
-        &#20;&#20;&#20;&#20;endpoint: http://oss-cn-beijing.aliyuncs.com</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;endpoint: http://oss-cn-beijing.aliyuncs.com</td>
 	</tr>
     <tr>
 	   <td>target-region</td>
@@ -190,7 +190,7 @@ attributes:
        <td>是</td>
        <td>当目标为对象存储时，对象存储region</td>
        <td>target:<br>
-        &#20;&#20;&#20;&#20;region: cn-north-1</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;region: cn-north-1</td>
 	</tr>
     <tr>
 	   <td>target-bucket</td>
@@ -198,7 +198,7 @@ attributes:
        <td>是</td>
        <td>当目标为对象存储时，对象存储bucket</td>
        <td>target:<br>
-        &#20;&#20;&#20;&#20;bucket: bucket_name</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;bucket: bucket_name</td>
 	</tr>
     <tr>
 	   <td>target-prefix</td>
@@ -206,7 +206,7 @@ attributes:
        <td>否</td>
        <td>当目标为对象存储时，指定prefix时，只对该prefix下的对象进行操作</td>
        <td>target:<br>
-        &#20;&#20;&#20;&#20;prefix: target/prefix/</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;prefix: target/prefix/</td>
 	</tr>
     <tr>
 	   <td>attributes-objects_per_batch</td>
@@ -214,7 +214,7 @@ attributes:
        <td>是</td>
        <td>任务属性，每批次执行的对象数量</td>
        <td>attributes:<br>
-        &#20;&#20;&#20;&#20;objects_per_batch: 100</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;objects_per_batch: 100</td>
 	</tr>
     <tr>
 	   <td>attributes-task_parallelism</td>
@@ -222,7 +222,7 @@ attributes:
        <td>是</td>
        <td>任务属性，任务并行度，既同时执行任务批次的数量</td>
        <td>attributes:<br>
-        &#20;&#20;&#20;&#20;task_parallelism: 16</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;task_parallelism: 16</td>
 	</tr>
     <tr>
 	   <td>attributes-max_errors</td>
@@ -230,7 +230,7 @@ attributes:
        <td>是</td>
        <td>任务属性，任务执行期间容忍的最大错误数量</td>
        <td>attributes:<br>
-        &#20;&#20;&#20;&#20; max_errors: 3</td>
+        &nbsp;&nbsp;&nbsp;&nbsp; max_errors: 3</td>
 	</tr>
     <tr>
 	   <td>attributes-objects_per_batch</td>
@@ -238,7 +238,7 @@ attributes:
        <td>是</td>
        <td>任务属性，每批次执行的对象数量</td>
        <td>attributes:<br>
-        &#20;&#20;&#20;&#20;objects_per_batch: 100</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;objects_per_batch: 100</td>
 	</tr>
     <tr>
 	   <td>attributes-meta_dir</td>
@@ -246,7 +246,7 @@ attributes:
        <td>否</td>
        <td>任务属性，元数据存储位置，默认路径/tmp/meta_dir</td>
        <td>attributes:<br>
-        &#20;&#20;&#20;&#20;meta_dir: /root/meta_dir</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;meta_dir: /root/meta_dir</td>
 	</tr>
     <tr>
 	   <td>attributes-target_exists_skip</td>
@@ -254,7 +254,7 @@ attributes:
        <td>否</td>
        <td>任务属性，当target存在同名对象时不传送对象，默认值为false</td>
        <td>attributes:<br>
-        &#20;&#20;&#20;&#20;target_exists_skip: false</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;target_exists_skip: false</td>
 	</tr>
     <tr>
 	   <td>attributes-start_from_checkpoint</td>
@@ -262,7 +262,7 @@ attributes:
        <td>否</td>
        <td>任务属性，是否从checkpoint开始执行任务，用于任务中断后接续执行，默认值false</td>
        <td>attributes:<br>
-        &#20;&#20;&#20;&#20;start_from_checkpoint: true</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;start_from_checkpoint: true</td>
 	</tr>
     <tr>
 	   <td>attributes-large_file_size</td>
@@ -270,7 +270,7 @@ attributes:
        <td>是</td>
        <td>任务属性，超过该参数设置尺寸的文件，文件切片传输</td>
        <td>attributes:<br>
-        &#20;&#20;&#20;&#20;large_file_size: 50M</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;large_file_size: 50M</td>
 	</tr>
     <tr>
 	   <td>attributes-multi_part_chunk_size</td>
@@ -278,7 +278,7 @@ attributes:
        <td>是</td>
        <td>任务属性，对象分片尺寸</td>
        <td>attributes:<br>
-        &#20;&#20;&#20;&#20;multi_part_chunk_size: 10m</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;multi_part_chunk_size: 10m</td>
 	</tr>
     <tr>
 	   <td>attributes-multi_part_chunks_per_batch</td>
@@ -286,7 +286,7 @@ attributes:
        <td>是</td>
        <td>任务属性，每批执行的分片数量</td>
        <td>attributes:<br>
-        &#20;&#20;&#20;&#20; multi_part_chunks_per_batch: 20</td>
+        &nbsp;&nbsp;&nbsp;&nbsp; multi_part_chunks_per_batch: 20</td>
 	</tr>
     <tr>
 	   <td>attributes-multi_part_parallelism</td>
@@ -294,7 +294,7 @@ attributes:
        <td>是</td>
        <td>任务属性，分片批次执行的并行度</td>
        <td>attributes:<br>
-        &#20;&#20;&#20;&#20;multi_part_parallelism: 8</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;multi_part_parallelism: 8</td>
 	</tr>
     <tr>
 	   <td>attributes-exclude</td>
@@ -302,9 +302,9 @@ attributes:
        <td>否</td>
        <td>任务属性，配置排除对象的正则表达式列表，符合列表的对象将不被处理</td>
        <td>attributes:<br>
-        &#20;&#20;&#20;&#20;oexclude: <br>
-        &#20;&#20;&#20;&#20;- test/t3/* <br>
-        &#20;&#20;&#20;&#20;- test/t4/*</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;oexclude: <br>
+        &nbsp;&nbsp;&nbsp;&nbsp;- test/t3/* <br>
+        &nbsp;&nbsp;&nbsp;&nbsp;- test/t4/*</td>
 	</tr>
     <tr>
 	   <td>attributes-include</td>
@@ -312,9 +312,9 @@ attributes:
        <td>是</td>
        <td>任务属性，配置正则表达式列表，程序只处理符合列表的对象</td>
        <td>attributes:<br>
-        &#20;&#20;&#20;&#20;include: <br>
-        &#20;&#20;&#20;&#20;- test/t3/* <br>
-        &#20;&#20;&#20;&#20;- test/t4/*</td></td>
+        &nbsp;&nbsp;&nbsp;&nbsp;include: <br>
+        &nbsp;&nbsp;&nbsp;&nbsp;- test/t3/* <br>
+        &nbsp;&nbsp;&nbsp;&nbsp;- test/t4/*</td></td>
 	</tr>
     <tr>
 	   <td>attributes-transfer_type</td>
@@ -322,7 +322,7 @@ attributes:
        <td>是</td>
        <td>任务属性，传输类型 stock/full,目前支持存量和全量模式</td>
        <td>attributes:<br>
-        &#20;&#20;&#20;&#20;transfer_type: stock/full</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;transfer_type: stock/full</td>
 	</tr>
     <tr>
 	   <td>attributes-last_modify_filter</td>
@@ -330,8 +330,8 @@ attributes:
        <td>是</td>
        <td>任务属性，根据需要筛选符合实际戳条件的对象进行传输</td>
        <td>attributes:<br>
-        &#20;&#20;&#20;&#20;last_modify_filter: <br>
-        &#20;&#20;&#20;&#20;&#20;&#20;&#20;&#20;filter_type: Greater/Less <br>
-        &#20;&#20;&#20;&#20;&#20;&#20;&#20;&#20;timestamp: 1721284711</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;last_modify_filter: <br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;filter_type: Greater/Less <br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;timestamp: 1721284711</td>
 	</tr>
 </table>
