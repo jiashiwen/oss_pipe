@@ -48,44 +48,37 @@ transfer.yml 文件内容
 ```yml
 task_id: '7132608357105537025'
 name: transfer oss to oss
-task_desc:
-  type: transfer
-  source:
-    provider: ALI
-    access_key_id: access_key_id
-    secret_access_key: secret_access_key
-    endpoint: http://oss-cn-beijing.aliyuncs.com
-    region: cn-north-1
-    bucket: bucket_name
-    prefix: test/samples/
-  target:
-    provider: JD
-    access_key_id: access_key_id
-    secret_access_key: secret_access_key
-    endpoint: http://s3.cn-north-1.jdcloud-oss.com
-    region: cn-north-1
-    bucket: bucket_name
-    prefix: test/samples/
-  attributes:
-    bach_size: 100
-    task_threads: 12
-    max_errors: 1
-    meta_dir: /tmp/meta_dir
-    target_exists_skip: false
-    start_from_checkpoint: false
-    large_file_size: 104857600
-    multi_part_chunk: 10485760
-    exclude:
-    - test/t3/*
-    - test/t4/*
-    include:
-    - test/t1/*
-    - test/t2/*
-    continuous: false
-    transfer_type: Stock
+type: transfer
+source:
+  provider: ALI
+  access_key_id: access_key_id
+  secret_access_key: secret_access_key
+  endpoint: http://oss-cn-beijing.aliyuncs.com
+  region: cn-north-1
+  bucket: bucket_name
+  prefix: test/samples/
+target:
+  provider: JD
+  access_key_id: access_key_id
+  secret_access_key: secret_access_key
+  endpoint: http://s3.cn-north-1.jdcloud-oss.com
+  region: cn-north-1
+  bucket: bucket_name
+  prefix: test/samples/
+attributes:
+  objects_per_batch: 100
+  task_parallelism: 11
+  max_errors: 1
+  meta_dir: /tmp/meta_dir
+  target_exists_skip: false
+  start_from_checkpoint: false
+  large_file_size: 50m
+  multi_part_chunk_size: 10m
+  multi_part_chunks_per_batch: 10
+  multi_part_parallelism: 22
 ```
 
-修改 access_key_id secret_access_key 等参数，适配自己的任务。template 命令按照任务类型创建模版,模板描述请参考[参考手册](reference_cn.md)。parameters 支持参数查询，包括支持的provider 以及 任务类型
+修改 access_key_id secret_access_key 等参数，适配自己的任务。template 命令按照任务类型创建模版,模板描述请参考[参考手册](reference_task_yml_cn.md)。parameters 支持参数查询，包括支持的provider 以及 任务类型
 
 ### 执行任务
 
@@ -95,6 +88,7 @@ osstask 子命令用于执行任务
 oss_pipe task exec filepath/task.yml
 ```
 
+[命令行参考](reference_command_cn.md)
 ## 同步任务流程
 
 ![同步任务流程](./images/同步流程图-v3.png)
