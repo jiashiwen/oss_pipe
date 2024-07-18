@@ -95,7 +95,7 @@ attributes:
        <td>是</td>
        <td>当源为对象存储时，描述对象存储提供商。值为ALI、JD等，支持的对象存储提供商通过oss_pipe parameters provider 查询</td>
        <td>source:<br>
-        &#20;&#20;&#20;&#20;provider: JD/JRSS/ALI/AWS/HUAWEI/COS/MINIO</td>
+        &nbsp;&nbsp;&nbsp;&nbsp;provider: JD/JRSS/ALI/AWS/HUAWEI/COS/MINIO</td>
 	</tr>
     <tr>
 	   <td>source-access_key_id</td>
