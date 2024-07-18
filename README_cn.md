@@ -141,6 +141,6 @@ oss_pipe task exec filepath/task.yml
 ![同步任务流程](./images/../docs/images/同步流程图-v3.png)
 
 
-更多细节请参考[参考手册](./docs/reference_cn.md)
+任务配置请参考[任务配置手册](./docs/reference_task_yml_cn.md)
 
-任务参数请参考[任务参数详解](./docs/task_yaml_reference.md)
+命令请参考[命令手册](./docs/reference_command_cn.md)
