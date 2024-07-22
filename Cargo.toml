@@ -1,0 +1,111 @@
+[package]
+name = "oss_pipe"
+version = "0.2.1"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "^1"
+tokio = { version = "^1", features = ["full", "tracing"] }
+clap = "4.4.11"
+rustyline = "14.0.0"
+rustyline-derive = "0.10.0"
+shellwords = "1.1.0"
+lazy_static = "1.4.0"
+sysinfo = "0.30.5"
+serde = { version = "1.0.152", features = ["derive"] }
+serde_json = "^1"
+serde_yaml = "0.9.27"
+log = "0.4.20"
+log4rs = "1.2.0"
+rs-snowflake = "0.6.0"
+async-trait = "0.1.66"
+walkdir = "2.3.2"
+bytes = "1.4.0"
+infer = "0.16.0"
+rayon = "1.10.0"
+time = "0.3.20"
+rand = "0.8.5"
+rust-crypto = "0.2.36"
+num_cpus = "1.15.0"
+dashmap = "6.0.1"
+regex = "1.8.1"
+termtree = "0.5.0"
+indicatif = "0.17.6"
+notify = "6.1.1"
+tabled = "0.15.0"
+rust_decimal = "1.33"
+rust_decimal_macros = "1.33"
+inotify = "0.10.2"
+once_cell = "1.19.0"
+console-subscriber = "0.3.0"
+thiserror = "1.0.61"
+awaitgroup = "0.7.0"
+bincode = "1.3.3"
+
+
+tracing = { version = "0.1.40", features = [
+    "max_level_trace",
+    "release_max_level_info",
+] }
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+tracing-appender = "0.2.3"
+tracing-error = "0.2.0"
+
+# jd and aws oss
+# aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
+# aws-sdk-s3 = "1.17.0"
+# aws-credential-types = "1.1.2"
+# aws-smithy-types = "1.1.3"
+# aws-types = { version = "1.1.2", feature = ["hardcoded-credentials"] }
+
+
+# sudo apt update && sudo apt upgrade
+# sudo apt install clang
+# sudo apt install llvm
+rocksdb = { version = "0.22.0", feature = "multi-threaded-cf" }
+
+
+aws-config = { path = "../aws-sdk-rust/sdk/aws-config", features = [
+    "behavior-version-latest",
+] }
+aws-sdk-s3 = { path = "../aws-sdk-rust/sdk/s3" }
+aws-credential-types = { path = "../aws-sdk-rust/sdk/aws-credential-types" }
+aws-smithy-types = { path = "../aws-sdk-rust/sdk/aws-smithy-types" }
+aws-types = { path = "../aws-sdk-rust/sdk/aws-types", feature = [
+    "hardcoded-credentials",
+] }
+
+
+# aliyun oss
+aliyun-oss-client = "0.12.9"
+
+
+[[example]]
+name = "multi_transfer"
+path = "examples/multi_transfer.rs"
+
+[[example]]
+name = "splite_test"
+path = "examples/splite_test.rs"
+
+[[example]]
+name = "tracing"
+path = "examples/test_tracing.rs"
+
+[[example]]
+name = "merge"
+path = "examples/multi_download_merge.rs"
+[[example]]
+name = "fill"
+path = "examples/multi_download_fill.rs"
+
+[[example]]
+name = "rocksdb"
+path = "examples/rocksdb_sample.rs"
+
+[profile.release]
+lto = true
+opt-level = 'z'
+codegen-units = 1

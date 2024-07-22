@@ -1,0 +1,16 @@
+debug/
+target/
+*.pdb
+.history
+logs
+/logs/*
+/task_example_yml   
+/task_yml
+/examples
+osscfg_default.yml
+osscfg.yml
+config.yml
+.vscode
+**.DS_Store
+Cargo.lock
+oss_pipe_rocksdb
