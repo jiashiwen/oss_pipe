@@ -438,13 +438,6 @@ fn cmd_match(matches: &ArgMatches) {
         if let Some(compare) = template.subcommand_matches("compare") {
             let file = compare.get_one::<String>("file");
             let task_compare = CompareTask::default();
-
-            // let task = Task {
-            //     task_id: task_id.to_string(),
-            //     name: "compare task".to_string(),
-            //     task_desc: Task::Compare(task_compare),
-            // };
-
             let task = Task::Compare(task_compare);
             match file {
                 Some(f) => {
@@ -481,7 +474,7 @@ fn cmd_match(matches: &ArgMatches) {
 
         if let Some(_) = parameters.subcommand_matches("task_type") {
             println!("{:?}", TaskType::Transfer);
-            println!("{:?}", TaskType::TruncateBucket);
+            println!("{:?}", TaskType::Compare);
         }
     }
 
