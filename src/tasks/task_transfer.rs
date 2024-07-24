@@ -367,7 +367,11 @@ impl TransferTask {
                         // 流程逻辑
                         // 扫描target 文件list-> 抓取自扫描时间开始，源端的变动数据 -> 生成objlist，action 新增target change capture
                         let modified = match task
-                            .changed_object_capture_based_target(checkpoint.task_begin_timestamp)
+                            // .changed_object_capture_based_target(checkpoint.task_begin_timestamp)
+                            // .await
+                            .changed_object_capture_based_target(
+                                usize::try_from(checkpoint.task_begin_timestamp).unwrap(),
+                            )
                             .await
                         {
                             Ok(f) => f,
@@ -395,7 +399,10 @@ impl TransferTask {
                 // 重新生成object list file
                 let _ = fs::remove_dir_all(self.attributes.meta_dir.as_str());
                 match task
-                    .gen_source_object_list_file(None, &executed_file.path)
+                    .gen_source_object_list_file(
+                        self.attributes.last_modify_filter,
+                        &executed_file.path,
+                    )
                     .await
                 {
                     Ok(f) => {

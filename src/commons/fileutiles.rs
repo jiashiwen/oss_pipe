@@ -116,7 +116,10 @@ pub fn analyze_folder_files_size(
                     .modified()?
                     .duration_since(UNIX_EPOCH)?
                     .as_secs();
-                if !f.filter(i128::from(modified_time)) {
+                // if !f.filter(i128::from(modified_time)) {
+                //     continue;
+                // }
+                if !f.filter(usize::try_from(modified_time).unwrap()) {
                     continue;
                 }
             }
@@ -171,7 +174,10 @@ pub fn scan_folder_files_to_file(
                     .modified()?
                     .duration_since(UNIX_EPOCH)?
                     .as_secs();
-                if !f.filter(i128::from(modified_time)) {
+                // if !f.filter(i128::from(modified_time)) {
+                //     continue;
+                // }
+                if !f.filter(usize::try_from(modified_time).unwrap()) {
                     continue;
                 }
             }

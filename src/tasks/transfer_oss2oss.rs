@@ -196,7 +196,6 @@ impl TransferTaskActions for TransferOss2Oss {
         object_list_file: &str,
     ) -> Result<FileDescription> {
         let client_source = self.source.gen_oss_client()?;
-
         // 若为持续同步模式，且 last_modify_timestamp 大于 0，则将 last_modify 属性大于last_modify_timestamp变量的对象加入执行列表
         client_source
             .append_object_list_to_file(
@@ -211,7 +210,7 @@ impl TransferTaskActions for TransferOss2Oss {
 
     async fn changed_object_capture_based_target(
         &self,
-        timestamp: i128,
+        timestamp: usize,
     ) -> Result<FileDescription> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let removed = gen_file_path(
@@ -254,7 +253,8 @@ impl TransferTaskActions for TransferOss2Oss {
             for obj in source_objects {
                 if let Some(source_key) = obj.key() {
                     if let Some(d) = obj.last_modified() {
-                        if last_modify_filter.filter(i128::from(d.secs())) {
+                        // if last_modify_filter.filter(i128::from(d.secs())) {
+                        if last_modify_filter.filter(usize::try_from(d.secs()).unwrap()) {
                             let mut target_key = "".to_string();
                             if let Some(p) = &self.target.prefix {
                                 target_key.push_str(p);
@@ -481,7 +481,11 @@ impl TransferTaskActions for TransferOss2Oss {
         {
             let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
             let modified = match self
-                .changed_object_capture_based_target(checkpoint.task_begin_timestamp)
+                // .changed_object_capture_based_target(checkpoint.task_begin_timestamp)
+                // .await
+                .changed_object_capture_based_target(
+                    usize::try_from(checkpoint.task_begin_timestamp).unwrap(),
+                )
                 .await
             {
                 Ok(f) => f,

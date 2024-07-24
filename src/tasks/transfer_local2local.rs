@@ -172,7 +172,7 @@ impl TransferTaskActions for TransferLocal2Local {
 
     async fn changed_object_capture_based_target(
         &self,
-        timestamp: i128,
+        timestamp: usize,
     ) -> Result<FileDescription> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         // 获取target object 列表 和removed 列表
@@ -266,7 +266,8 @@ impl TransferTaskActions for TransferLocal2Local {
                     .modified()?
                     .duration_since(UNIX_EPOCH)?
                     .as_secs();
-                if last_modify_filter.filter(i128::from(modified_time)) {
+                // if last_modify_filter.filter(i128::from(modified_time)) {
+                if last_modify_filter.filter(usize::try_from(modified_time).unwrap()) {
                     let record = RecordDescription {
                         source_key: p.to_string(),
                         target_key: target_key_str,

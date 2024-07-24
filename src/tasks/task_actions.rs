@@ -58,8 +58,10 @@ pub trait TransferTaskActions {
     // 以target为基础，抓取变动object
     // 扫描target storage，source 不存在为removed object
     // 按时间戳扫描source storage，大于指定时间戳的object 为 removed objects
-    async fn changed_object_capture_based_target(&self, timestamp: i128)
-        -> Result<FileDescription>;
+    async fn changed_object_capture_based_target(
+        &self,
+        timestamp: usize,
+    ) -> Result<FileDescription>;
 
     // 执行增量前置操作，例如启动notify线程，记录last modify 时间戳等
     async fn increment_prelude(&self, assistant: Arc<Mutex<IncrementAssistant>>) -> Result<()>;

@@ -223,7 +223,7 @@ fn cmd_match(matches: &ArgMatches) {
                 transfer_oss2oss.source = ObjectStorage::OSS(oss_desc);
                 transfer_oss2oss.attributes.last_modify_filter = Some(LastModifyFilter {
                     filter_type: LastModifyFilterType::Greater,
-                    timestamp: i128::from(now),
+                    timestamp: usize::try_from(now).unwrap(),
                     // timestamp: i128::from(now.as_secs()),
                 });
 
@@ -268,7 +268,8 @@ fn cmd_match(matches: &ArgMatches) {
                 transfer_oss2local.target = ObjectStorage::Local(target.to_string());
                 transfer_oss2local.attributes.last_modify_filter = Some(LastModifyFilter {
                     filter_type: LastModifyFilterType::Greater,
-                    timestamp: i128::from(now.as_secs()),
+                    // timestamp: i128::from(now.as_secs()),
+                    timestamp: usize::try_from(now.as_secs()).unwrap(),
                 });
 
                 // let task = Task {
@@ -319,7 +320,8 @@ fn cmd_match(matches: &ArgMatches) {
                 transfer_local2oss.source = ObjectStorage::Local(source.to_string());
                 transfer_local2oss.attributes.last_modify_filter = Some(LastModifyFilter {
                     filter_type: LastModifyFilterType::Greater,
-                    timestamp: i128::from(now.as_secs()),
+                    // timestamp: i128::from(now.as_secs()),
+                    timestamp: usize::try_from(now.as_secs()).unwrap(),
                 });
 
                 // let task = Task {
@@ -372,7 +374,8 @@ fn cmd_match(matches: &ArgMatches) {
                 transfer_local2local.target = ObjectStorage::Local(target.to_string());
                 transfer_local2local.attributes.last_modify_filter = Some(LastModifyFilter {
                     filter_type: LastModifyFilterType::Greater,
-                    timestamp: i128::from(now.as_secs()),
+                    // timestamp: i128::from(now.as_secs()),
+                    timestamp: usize::try_from(now.as_secs()).unwrap(),
                 });
 
                 // let task = Task {

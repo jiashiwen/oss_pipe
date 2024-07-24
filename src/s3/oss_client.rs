@@ -85,11 +85,18 @@ impl OssClient {
             for item in objects {
                 if let Some(f) = last_modify_filter {
                     if let Some(d) = item.last_modified() {
-                        if !f.filter(i128::from(d.secs())) {
+                        // if !f.filter(i128::from(d.secs())) {
+                        //     continue;
+                        // }
+
+                        log::info!("obj datatime:{}", d.secs());
+
+                        if !f.filter(usize::try_from(d.secs()).unwrap()) {
                             continue;
                         }
                     }
                 }
+
                 if let Some(key) = item.key() {
                     let _ = line_writer.write_all(key.as_bytes());
                     let _ = line_writer.write_all("\n".as_bytes());
@@ -107,7 +114,11 @@ impl OssClient {
                 for item in objects {
                     if let Some(f) = last_modify_filter {
                         if let Some(d) = item.last_modified() {
-                            if !f.filter(i128::from(d.secs())) {
+                            // if !f.filter(i128::from(d.secs())) {
+                            //     continue;
+                            // }
+
+                            if !f.filter(usize::try_from(d.secs()).unwrap()) {
                                 continue;
                             }
                         }
@@ -1018,7 +1029,10 @@ impl OssClient {
 
                 if let Some(f) = last_modify_filter {
                     if let Some(d) = obj.last_modified() {
-                        if !f.filter(i128::from(d.secs())) {
+                        // if !f.filter(i128::from(d.secs())) {
+                        //     continue;
+                        // }
+                        if !f.filter(usize::try_from(d.secs()).unwrap()) {
                             continue;
                         }
                     }
@@ -1067,7 +1081,10 @@ impl OssClient {
 
                     if let Some(f) = last_modify_filter {
                         if let Some(d) = obj.last_modified() {
-                            if !f.filter(i128::from(d.secs())) {
+                            // if !f.filter(i128::from(d.secs())) {
+                            //     continue;
+                            // }
+                            if !f.filter(usize::try_from(d.secs()).unwrap()) {
                                 continue;
                             }
                         }
