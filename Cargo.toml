@@ -64,7 +64,7 @@ tracing-error = "0.2.0"
 # sudo apt update && sudo apt upgrade
 # sudo apt install clang
 # sudo apt install llvm
-rocksdb = { version = "0.22.0", feature = "multi-threaded-cf" }
+# rocksdb = { version = "0.22.0", feature = "multi-threaded-cf" }
 
 
 aws-config = { path = "../aws-sdk-rust/sdk/aws-config", features = [

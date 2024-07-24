@@ -1,8 +1,6 @@
 use crate::logger::init_log;
 
 use logger::tracing_init;
-use resources::{CF_TASK_CHECKPOINTS, GLOBAL_ROCKSDB};
-use rocksdb::{IteratorMode, WriteBatchWithTransaction};
 use serde::{Deserialize, Serialize};
 mod checkers;
 pub mod checkpoint;
@@ -12,7 +10,6 @@ mod configure;
 mod exception;
 mod interact;
 mod logger;
-mod resources;
 mod s3;
 mod tasks;
 

@@ -1,10 +1,9 @@
 use super::FilePosition;
 use crate::{
     commons::{read_yaml_file, struct_to_yaml_string},
-    resources::{CF_TASK_CHECKPOINTS, GLOBAL_ROCKSDB},
     tasks::{TaskDefaultParameters, TransferStage},
 };
-use anyhow::{anyhow, Error, Result};
+use anyhow::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{File, OpenOptions},
@@ -101,18 +100,18 @@ impl CheckPoint {
         Ok(())
     }
 
-    pub fn save_to_rocksdb_cf(&mut self) -> Result<()> {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
-        self.modify_checkpoint_timestamp = i128::from(now.as_secs());
-        let cf = match GLOBAL_ROCKSDB.cf_handle(CF_TASK_CHECKPOINTS) {
-            Some(cf) => cf,
-            None => return Err(anyhow!("content length is None")),
-        };
-        let encoded: Vec<u8> = bincode::serialize(self)?;
-        GLOBAL_ROCKSDB.put_cf(&cf, self.task_id.as_bytes(), encoded)?;
+    // pub fn save_to_rocksdb_cf(&mut self) -> Result<()> {
+    //     let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+    //     self.modify_checkpoint_timestamp = i128::from(now.as_secs());
+    //     let cf = match GLOBAL_ROCKSDB.cf_handle(CF_TASK_CHECKPOINTS) {
+    //         Some(cf) => cf,
+    //         None => return Err(anyhow!("content length is None")),
+    //     };
+    //     let encoded: Vec<u8> = bincode::serialize(self)?;
+    //     GLOBAL_ROCKSDB.put_cf(&cf, self.task_id.as_bytes(), encoded)?;
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 }
 
 // pub fn get_task_checkpoint(checkpoint_file: &str, meta_dir: &str) -> Result<CheckPoint> {
@@ -137,8 +136,6 @@ mod test {
     use crate::checkpoint::checkpoint::FileDescription;
     use crate::checkpoint::FilePosition;
     use crate::commons::scan_folder_files_to_file;
-    use crate::resources::CF_TASK_CHECKPOINTS;
-    use crate::resources::GLOBAL_ROCKSDB;
     use crate::tasks::TaskDefaultParameters;
 
     //cargo test checkpoint::checkpoint::test::test_get_task_checkpoint -- --nocapture
@@ -150,16 +147,16 @@ mod test {
     }
 
     //cargo test checkpoint::checkpoint::test::test_save_to_rocksdb_cf -- --nocapture
-    #[test]
-    fn test_save_to_rocksdb_cf() {
-        println!("save_to_rocksdb_cf");
-        let mut c = get_task_checkpoint("/tmp/meta_dir/checkpoint_transfer.yml").unwrap();
-        c.save_to_rocksdb_cf().unwrap();
-        let cf = GLOBAL_ROCKSDB.cf_handle(CF_TASK_CHECKPOINTS).unwrap();
-        let cp = GLOBAL_ROCKSDB.get_cf(&cf, c.task_id).unwrap().unwrap();
-        let strct_cp: CheckPoint = bincode::deserialize(&cp).unwrap();
-        println!("{:?}", strct_cp);
-    }
+    // #[test]
+    // fn test_save_to_rocksdb_cf() {
+    //     println!("save_to_rocksdb_cf");
+    //     let mut c = get_task_checkpoint("/tmp/meta_dir/checkpoint_transfer.yml").unwrap();
+    //     c.save_to_rocksdb_cf().unwrap();
+    //     let cf = GLOBAL_ROCKSDB.cf_handle(CF_TASK_CHECKPOINTS).unwrap();
+    //     let cp = GLOBAL_ROCKSDB.get_cf(&cf, c.task_id).unwrap().unwrap();
+    //     let strct_cp: CheckPoint = bincode::deserialize(&cp).unwrap();
+    //     println!("{:?}", strct_cp);
+    // }
 
     //cargo test checkpoint::checkpoint::test::test_checkpoint -- --nocapture
     #[test]
