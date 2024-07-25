@@ -1,5 +1,3 @@
-use std::io;
-
 pub use thiserror::Error;
 
 #[derive(Error, Debug)]

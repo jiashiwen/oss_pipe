@@ -1,5 +1,3 @@
-use crate::logger::init_log;
-
 use logger::tracing_init;
 use serde::{Deserialize, Serialize};
 mod checkers;
