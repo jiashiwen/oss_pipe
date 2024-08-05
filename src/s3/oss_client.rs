@@ -21,6 +21,7 @@ use aws_sdk_s3::{
 };
 use aws_smithy_types::{body::SdkBody, byte_stream::ByteStream};
 use dashmap::DashMap;
+use tabled::settings::object;
 
 use std::{
     collections::BTreeMap,
@@ -76,34 +77,33 @@ impl OssClient {
             .open(file_path)?;
         let mut line_writer = LineWriter::new(&file);
 
+        let mut process_objects = |objects: Vec<Object>| -> Result<()> {
+            for obj in objects {
+                if let Some(f) = last_modify_filter {
+                    if let Some(d) = obj.last_modified() {
+                        if !f.filter(usize::try_from(d.secs())?) {
+                            continue;
+                        }
+                    }
+                }
+
+                if let Some(key) = obj.key() {
+                    let _ = line_writer.write_all(key.as_bytes());
+                    let _ = line_writer.write_all("\n".as_bytes());
+                    total_lines += 1;
+                }
+            }
+            let _ = line_writer.flush()?;
+            Ok(())
+        };
+
         let resp = self
             .list_objects(bucket.clone(), prefix.clone(), batch, None)
             .await?;
         let mut token = resp.next_token;
 
         if let Some(objects) = resp.object_list {
-            for item in objects {
-                if let Some(f) = last_modify_filter {
-                    if let Some(d) = item.last_modified() {
-                        // if !f.filter(i128::from(d.secs())) {
-                        //     continue;
-                        // }
-
-                        log::info!("obj datatime:{}", d.secs());
-
-                        if !f.filter(usize::try_from(d.secs()).unwrap()) {
-                            continue;
-                        }
-                    }
-                }
-
-                if let Some(key) = item.key() {
-                    let _ = line_writer.write_all(key.as_bytes());
-                    let _ = line_writer.write_all("\n".as_bytes());
-                    total_lines += 1;
-                }
-            }
-            line_writer.flush()?;
+            process_objects(objects)?
         }
 
         while token.is_some() {
@@ -111,25 +111,7 @@ impl OssClient {
                 .list_objects(bucket.clone(), prefix.clone(), batch, token.clone())
                 .await?;
             if let Some(objects) = resp.object_list {
-                for item in objects {
-                    if let Some(f) = last_modify_filter {
-                        if let Some(d) = item.last_modified() {
-                            // if !f.filter(i128::from(d.secs())) {
-                            //     continue;
-                            // }
-
-                            if !f.filter(usize::try_from(d.secs()).unwrap()) {
-                                continue;
-                            }
-                        }
-                    }
-                    if let Some(key) = item.key() {
-                        let _ = line_writer.write_all(key.as_bytes());
-                        let _ = line_writer.write_all("\n".as_bytes());
-                        total_lines += 1;
-                    }
-                }
-                line_writer.flush()?;
+                process_objects(objects)?
             }
             token = resp.next_token;
         }
@@ -1032,7 +1014,7 @@ impl OssClient {
                         // if !f.filter(i128::from(d.secs())) {
                         //     continue;
                         // }
-                        if !f.filter(usize::try_from(d.secs()).unwrap()) {
+                        if !f.filter(usize::try_from(d.secs())?) {
                             continue;
                         }
                     }
@@ -1084,7 +1066,7 @@ impl OssClient {
                             // if !f.filter(i128::from(d.secs())) {
                             //     continue;
                             // }
-                            if !f.filter(usize::try_from(d.secs()).unwrap()) {
+                            if !f.filter(usize::try_from(d.secs())?) {
                                 continue;
                             }
                         }
