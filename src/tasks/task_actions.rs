@@ -1,7 +1,7 @@
 use super::IncrementAssistant;
 use crate::{
     checkpoint::{FileDescription, FilePosition, ListedRecord, RecordDescription},
-    commons::LastModifyFilter,
+    commons::{LastModifyFilter, RegexFilter},
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -51,6 +51,7 @@ pub trait TransferTaskActions {
     // 生成对象列表
     async fn gen_source_object_list_file(
         &self,
+        // regex_filter: RegexFilter,
         last_modify_filter: Option<LastModifyFilter>,
         object_list_file: &str,
     ) -> Result<FileDescription>;

@@ -21,7 +21,6 @@ use aws_sdk_s3::{
 };
 use aws_smithy_types::{body::SdkBody, byte_stream::ByteStream};
 use dashmap::DashMap;
-use tabled::settings::object;
 
 use std::{
     collections::BTreeMap,

@@ -964,6 +964,7 @@ impl TransferOss2OssRecordsExecutor {
                     None => return Err(anyhow!("content length is None")),
                 };
                 let content_len_usize: usize = content_len.try_into()?;
+
                 let expr = match s_obj.expires() {
                     Some(d) => Some(*d),
                     None => None,
