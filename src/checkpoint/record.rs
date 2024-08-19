@@ -5,7 +5,10 @@ use std::{
     fs::File,
     io::Write,
     str::FromStr,
-    sync::{atomic::AtomicUsize, Arc},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize},
+        Arc,
+    },
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -76,6 +79,7 @@ impl FromStr for RecordDescription {
 impl RecordDescription {
     pub fn handle_error(
         &self,
+        // stop_mark: Arc<AtomicBool>,
         err_counter: &Arc<AtomicUsize>,
         offset_map: &Arc<DashMap<String, FilePosition>>,
         save_to: &mut File,
@@ -87,6 +91,7 @@ impl RecordDescription {
         );
 
         err_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
         let _ = self.save_json_to_file(save_to);
     }
 

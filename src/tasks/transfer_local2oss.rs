@@ -75,7 +75,11 @@ impl TransferTaskActions for TransferLocal2Oss {
         )
     }
     // 错误记录重试
-    fn error_record_retry(&self, executing_transfers: Arc<RwLock<usize>>) -> Result<()> {
+    fn error_record_retry(
+        &self,
+        stop_mark: Arc<AtomicBool>,
+        executing_transfers: Arc<RwLock<usize>>,
+    ) -> Result<()> {
         // 遍历错误记录
         for entry in WalkDir::new(self.attributes.meta_dir.as_str())
             .into_iter()
@@ -399,12 +403,12 @@ impl TransferTaskActions for TransferLocal2Oss {
 
     async fn execute_increment(
         &self,
+        stop_mark: Arc<AtomicBool>,
+        err_counter: Arc<AtomicUsize>,
         _joinset: &mut JoinSet<()>,
         executing_transfers: Arc<RwLock<usize>>,
         assistant: Arc<Mutex<IncrementAssistant>>,
-        err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
-        snapshot_stop_mark: Arc<AtomicBool>,
     ) {
         let lock = assistant.lock().await;
         let local_notify = match lock.local_notify.clone() {
@@ -431,7 +435,7 @@ impl TransferTaskActions for TransferLocal2Oss {
         let task_status_saver = TaskStatusSaver {
             check_point_path: assistant.lock().await.check_point_path.clone(),
             executed_file,
-            stop_mark: Arc::clone(&snapshot_stop_mark),
+            stop_mark: Arc::clone(&stop_mark),
             list_file_positon_map: Arc::clone(&offset_map),
             file_for_notify: Some(local_notify.notify_file_path.clone()),
             task_stage: TransferStage::Increment,
@@ -472,7 +476,7 @@ impl TransferTaskActions for TransferLocal2Oss {
                 .max_errors
                 .le(&err_counter.load(std::sync::atomic::Ordering::Relaxed))
             {
-                snapshot_stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+                stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
                 return;
             }
 

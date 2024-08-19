@@ -326,7 +326,7 @@ impl TransferTask {
                 };
 
                 // 执行error retry
-                match task.error_record_retry(executing_transfers) {
+                match task.error_record_retry(snapshot_stop_mark.clone(), executing_transfers) {
                     Ok(_) => {}
                     Err(e) => {
                         log::error!("{}", e);
@@ -696,12 +696,12 @@ impl TransferTask {
 
                 let _ = task_increment
                     .execute_increment(
+                        Arc::clone(&stop_mark),
+                        Arc::clone(&err_counter),
                         &mut execut_set,
                         executing_transfers,
                         Arc::clone(&increment_assistant),
-                        Arc::clone(&err_counter),
                         Arc::clone(&offset_map),
-                        Arc::clone(&stop_mark),
                     )
                     .await;
                 // 配置停止 offset save 标识为 true

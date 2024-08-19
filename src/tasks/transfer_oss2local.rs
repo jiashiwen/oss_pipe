@@ -72,7 +72,11 @@ impl TransferTaskActions for TransferOss2Local {
             )
             .await
     }
-    fn error_record_retry(&self, executing_transfers: Arc<RwLock<usize>>) -> Result<()> {
+    fn error_record_retry(
+        &self,
+        stop_mark: Arc<AtomicBool>,
+        executing_transfers: Arc<RwLock<usize>>,
+    ) -> Result<()> {
         // 遍历错误记录
         // 每个错误文件重新处理
         for entry in WalkDir::new(self.attributes.meta_dir.as_str())
@@ -111,6 +115,7 @@ impl TransferTaskActions for TransferOss2Local {
                         let download = Oss2LocalListedRecordsExecutor {
                             target: self.target.clone(),
                             source: self.source.clone(),
+                            stop_mark: stop_mark.clone(),
                             err_counter: Arc::new(AtomicUsize::new(0)),
                             offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
                             attributes: self.attributes.clone(),
@@ -315,6 +320,7 @@ impl TransferTaskActions for TransferOss2Local {
         let oss2local = Oss2LocalListedRecordsExecutor {
             target: self.target.clone(),
             source: self.source.clone(),
+            stop_mark: stop_mark.clone(),
             err_counter,
             offset_map,
             attributes: self.attributes.clone(),
@@ -323,7 +329,7 @@ impl TransferTaskActions for TransferOss2Local {
 
         execute_set.spawn(async move {
             if let Err(e) = oss2local
-                .exec_listed_records(records, executing_transfers)
+                .exec_listed_records(stop_mark.clone(), records, executing_transfers)
                 .await
             {
                 stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -345,6 +351,7 @@ impl TransferTaskActions for TransferOss2Local {
         let oss2local = Oss2LocalListedRecordsExecutor {
             target: self.target.clone(),
             source: self.source.clone(),
+            stop_mark: stop_mark.clone(),
             err_counter,
             offset_map,
             attributes: self.attributes.clone(),
@@ -371,12 +378,12 @@ impl TransferTaskActions for TransferOss2Local {
 
     async fn execute_increment(
         &self,
+        stop_mark: Arc<AtomicBool>,
+        err_counter: Arc<AtomicUsize>,
         mut execute_set: &mut JoinSet<()>,
         executing_transfers: Arc<RwLock<usize>>,
         assistant: Arc<Mutex<IncrementAssistant>>,
-        err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
-        snapshot_stop_mark: Arc<AtomicBool>,
     ) {
         // 循环执行获取lastmodify 大于checkpoint指定的时间戳的对象
         let lock = assistant.lock().await;
@@ -404,7 +411,7 @@ impl TransferTaskActions for TransferOss2Local {
         let pd = promote_processbar("executing increment:waiting for data...");
         let mut finished_total_objects = 0;
 
-        while !snapshot_stop_mark.load(std::sync::atomic::Ordering::SeqCst)
+        while !stop_mark.load(std::sync::atomic::Ordering::SeqCst)
             && self
                 .attributes
                 .max_errors
@@ -482,6 +489,7 @@ impl TransferTaskActions for TransferOss2Local {
                     self.record_discriptions_excutor(
                         &mut execute_set,
                         vk,
+                        stop_mark.clone(),
                         Arc::clone(&err_counter),
                         Arc::clone(&offset_map),
                         modified.path.clone(),
@@ -506,6 +514,7 @@ impl TransferTaskActions for TransferOss2Local {
                 self.record_discriptions_excutor(
                     &mut execute_set,
                     vk,
+                    stop_mark.clone(),
                     Arc::clone(&err_counter),
                     Arc::clone(&offset_map),
                     modified.path.clone(),
@@ -526,7 +535,6 @@ impl TransferTaskActions for TransferOss2Local {
                 pd.set_message(msg);
             }
 
-            // let _ = fs::remove_file(&checkpoint.current_stock_object_list_file);
             let _ = fs::remove_file(&modified.path);
 
             checkpoint.executed_file_position = FilePosition {
@@ -557,6 +565,7 @@ impl TransferOss2Local {
         &self,
         joinset: &mut JoinSet<()>,
         records: Vec<RecordDescription>,
+        stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file: String,
@@ -564,6 +573,7 @@ impl TransferOss2Local {
         let download = Oss2LocalListedRecordsExecutor {
             target: self.target.clone(),
             source: self.source.clone(),
+            stop_mark,
             err_counter,
             offset_map,
             attributes: self.attributes.clone(),
@@ -585,6 +595,7 @@ impl TransferOss2Local {
 pub struct Oss2LocalListedRecordsExecutor {
     pub source: OSSDescription,
     pub target: String,
+    pub stop_mark: Arc<AtomicBool>,
     pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
     pub attributes: TransferTaskAttributes,
@@ -594,6 +605,7 @@ pub struct Oss2LocalListedRecordsExecutor {
 impl Oss2LocalListedRecordsExecutor {
     pub async fn exec_listed_records(
         &self,
+        stop_mark: Arc<AtomicBool>,
         records: Vec<ListedRecord>,
         executing_transfers: Arc<RwLock<usize>>,
     ) -> Result<()> {
@@ -614,6 +626,9 @@ impl Oss2LocalListedRecordsExecutor {
 
         let c_s = self.source.gen_oss_client()?;
         for record in records {
+            if stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+                return Ok(());
+            }
             // 文件位置提前记录避免漏记
             self.offset_map.insert(
                 offset_key.clone(),

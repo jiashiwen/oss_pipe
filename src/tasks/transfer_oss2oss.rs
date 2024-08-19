@@ -79,7 +79,11 @@ impl TransferTaskActions for TransferOss2Oss {
             .await
     }
     // 错误记录重试
-    fn error_record_retry(&self, executing_transfers: Arc<RwLock<usize>>) -> Result<()> {
+    fn error_record_retry(
+        &self,
+        stop_mark: Arc<AtomicBool>,
+        executing_transfers: Arc<RwLock<usize>>,
+    ) -> Result<()> {
         // 遍历错误记录
         for entry in WalkDir::new(self.attributes.meta_dir.as_str())
             .into_iter()
@@ -112,6 +116,7 @@ impl TransferTaskActions for TransferOss2Oss {
                         let transfer = TransferOss2OssRecordsExecutor {
                             source: self.source.clone(),
                             target: self.target.clone(),
+                            stop_mark: stop_mark.clone(),
                             err_counter: Arc::new(AtomicUsize::new(0)),
                             attributes: self.attributes.clone(),
                             offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
@@ -140,9 +145,13 @@ impl TransferTaskActions for TransferOss2Oss {
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file: String,
     ) {
+        if stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
         let transfer = TransferOss2OssRecordsExecutor {
             source: self.source.clone(),
             target: self.target.clone(),
+            stop_mark: stop_mark.clone(),
             err_counter,
             offset_map,
             attributes: self.attributes.clone(),
@@ -173,6 +182,7 @@ impl TransferTaskActions for TransferOss2Oss {
         let transfer = TransferOss2OssRecordsExecutor {
             source: self.source.clone(),
             target: self.target.clone(),
+            stop_mark: stop_mark.clone(),
             err_counter,
             offset_map,
             attributes: self.attributes.clone(),
@@ -439,12 +449,12 @@ impl TransferTaskActions for TransferOss2Oss {
 
     async fn execute_increment(
         &self,
+        stop_mark: Arc<AtomicBool>,
+        err_counter: Arc<AtomicUsize>,
         mut execute_set: &mut JoinSet<()>,
         executing_transfers: Arc<RwLock<usize>>,
         assistant: Arc<Mutex<IncrementAssistant>>,
-        err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
-        snapshot_stop_mark: Arc<AtomicBool>,
     ) {
         // 循环执行获取lastmodify 大于checkpoint指定的时间戳的对象
         let lock = assistant.lock().await;
@@ -473,7 +483,7 @@ impl TransferTaskActions for TransferOss2Oss {
         let pd = promote_processbar("executing increment:waiting for data...");
         let mut finished_total_objects = 0;
 
-        while !snapshot_stop_mark.load(std::sync::atomic::Ordering::SeqCst)
+        while !stop_mark.load(std::sync::atomic::Ordering::SeqCst)
             && self
                 .attributes
                 .max_errors
@@ -550,6 +560,7 @@ impl TransferTaskActions for TransferOss2Oss {
                         &mut execute_set,
                         executing_transfers.clone(),
                         vk,
+                        stop_mark.clone(),
                         Arc::clone(&err_counter),
                         Arc::clone(&offset_map),
                         modified.path.clone(),
@@ -575,6 +586,7 @@ impl TransferTaskActions for TransferOss2Oss {
                     &mut execute_set,
                     executing_transfers.clone(),
                     vk,
+                    stop_mark.clone(),
                     Arc::clone(&err_counter),
                     Arc::clone(&offset_map),
                     modified.path.clone(),
@@ -633,6 +645,7 @@ impl TransferOss2Oss {
         joinset: &mut JoinSet<()>,
         executing_transfers: Arc<RwLock<usize>>,
         records: Vec<RecordDescription>,
+        stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file: String,
@@ -640,6 +653,7 @@ impl TransferOss2Oss {
         let oss2oss = TransferOss2OssRecordsExecutor {
             target: self.target.clone(),
             source: self.source.clone(),
+            stop_mark: stop_mark.clone(),
             err_counter,
             offset_map,
             attributes: self.attributes.clone(),
@@ -664,6 +678,7 @@ impl TransferOss2Oss {
 pub struct TransferOss2OssRecordsExecutor {
     pub source: OSSDescription,
     pub target: OSSDescription,
+    pub stop_mark: Arc<AtomicBool>,
     pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
     pub attributes: TransferTaskAttributes,
@@ -673,6 +688,7 @@ pub struct TransferOss2OssRecordsExecutor {
 impl TransferOss2OssRecordsExecutor {
     pub async fn exec_listed_records(
         &self,
+        // stop_mark: Arc<AtomicBool>,
         records: Vec<ListedRecord>,
         executing_transfers: Arc<RwLock<usize>>,
     ) -> Result<()> {
@@ -696,6 +712,16 @@ impl TransferOss2OssRecordsExecutor {
         let s_c = Arc::new(source_client);
         let t_c = Arc::new(target_client);
         for record in records {
+            if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+                return Ok(());
+            }
+            if self.err_counter.load(std::sync::atomic::Ordering::SeqCst)
+                >= self.attributes.max_errors
+            {
+                self.stop_mark
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                break;
+            }
             // 插入文件offset记录
             self.offset_map.insert(
                 offset_key.clone(),
@@ -879,6 +905,9 @@ impl TransferOss2OssRecordsExecutor {
         let t_c = Arc::new(t_client);
 
         for record in records {
+            if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+                return Ok(());
+            }
             // 记录执行文件位置
             self.offset_map
                 .insert(offset_key.clone(), record.list_file_position.clone());
