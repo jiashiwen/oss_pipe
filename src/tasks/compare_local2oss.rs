@@ -162,7 +162,9 @@ impl Local2OssRecordsComparator {
                         option: Opt::PUT,
                     };
                     recorddesc.handle_error(
+                        self.stop_mark.clone(),
                         &self.err_counter,
+                        self.attributes.max_errors,
                         &self.offset_map,
                         &mut error_file,
                         offset_key.as_str(),

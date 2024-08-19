@@ -655,7 +655,9 @@ impl TransferOss2LocalRecordsExecutor {
                     option: Opt::PUT,
                 };
                 record_desc.handle_error(
+                    self.stop_mark.clone(),
                     &self.err_counter,
+                    self.attributes.max_errors,
                     &self.offset_map,
                     &mut error_file,
                     offset_key.as_str(),
@@ -803,7 +805,9 @@ impl TransferOss2LocalRecordsExecutor {
             {
                 log::error!("{}", e);
                 record.handle_error(
+                    self.stop_mark.clone(),
                     &self.err_counter,
+                    self.attributes.max_errors,
                     &self.offset_map,
                     &mut error_file,
                     offset_key.as_str(),

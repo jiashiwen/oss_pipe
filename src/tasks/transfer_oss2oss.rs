@@ -688,7 +688,6 @@ pub struct TransferOss2OssRecordsExecutor {
 impl TransferOss2OssRecordsExecutor {
     pub async fn exec_listed_records(
         &self,
-        // stop_mark: Arc<AtomicBool>,
         records: Vec<ListedRecord>,
         executing_transfers: Arc<RwLock<usize>>,
     ) -> Result<()> {
@@ -753,7 +752,9 @@ impl TransferOss2OssRecordsExecutor {
                     option: Opt::PUT,
                 };
                 recorddesc.handle_error(
+                    self.stop_mark.clone(),
                     &self.err_counter,
+                    self.attributes.max_errors,
                     &self.offset_map,
                     &mut error_file,
                     offset_key.as_str(),
@@ -918,7 +919,9 @@ impl TransferOss2OssRecordsExecutor {
             {
                 log::error!("{}", e);
                 record.handle_error(
+                    self.stop_mark.clone(),
                     &self.err_counter,
+                    self.attributes.max_errors,
                     &self.offset_map,
                     &mut error_file,
                     offset_key.as_str(),

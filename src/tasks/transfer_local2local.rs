@@ -488,7 +488,9 @@ impl TransferTaskActions for TransferLocal2Local {
                                 option: Opt::UNKOWN,
                             };
                             r.handle_error(
+                                stop_mark.clone(),
                                 &err_counter,
+                                self.attributes.max_errors,
                                 &offset_map,
                                 &mut error_file,
                                 offset_key.as_str(),
@@ -651,7 +653,9 @@ impl TransferLocal2LocalExecutor {
                     option: Opt::PUT,
                 };
                 recorddesc.handle_error(
+                    self.stop_mark.clone(),
                     &self.err_counter,
+                    self.attributes.max_errors,
                     &self.offset_map,
                     &mut error_file,
                     offset_key.as_str(),
@@ -725,7 +729,9 @@ impl TransferLocal2LocalExecutor {
         for record in records {
             if let Err(e) = self.record_description_handler(&record).await {
                 record.handle_error(
+                    self.stop_mark.clone(),
                     &self.err_counter,
+                    self.attributes.max_errors,
                     &self.offset_map,
                     &mut error_file,
                     offset_key.as_str(),
