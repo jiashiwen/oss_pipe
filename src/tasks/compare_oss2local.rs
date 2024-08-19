@@ -132,6 +132,9 @@ impl Oss2LocalRecordsComparator {
         let c_s = self.source.gen_oss_client()?;
 
         for record in records {
+            if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+                return Ok(());
+            }
             self.offset_map.insert(
                 offset_key.clone(),
                 FilePosition {

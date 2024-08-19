@@ -317,6 +317,9 @@ impl TransferTaskActions for TransferOss2Local {
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file: String,
     ) {
+        if stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
         let oss2local = TransferOss2LocalRecordsExecutor {
             target: self.target.clone(),
             source: self.source.clone(),

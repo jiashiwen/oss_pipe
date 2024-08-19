@@ -123,6 +123,9 @@ impl TransferTaskActions for TransferLocal2Local {
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file: String,
     ) {
+        if stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
         let local2local = TransferLocal2LocalExecutor {
             source: self.source.clone(),
             target: self.target.clone(),
@@ -625,6 +628,9 @@ impl TransferLocal2LocalExecutor {
             .open(error_file_name.as_str())?;
 
         for record in records {
+            if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+                return Ok(());
+            }
             // 记录文件执行位置
             self.offset_map.insert(
                 offset_key.clone(),

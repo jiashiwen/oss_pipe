@@ -144,6 +144,9 @@ impl TransferTaskActions for TransferLocal2Oss {
         offset_map: Arc<DashMap<std::string::String, FilePosition>>,
         list_file: String,
     ) {
+        if stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
         let local2oss = TransferLocal2OssExecuter {
             source: self.source.clone(),
             target: self.target.clone(),
@@ -684,6 +687,9 @@ impl TransferLocal2OssExecuter {
         let target_oss_client = self.target.gen_oss_client()?;
 
         for record in records {
+            if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+                return Ok(());
+            }
             // 文件位置提前记录，避免漏记
             self.offset_map.insert(
                 offset_key.clone(),

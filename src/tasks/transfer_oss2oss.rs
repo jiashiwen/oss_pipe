@@ -714,13 +714,13 @@ impl TransferOss2OssRecordsExecutor {
             if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
                 return Ok(());
             }
-            if self.err_counter.load(std::sync::atomic::Ordering::SeqCst)
-                >= self.attributes.max_errors
-            {
-                self.stop_mark
-                    .store(true, std::sync::atomic::Ordering::SeqCst);
-                break;
-            }
+            // if self.err_counter.load(std::sync::atomic::Ordering::SeqCst)
+            //     >= self.attributes.max_errors
+            // {
+            //     self.stop_mark
+            //         .store(true, std::sync::atomic::Ordering::SeqCst);
+            //     break;
+            // }
             // 插入文件offset记录
             self.offset_map.insert(
                 offset_key.clone(),
