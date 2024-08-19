@@ -72,9 +72,9 @@ impl CompareTaskActions for CompareOss2Oss {
         let comparator = Oss2OssRecordsComparator {
             source: self.source.clone(),
             target: self.target.clone(),
+            stop_mark: Arc::clone(&stop_mark),
             err_counter,
             offset_map,
-            stop_mark: Arc::clone(&stop_mark),
             check_option: self.check_option.clone(),
             attributes: self.attributes.clone(),
             list_file_path: source_objects_list_file,
@@ -93,9 +93,9 @@ impl CompareTaskActions for CompareOss2Oss {
 pub struct Oss2OssRecordsComparator {
     pub source: OSSDescription,
     pub target: OSSDescription,
+    pub stop_mark: Arc<AtomicBool>,
     pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
-    pub stop_mark: Arc<AtomicBool>,
     pub check_option: CompareCheckOption,
     pub attributes: CompareTaskAttributes,
     pub list_file_path: String,

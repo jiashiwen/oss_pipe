@@ -94,9 +94,10 @@ impl TransferTaskActions for TransferLocal2Local {
                     }
 
                     if record_vec.len() > 0 {
-                        let local2local = Local2LocalExecutor {
+                        let local2local = TransferLocal2LocalExecutor {
                             source: self.source.clone(),
                             target: self.target.clone(),
+                            stop_mark: stop_mark.clone(),
                             err_counter: Arc::new(AtomicUsize::new(0)),
                             offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
                             attributes: self.attributes.clone(),
@@ -122,9 +123,10 @@ impl TransferTaskActions for TransferLocal2Local {
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file: String,
     ) {
-        let local2local = Local2LocalExecutor {
+        let local2local = TransferLocal2LocalExecutor {
             source: self.source.clone(),
             target: self.target.clone(),
+            stop_mark: stop_mark.clone(),
             err_counter,
             offset_map,
             attributes: self.attributes.clone(),
@@ -149,9 +151,10 @@ impl TransferTaskActions for TransferLocal2Local {
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file: String,
     ) {
-        let local2local = Local2LocalExecutor {
+        let local2local = TransferLocal2LocalExecutor {
             source: self.source.clone(),
             target: self.target.clone(),
+            stop_mark: stop_mark.clone(),
             err_counter,
             offset_map,
             attributes: self.attributes.clone(),
@@ -497,9 +500,10 @@ impl TransferTaskActions for TransferLocal2Local {
             }
 
             if records.len() > 0 {
-                let copy = Local2LocalExecutor {
+                let copy = TransferLocal2LocalExecutor {
                     source: self.source.clone(),
                     target: self.target.clone(),
+                    stop_mark: stop_mark.clone(),
                     err_counter: Arc::clone(&err_counter),
                     offset_map: Arc::clone(&offset_map),
                     attributes: self.attributes.clone(),
@@ -589,16 +593,17 @@ impl TransferLocal2Local {
 }
 
 #[derive(Debug, Clone)]
-pub struct Local2LocalExecutor {
+pub struct TransferLocal2LocalExecutor {
     pub source: String,
     pub target: String,
+    pub stop_mark: Arc<AtomicBool>,
     pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
     pub attributes: TransferTaskAttributes,
     pub list_file_path: String,
 }
 
-impl Local2LocalExecutor {
+impl TransferLocal2LocalExecutor {
     // Todo
     // 如果在批次处理开始前出现报错则整批数据都不执行，需要有逻辑执行错误记录
     pub async fn exec_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {

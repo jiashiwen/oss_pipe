@@ -112,7 +112,7 @@ impl TransferTaskActions for TransferOss2Local {
                     }
 
                     if record_vec.len() > 0 {
-                        let download = Oss2LocalListedRecordsExecutor {
+                        let download = TransferOss2LocalRecordsExecutor {
                             target: self.target.clone(),
                             source: self.source.clone(),
                             stop_mark: stop_mark.clone(),
@@ -317,7 +317,7 @@ impl TransferTaskActions for TransferOss2Local {
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file: String,
     ) {
-        let oss2local = Oss2LocalListedRecordsExecutor {
+        let oss2local = TransferOss2LocalRecordsExecutor {
             target: self.target.clone(),
             source: self.source.clone(),
             stop_mark: stop_mark.clone(),
@@ -348,7 +348,7 @@ impl TransferTaskActions for TransferOss2Local {
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file: String,
     ) {
-        let oss2local = Oss2LocalListedRecordsExecutor {
+        let oss2local = TransferOss2LocalRecordsExecutor {
             target: self.target.clone(),
             source: self.source.clone(),
             stop_mark: stop_mark.clone(),
@@ -570,7 +570,7 @@ impl TransferOss2Local {
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file: String,
     ) {
-        let download = Oss2LocalListedRecordsExecutor {
+        let download = TransferOss2LocalRecordsExecutor {
             target: self.target.clone(),
             source: self.source.clone(),
             stop_mark,
@@ -592,7 +592,7 @@ impl TransferOss2Local {
 }
 
 #[derive(Debug, Clone)]
-pub struct Oss2LocalListedRecordsExecutor {
+pub struct TransferOss2LocalRecordsExecutor {
     pub source: OSSDescription,
     pub target: String,
     pub stop_mark: Arc<AtomicBool>,
@@ -602,7 +602,7 @@ pub struct Oss2LocalListedRecordsExecutor {
     pub list_file_path: String,
 }
 
-impl Oss2LocalListedRecordsExecutor {
+impl TransferOss2LocalRecordsExecutor {
     pub async fn exec_listed_records(
         &self,
         stop_mark: Arc<AtomicBool>,

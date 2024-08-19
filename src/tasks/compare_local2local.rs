@@ -60,6 +60,7 @@ impl CompareTaskActions for CompareLocal2Local {
         let comparator = Local2LocalRecordsComparator {
             source: self.source.clone(),
             target: self.target.clone(),
+            stop_mark: stop_mark.clone(),
             err_counter,
             offset_map,
             check_option: self.check_option.clone(),
@@ -80,6 +81,7 @@ impl CompareTaskActions for CompareLocal2Local {
 pub struct Local2LocalRecordsComparator {
     pub source: String,
     pub target: String,
+    pub stop_mark: Arc<AtomicBool>,
     pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
     pub attributes: CompareTaskAttributes,

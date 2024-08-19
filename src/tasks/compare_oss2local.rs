@@ -75,6 +75,7 @@ impl CompareTaskActions for CompareOss2Local {
         let comparator = Oss2LocalRecordsComparator {
             source: self.source.clone(),
             target: self.target.clone(),
+            stop_mark: stop_mark.clone(),
             err_counter,
             offset_map,
             check_option: self.check_option.clone(),
@@ -95,6 +96,7 @@ impl CompareTaskActions for CompareOss2Local {
 pub struct Oss2LocalRecordsComparator {
     pub source: OSSDescription,
     pub target: String,
+    pub stop_mark: Arc<AtomicBool>,
     pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
     pub check_option: CompareCheckOption,

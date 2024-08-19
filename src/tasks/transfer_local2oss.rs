@@ -114,9 +114,10 @@ impl TransferTaskActions for TransferLocal2Oss {
                     }
 
                     if record_vec.len() > 0 {
-                        let upload = Local2OssExecuter {
+                        let upload = TransferLocal2OssExecuter {
                             source: self.source.clone(),
                             target: self.target.clone(),
+                            stop_mark: stop_mark.clone(),
                             err_counter: Arc::new(AtomicUsize::new(0)),
                             offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
                             attributes: self.attributes.clone(),
@@ -143,9 +144,10 @@ impl TransferTaskActions for TransferLocal2Oss {
         offset_map: Arc<DashMap<std::string::String, FilePosition>>,
         list_file: String,
     ) {
-        let local2oss = Local2OssExecuter {
+        let local2oss = TransferLocal2OssExecuter {
             source: self.source.clone(),
             target: self.target.clone(),
+            stop_mark: stop_mark.clone(),
             err_counter,
             offset_map,
             attributes: self.attributes.clone(),
@@ -173,9 +175,10 @@ impl TransferTaskActions for TransferLocal2Oss {
         offset_map: Arc<DashMap<std::string::String, FilePosition>>,
         list_file: String,
     ) {
-        let local2oss = Local2OssExecuter {
+        let local2oss = TransferLocal2OssExecuter {
             source: self.source.clone(),
             target: self.target.clone(),
+            stop_mark: stop_mark.clone(),
             err_counter,
             offset_map,
             attributes: self.attributes.clone(),
@@ -545,9 +548,10 @@ impl TransferTaskActions for TransferLocal2Oss {
                 }
             }
 
-            let local_2_oss = Local2OssExecuter {
+            let local_2_oss = TransferLocal2OssExecuter {
                 source: self.source.clone(),
                 target: self.target.clone(),
+                stop_mark: stop_mark.clone(),
                 err_counter: Arc::clone(&err_counter),
                 offset_map: Arc::clone(&offset_map),
                 attributes: self.attributes.clone(),
@@ -641,16 +645,17 @@ impl TransferLocal2Oss {
 }
 
 #[derive(Debug, Clone)]
-pub struct Local2OssExecuter {
+pub struct TransferLocal2OssExecuter {
     pub source: String,
     pub target: OSSDescription,
+    pub stop_mark: Arc<AtomicBool>,
     pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
     pub attributes: TransferTaskAttributes,
     pub list_file_path: String,
 }
 
-impl Local2OssExecuter {
+impl TransferLocal2OssExecuter {
     pub async fn exec_listed_records(
         &self,
         records: Vec<ListedRecord>,
