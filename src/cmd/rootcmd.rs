@@ -153,7 +153,7 @@ fn cmd_match(matches: &ArgMatches) {
                 file.push_str("config_default.yml")
             }
             if let Err(e) = generate_default_config(file.as_str()) {
-                log::error!("{}", e);
+                log::error!("{:?}", e);
                 return;
             };
             println!("{} created!", file);
@@ -170,11 +170,7 @@ fn cmd_match(matches: &ArgMatches) {
                         t.execute();
                     }
                     Err(e) => {
-                        log::error!(
-                            "{:#?}",
-                            // exception::TaskError::TaskYmlFileError(f.to_string()),
-                            e
-                        );
+                        log::error!("{:#?}", e);
                     }
                 }
                 // println!("{:?}", now.elapsed());
@@ -186,7 +182,7 @@ fn cmd_match(matches: &ArgMatches) {
                 let task = match read_yaml_file::<Task>(f) {
                     Ok(t) => t,
                     Err(e) => {
-                        log::error!("{}", e);
+                        log::error!("{:?}", e);
                         return;
                     }
                 };
@@ -224,7 +220,6 @@ fn cmd_match(matches: &ArgMatches) {
                 transfer_oss2oss.attributes.last_modify_filter = Some(LastModifyFilter {
                     filter_type: LastModifyFilterType::Greater,
                     timestamp: usize::try_from(now).unwrap(),
-                    // timestamp: i128::from(now.as_secs()),
                 });
 
                 let task = Task::Transfer(transfer_oss2oss);
@@ -236,7 +231,7 @@ fn cmd_match(matches: &ArgMatches) {
                                 println!("Generate {} succeed", f)
                             }
                             Err(e) => {
-                                log::error!("{}", e);
+                                log::error!("{:?}", e);
                             }
                         };
                     }
@@ -253,7 +248,7 @@ fn cmd_match(matches: &ArgMatches) {
                 let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
                     Ok(n) => n,
                     Err(e) => {
-                        log::error!("{}", e);
+                        log::error!("{:?}", e);
                         return;
                     }
                 };
@@ -268,15 +263,9 @@ fn cmd_match(matches: &ArgMatches) {
                 transfer_oss2local.target = ObjectStorage::Local(target.to_string());
                 transfer_oss2local.attributes.last_modify_filter = Some(LastModifyFilter {
                     filter_type: LastModifyFilterType::Greater,
-                    // timestamp: i128::from(now.as_secs()),
                     timestamp: usize::try_from(now.as_secs()).unwrap(),
                 });
 
-                // let task = Task {
-                //     task_id: task_id.to_string(),
-                //     name: "transfer oss to local".to_string(),
-                //     task_desc: Task::Transfer(transfer_oss2local),
-                // };
                 let task = Task::Transfer(transfer_oss2local);
 
                 match file {
@@ -286,7 +275,7 @@ fn cmd_match(matches: &ArgMatches) {
                                 println!("Generate {} succeed", f)
                             }
                             Err(e) => {
-                                log::error!("{}", e);
+                                log::error!("{:?}", e);
                             }
                         };
                     }
@@ -346,7 +335,7 @@ fn cmd_match(matches: &ArgMatches) {
                         let yml = struct_to_yaml_string(&task);
                         match yml {
                             Ok(str) => println!("{}", str),
-                            Err(e) => log::error!("{}", e),
+                            Err(e) => log::error!("{:?}", e),
                         }
                     }
                 };
@@ -356,7 +345,7 @@ fn cmd_match(matches: &ArgMatches) {
                 let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
                     Ok(n) => n,
                     Err(e) => {
-                        log::error!("{}", e);
+                        log::error!("{:?}", e);
                         return;
                     }
                 };
@@ -374,15 +363,9 @@ fn cmd_match(matches: &ArgMatches) {
                 transfer_local2local.target = ObjectStorage::Local(target.to_string());
                 transfer_local2local.attributes.last_modify_filter = Some(LastModifyFilter {
                     filter_type: LastModifyFilterType::Greater,
-                    // timestamp: i128::from(now.as_secs()),
                     timestamp: usize::try_from(now.as_secs()).unwrap(),
                 });
 
-                // let task = Task {
-                //     task_id: task_id.to_string(),
-                //     name: "transfer local to local".to_string(),
-                //     task_desc: Task::Transfer(transfer_local2local),
-                // };
                 let task = Task::Transfer(transfer_local2local);
 
                 match file {
@@ -392,7 +375,7 @@ fn cmd_match(matches: &ArgMatches) {
                                 println!("Generate {} succeed", f)
                             }
                             Err(e) => {
-                                log::error!("{}", e);
+                                log::error!("{:?}", e);
                             }
                         };
                     }
@@ -400,7 +383,7 @@ fn cmd_match(matches: &ArgMatches) {
                         let yml = struct_to_yaml_string(&task);
                         match yml {
                             Ok(str) => println!("{}", str),
-                            Err(e) => log::error!("{}", e),
+                            Err(e) => log::error!("{:?}", e),
                         }
                     }
                 };
@@ -410,11 +393,6 @@ fn cmd_match(matches: &ArgMatches) {
         if let Some(truncate_bucket) = template.subcommand_matches("truncate_bucket") {
             let file = truncate_bucket.get_one::<String>("file");
             let task_truncate_bucket = TaskTruncateBucket::default();
-            // let task = Task {
-            //     task_id: task_id.to_string(),
-            //     name: "truncate bucket task".to_string(),
-            //     task_desc: Task::TruncateBucket(task_truncate_bucket),
-            // };
 
             let task = Task::TruncateBucket(task_truncate_bucket);
             match file {
@@ -424,7 +402,7 @@ fn cmd_match(matches: &ArgMatches) {
                             println!("Generate {} succeed", f)
                         }
                         Err(e) => {
-                            log::error!("{}", e);
+                            log::error!("{:?}", e);
                         }
                     };
                 }
@@ -432,7 +410,7 @@ fn cmd_match(matches: &ArgMatches) {
                     let yml = struct_to_yaml_string(&task);
                     match yml {
                         Ok(str) => println!("{}", str),
-                        Err(e) => log::error!("{}", e),
+                        Err(e) => log::error!("{:?}", e),
                     }
                 }
             };
@@ -449,7 +427,7 @@ fn cmd_match(matches: &ArgMatches) {
                             println!("Generate {} succeed", f)
                         }
                         Err(e) => {
-                            log::error!("{}", e);
+                            log::error!("{:?}", e);
                         }
                     };
                 }
@@ -457,7 +435,7 @@ fn cmd_match(matches: &ArgMatches) {
                     let yml = struct_to_yaml_string(&task);
                     match yml {
                         Ok(str) => println!("{}", str),
-                        Err(e) => log::error!("{}", e),
+                        Err(e) => log::error!("{:?}", e),
                     }
                 }
             };
@@ -496,7 +474,7 @@ fn cmd_match(matches: &ArgMatches) {
             oss_ali.endpoint = "oss-cn-beijing.aliyuncs.com".to_string();
             let vec_oss = vec![oss_jd, oss_ali];
             if let Err(e) = struct_to_yml_file(&vec_oss, file.as_str()) {
-                log::error!("{}", e);
+                log::error!("{:?}", e);
                 return;
             };
             println!("{} created!", file);
@@ -510,7 +488,7 @@ fn cmd_match(matches: &ArgMatches) {
                 match size {
                     Ok(s) => s,
                     Err(e) => {
-                        log::error!("{}", e);
+                        log::error!("{:?}", e);
                         return;
                     }
                 }
@@ -529,7 +507,7 @@ fn cmd_match(matches: &ArgMatches) {
                 match size {
                     Ok(s) => s,
                     Err(e) => {
-                        log::error!("{}", e);
+                        log::error!("{:?}", e);
                         return;
                     }
                 }
@@ -547,7 +525,7 @@ fn cmd_match(matches: &ArgMatches) {
         };
 
         if let Err(e) = generate_file(file_size, chunk, file) {
-            log::error!("{}", e);
+            log::error!("{:?}", e);
         };
     }
 
@@ -571,7 +549,7 @@ fn cmd_match(matches: &ArgMatches) {
                 match size {
                     Ok(s) => s,
                     Err(e) => {
-                        log::error!("{}", e);
+                        log::error!("{:?}", e);
                         return;
                     }
                 }
@@ -587,7 +565,7 @@ fn cmd_match(matches: &ArgMatches) {
                 match size {
                     Ok(s) => s,
                     Err(e) => {
-                        log::error!("{}", e);
+                        log::error!("{:?}", e);
                         return;
                     }
                 }
@@ -611,7 +589,7 @@ fn cmd_match(matches: &ArgMatches) {
             chunk_size,
             file_quantity,
         ) {
-            log::error!("{}", e);
+            log::error!("{:?}", e);
         };
     }
 

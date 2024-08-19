@@ -185,7 +185,7 @@ impl TransferTaskActions for TransferOss2Oss {
                 .await
             {
                 stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{}", e);
+                log::error!("{:?}", e);
             };
         });
     }
@@ -917,8 +917,6 @@ impl TransferOss2OssRecordsExecutor {
         // target_oss: &OssClient,
         source_oss: &Arc<OssClient>,
         target_oss: &Arc<OssClient>,
-        // source_oss: &OssClient,
-        // target_oss: &OssClient,
         record: &RecordDescription,
     ) -> Result<()> {
         // 目标object存在则不推送

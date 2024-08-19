@@ -392,7 +392,7 @@ pub fn generate_files(
                 let path = std::path::Path::new(store_path);
                 if let Some(p) = path.parent() {
                     if let Err(e) = std::fs::create_dir_all(p) {
-                        log::error!("{}", e);
+                        log::error!("{:?}", e);
                         return;
                     };
                 };

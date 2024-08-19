@@ -561,11 +561,11 @@ impl TransferTask {
 
                 // 启动进度条线程
                 let map = Arc::clone(&offset_map);
-                let stop_mark = Arc::clone(&snapshot_stop_mark);
+                let bar_stop_mark = Arc::clone(&snapshot_stop_mark);
                 let total = executed_file.total_lines;
                 sys_set.spawn(async move {
                     // Todo 调整进度条
-                    quantify_processbar(total, stop_mark, map, OFFSET_PREFIX).await;
+                    quantify_processbar(total, bar_stop_mark, map, OFFSET_PREFIX).await;
                 });
                 let task_stock = self.gen_transfer_actions();
                 let mut vec_keys: Vec<ListedRecord> = vec![];
@@ -576,9 +576,13 @@ impl TransferTask {
 
                 for line in lines {
                     // 若错误达到上限，则停止任务
+                    if snapshot_stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+                        break;
+                    }
                     if err_counter.load(std::sync::atomic::Ordering::SeqCst)
                         >= self.attributes.max_errors
                     {
+                        snapshot_stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
                         break;
                     }
                     if let Result::Ok(key) = line {
@@ -628,7 +632,6 @@ impl TransferTask {
                 }
 
                 // 处理集合中的剩余数据，若错误达到上限，则不执行后续操作
-                // if vec_keys.len() > 0
                 if !vec_keys.is_empty()
                     && err_counter.load(std::sync::atomic::Ordering::SeqCst)
                         < self.attributes.max_errors

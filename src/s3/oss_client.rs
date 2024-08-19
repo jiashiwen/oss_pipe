@@ -215,7 +215,6 @@ impl OssClient {
             local_file,
             bucket,
             key,
-            // Arc::clone(&executing_transfers),
             executing_transfers.clone(),
             multi_part_chunk_size,
             multi_part_chunk_per_batch,
