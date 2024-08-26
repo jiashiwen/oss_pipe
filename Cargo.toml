@@ -23,7 +23,6 @@ rs-snowflake = "0.6.0"
 async-trait = "0.1.66"
 walkdir = "2.3.2"
 bytes = "1.7.1"
-infer = "0.16.0"
 rayon = "1.10.0"
 time = "0.3.20"
 rand = "0.8.5"
@@ -36,13 +35,14 @@ indicatif = "0.17.6"
 notify = "6.1.1"
 tabled = "0.16.0"
 rust_decimal = "1.36.0"
-rust_decimal_macros = "1.36.0"
 inotify = "0.11.0"
 once_cell = "1.19.0"
-console-subscriber = "0.4.0"
 thiserror = "1.0.61"
-awaitgroup = "0.7.0"
-bincode = "1.3.3"
+# awaitgroup = "0.7.0"
+# bincode = "1.3.3"
+# infer = "0.16.0"
+# rust_decimal_macros = "1.36.0"
+# console-subscriber = "0.4.0"
 
 
 tracing = { version = "0.1.40", features = [
@@ -51,7 +51,7 @@ tracing = { version = "0.1.40", features = [
 ] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing-appender = "0.2.3"
-tracing-error = "0.2.0"
+# tracing-error = "0.2.0"
 
 # jd and aws oss
 # aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
@@ -66,7 +66,7 @@ tracing-error = "0.2.0"
 # sudo apt install llvm
 # rocksdb = { version = "0.22.0", feature = "multi-threaded-cf" }
 
-
+# s3
 aws-config = { path = "../aws-sdk-rust/sdk/aws-config", features = [
     "behavior-version-latest",
 ] }
@@ -77,10 +77,11 @@ aws-types = { path = "../aws-sdk-rust/sdk/aws-types", feature = [
     "hardcoded-credentials",
 ] }
 
-
-# aliyun oss
-aliyun-oss-client = "0.12.9"
-
+# azure blob
+azure_core = "0.20.0"
+azure_storage = "0.20.0"
+azure_storage_blobs = "0.20.0"
+futures = "0.3.30"
 
 [[example]]
 name = "multi_transfer"
@@ -89,6 +90,10 @@ path = "examples/multi_transfer.rs"
 [[example]]
 name = "splite_test"
 path = "examples/splite_test.rs"
+
+[[example]]
+name = "blob_sample"
+path = "examples/blob_sample.rs"
 
 
 [profile.release]
