@@ -286,32 +286,32 @@ pub fn merge_file<P: AsRef<Path>>(file: P, merge_to: P, chunk_size: usize) -> Re
     Ok(())
 }
 
-pub fn merge_files(filename: &str, chunk_size: usize, file_parts: Vec<String>) -> Result<()> {
-    let merged_path = Path::new(filename);
-    if let Some(p) = merged_path.parent() {
-        std::fs::create_dir_all(p)?;
-    };
-    let mut merged_file = OpenOptions::new()
-        .truncate(true)
-        .create(true)
-        .write(true)
-        .open(filename)?;
-    for part in file_parts {
-        let mut part_file = OpenOptions::new().read(true).open(&part)?;
-        loop {
-            let mut buffer = vec![0; chunk_size];
-            let read_count = part_file.read(&mut buffer)?;
-            let buf = &buffer[..read_count];
-            merged_file.write_all(&buf)?;
-            if read_count != chunk_size {
-                break;
-            }
-        }
-        merged_file.flush()?;
-    }
+// pub fn merge_files(filename: &str, chunk_size: usize, file_parts: Vec<String>) -> Result<()> {
+//     let merged_path = Path::new(filename);
+//     if let Some(p) = merged_path.parent() {
+//         std::fs::create_dir_all(p)?;
+//     };
+//     let mut merged_file = OpenOptions::new()
+//         .truncate(true)
+//         .create(true)
+//         .write(true)
+//         .open(filename)?;
+//     for part in file_parts {
+//         let mut part_file = OpenOptions::new().read(true).open(&part)?;
+//         loop {
+//             let mut buffer = vec![0; chunk_size];
+//             let read_count = part_file.read(&mut buffer)?;
+//             let buf = &buffer[..read_count];
+//             merged_file.write_all(&buf)?;
+//             if read_count != chunk_size {
+//                 break;
+//             }
+//         }
+//         merged_file.flush()?;
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 // 生成指定行数，指定每行字节数的文件
 #[allow(dead_code)]
 pub fn generate_line_file(line_base_size: usize, lines: usize, file_name: &str) -> Result<()> {

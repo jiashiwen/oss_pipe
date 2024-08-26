@@ -78,7 +78,7 @@ impl TransferTaskActions for TransferLocal2Oss {
     fn error_record_retry(
         &self,
         stop_mark: Arc<AtomicBool>,
-        executing_transfers: Arc<RwLock<usize>>,
+        _executing_transfers: Arc<RwLock<usize>>,
     ) -> Result<()> {
         // 遍历错误记录
         for entry in WalkDir::new(self.attributes.meta_dir.as_str())

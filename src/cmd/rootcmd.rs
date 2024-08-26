@@ -498,10 +498,6 @@ fn cmd_match(matches: &ArgMatches) {
             }
         };
         let chunk: usize = match gen_file.get_one::<String>("chunk_size") {
-            // Some(s) => *s,
-            // None => {
-            //     return;
-            // }
             Some(s) => {
                 let size = byte_size_str_to_usize(s);
                 match size {

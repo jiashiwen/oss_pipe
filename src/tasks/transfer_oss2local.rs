@@ -75,7 +75,7 @@ impl TransferTaskActions for TransferOss2Local {
     fn error_record_retry(
         &self,
         stop_mark: Arc<AtomicBool>,
-        executing_transfers: Arc<RwLock<usize>>,
+        _executing_transfers: Arc<RwLock<usize>>,
     ) -> Result<()> {
         // 遍历错误记录
         // 每个错误文件重新处理
@@ -344,7 +344,7 @@ impl TransferTaskActions for TransferOss2Local {
     async fn record_descriptions_transfor(
         &self,
         joinset: &mut JoinSet<()>,
-        executing_transfers: Arc<RwLock<usize>>,
+        _executing_transfers: Arc<RwLock<usize>>,
         records: Vec<RecordDescription>,
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
@@ -384,7 +384,7 @@ impl TransferTaskActions for TransferOss2Local {
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         mut execute_set: &mut JoinSet<()>,
-        executing_transfers: Arc<RwLock<usize>>,
+        _executing_transfers: Arc<RwLock<usize>>,
         assistant: Arc<Mutex<IncrementAssistant>>,
         offset_map: Arc<DashMap<String, FilePosition>>,
     ) {

@@ -147,7 +147,7 @@ impl TransferTaskActions for TransferLocal2Local {
     async fn record_descriptions_transfor(
         &self,
         joinset: &mut JoinSet<()>,
-        executing_transfers: Arc<RwLock<usize>>,
+        _executing_transfers: Arc<RwLock<usize>>,
         records: Vec<RecordDescription>,
         stop_mark: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
