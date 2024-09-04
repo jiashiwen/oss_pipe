@@ -100,7 +100,7 @@ pub fn run() {
     let mut rl = match Editor::with_config(config) {
         Ok(rl) => rl,
         Err(e) => {
-            log::error!("{}", e);
+            log::error!("{:?}", e);
             return;
         }
     };

@@ -405,7 +405,7 @@ pub fn generate_files(
                 {
                     Ok(f) => f,
                     Err(e) => {
-                        log::error!("{}", e);
+                        log::error!("{:?}", e);
                         return;
                     }
                 };
@@ -419,7 +419,7 @@ pub fn generate_files(
                 }
 
                 if let Err(e) = file.flush() {
-                    log::error!("{}", e);
+                    log::error!("{:?}", e);
                 };
             });
         }

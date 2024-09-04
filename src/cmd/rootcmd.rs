@@ -239,7 +239,7 @@ fn cmd_match(matches: &ArgMatches) {
                         let yml = struct_to_yaml_string(&task);
                         match yml {
                             Ok(str) => println!("{}", str),
-                            Err(e) => log::error!("{}", e),
+                            Err(e) => log::error!("{:?}", e),
                         }
                     }
                 };
@@ -283,7 +283,7 @@ fn cmd_match(matches: &ArgMatches) {
                         let yml = struct_to_yaml_string(&task);
                         match yml {
                             Ok(str) => println!("{}", str),
-                            Err(e) => log::error!("{}", e),
+                            Err(e) => log::error!("{:?}", e),
                         }
                     }
                 };
@@ -292,7 +292,7 @@ fn cmd_match(matches: &ArgMatches) {
                 let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
                     Ok(n) => n,
                     Err(e) => {
-                        log::error!("{}", e);
+                        log::error!("{:?}", e);
                         return;
                     }
                 };
@@ -327,7 +327,7 @@ fn cmd_match(matches: &ArgMatches) {
                                 println!("Generate {} succeed", f)
                             }
                             Err(e) => {
-                                log::error!("{}", e);
+                                log::error!("{:?}", e);
                             }
                         };
                     }

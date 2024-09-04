@@ -84,7 +84,7 @@ impl Task {
                         log::info!("{:?}", log_info)
                     }
                     Err(e) => {
-                        log::error!("{}", e);
+                        log::error!("{:?}", e);
                     }
                 }
             }
@@ -255,7 +255,7 @@ impl TaskTruncateBucket {
             let client_source = match self.oss.gen_oss_client() {
                 Result::Ok(c) => c,
                 Err(e) => {
-                    log::error!("{}", e);
+                    log::error!("{:?}", e);
                     interrupted = true;
                     return;
                 }
@@ -270,7 +270,7 @@ impl TaskTruncateBucket {
                 )
                 .await
             {
-                log::error!("{}", e);
+                log::error!("{:?}", e);
                 interrupted = true;
                 return;
             };
@@ -307,7 +307,7 @@ impl TaskTruncateBucket {
                     let c = match self.oss.gen_oss_client() {
                         Ok(c) => c,
                         Err(e) => {
-                            log::error!("{}", e);
+                            log::error!("{:?}", e);
                             continue;
                         }
                     };
@@ -315,7 +315,7 @@ impl TaskTruncateBucket {
                     let bucket = self.oss.bucket.clone();
                     set.spawn(async move {
                         if let Err(e) = c.remove_objects(bucket.as_str(), keys).await {
-                            log::error!("{}", e);
+                            log::error!("{:?}", e);
                         };
                     });
 
@@ -330,7 +330,7 @@ impl TaskTruncateBucket {
                 let c = match self.oss.gen_oss_client() {
                     Ok(c) => c,
                     Err(e) => {
-                        log::error!("{}", e);
+                        log::error!("{:?}", e);
                         return;
                     }
                 };
@@ -338,7 +338,7 @@ impl TaskTruncateBucket {
                 let bucket = self.oss.bucket.clone();
                 set.spawn(async move {
                     if let Err(e) = c.remove_objects(bucket.as_str(), keys).await {
-                        log::error!("{}", e);
+                        log::error!("{:?}", e);
                     };
                 });
             }

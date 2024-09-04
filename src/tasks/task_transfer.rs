@@ -232,7 +232,7 @@ impl TransferTask {
             let map = match task.analyze_source().await {
                 Ok(m) => m,
                 Err(e) => {
-                    log::error!("{}", e);
+                    log::error!("{:?}", e);
                     return;
                 }
             };
@@ -319,7 +319,7 @@ impl TransferTask {
                 let checkpoint = match get_task_checkpoint(check_point_file.as_str()) {
                     Ok(c) => c,
                     Err(e) => {
-                        log::error!("{}", e);
+                        log::error!("{:?}", e);
                         interrupt = true;
                         return;
                     }
@@ -329,7 +329,7 @@ impl TransferTask {
                 match task.error_record_retry(snapshot_stop_mark.clone(), executing_transfers) {
                     Ok(_) => {}
                     Err(e) => {
-                        log::error!("{}", e);
+                        log::error!("{:?}", e);
                         interrupt = true;
                         return;
                     }
@@ -356,7 +356,7 @@ impl TransferTask {
                             list_file = Some(f);
                         }
                         Err(e) => {
-                            log::error!("{}", e);
+                            log::error!("{:?}", e);
                             interrupt = true;
                             return;
                         }
@@ -376,7 +376,7 @@ impl TransferTask {
                         {
                             Ok(f) => f,
                             Err(e) => {
-                                log::error!("{}", e);
+                                log::error!("{:?}", e);
                                 interrupt = true;
                                 return;
                             }
@@ -385,7 +385,7 @@ impl TransferTask {
                         match File::open(&modified.path) {
                             Ok(f) => list_file = Some(f),
                             Err(e) => {
-                                log::error!("{}", e);
+                                log::error!("{:?}", e);
                                 interrupt = true;
                                 return;
                             }
@@ -410,7 +410,7 @@ impl TransferTask {
                         executed_file = f;
                     }
                     Err(e) => {
-                        log::error!("{}", e);
+                        log::error!("{:?}", e);
                         interrupt = true;
                         return;
                     }
@@ -446,7 +446,7 @@ impl TransferTask {
                 let assistant = Arc::clone(&increment_assistant);
                 task::spawn(async move {
                     if let Err(e) = task_increment_prelude.increment_prelude(assistant).await {
-                        log::error!("{}", e);
+                        log::error!("{:?}", e);
                     }
                 });
 
@@ -482,7 +482,7 @@ impl TransferTask {
                         let record = match json_to_struct::<RecordDescription>(&l) {
                             Ok(r) => r,
                             Err(e) => {
-                                log::error!("{}", e);
+                                log::error!("{:?}", e);
                                 err_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                                 continue;
                             }
@@ -672,7 +672,7 @@ impl TransferTask {
                 task_begin_timestamp: i128::from(now.as_secs()),
             };
             if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
-                log::error!("{}", e);
+                log::error!("{:?}", e);
             };
 
             while sys_set.len() > 0 {

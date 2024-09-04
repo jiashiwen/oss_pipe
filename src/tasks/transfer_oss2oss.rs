@@ -106,7 +106,7 @@ impl TransferTaskActions for TransferOss2Oss {
                                 record_vec.push(record);
                             }
                             Err(e) => {
-                                log::error!("{}", e);
+                                log::error!("{:?}", e);
                                 return Err(anyhow!("{}", e));
                             }
                         }
@@ -164,7 +164,7 @@ impl TransferTaskActions for TransferOss2Oss {
                 .await
             {
                 stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{}", e);
+                log::error!("{:?}", e);
             };
         });
     }
@@ -463,7 +463,7 @@ impl TransferTaskActions for TransferOss2Oss {
         let mut checkpoint = match get_task_checkpoint(&lock.check_point_path) {
             Ok(c) => c,
             Err(e) => {
-                log::error!("{}", e);
+                log::error!("{:?}", e);
                 return;
             }
         };
@@ -511,7 +511,7 @@ impl TransferTaskActions for TransferOss2Oss {
             let modified_file = match File::open(&modified.path) {
                 Ok(f) => f,
                 Err(e) => {
-                    log::error!("{}", e);
+                    log::error!("{:?}", e);
                     err_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     continue;
                 }
@@ -536,7 +536,7 @@ impl TransferTaskActions for TransferOss2Oss {
                     let record = match from_str::<RecordDescription>(&line_str) {
                         Ok(r) => r,
                         Err(e) => {
-                            log::error!("{}", e);
+                            log::error!("{:?}", e);
                             err_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                             continue;
                         }
@@ -668,7 +668,7 @@ impl TransferOss2Oss {
                 oss2oss
                     .err_counter
                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{}", e);
+                log::error!("{:?}", e);
             };
         });
     }
@@ -759,7 +759,7 @@ impl TransferOss2OssRecordsExecutor {
                     &mut error_file,
                     offset_key.as_str(),
                 );
-                log::error!("{}", e);
+                log::error!("{:?}", e);
             }
         }
 
@@ -917,7 +917,7 @@ impl TransferOss2OssRecordsExecutor {
                 .record_description_handler(executing_transfers.clone(), &s_c, &t_c, &record)
                 .await
             {
-                log::error!("{}", e);
+                log::error!("{:?}", e);
                 record.handle_error(
                     self.stop_mark.clone(),
                     &self.err_counter,
@@ -982,7 +982,7 @@ impl TransferOss2OssRecordsExecutor {
                                 return Ok(());
                             }
                             false => {
-                                log::error!("{}", service_err);
+                                log::error!("{:?}", service_err);
                                 return Err(service_err.into());
                             }
                         }

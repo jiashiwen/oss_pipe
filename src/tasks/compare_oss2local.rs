@@ -86,7 +86,7 @@ impl CompareTaskActions for CompareOss2Local {
         joinset.spawn(async move {
             if let Err(e) = comparator.compare_listed_records(records).await {
                 stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{}", e);
+                log::error!("{:?}", e);
             };
         });
     }
@@ -171,7 +171,7 @@ impl Oss2LocalRecordsComparator {
                         &mut error_file,
                         offset_key.as_str(),
                     );
-                    log::error!("{}", e);
+                    log::error!("{:?}", e);
                 }
             };
         }

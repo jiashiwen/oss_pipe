@@ -135,7 +135,7 @@ impl NotifyWatcher {
                             let _ = linewiter.write_all("\n".as_bytes());
                         }
                         Err(e) => {
-                            log::error!("{}", e)
+                            log::error!("{:?}", e)
                         }
                     };
                 }

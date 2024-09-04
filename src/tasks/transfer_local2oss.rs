@@ -107,7 +107,7 @@ impl TransferTaskActions for TransferLocal2Oss {
                                 record_vec.push(record);
                             }
                             Err(e) => {
-                                log::error!("{}", e);
+                                log::error!("{:?}", e);
                                 return Err(anyhow!("{}", e));
                             }
                         }
@@ -163,7 +163,7 @@ impl TransferTaskActions for TransferLocal2Oss {
                 .await
             {
                 stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{}", e);
+                log::error!("{:?}", e);
             };
         });
     }
@@ -191,7 +191,7 @@ impl TransferTaskActions for TransferLocal2Oss {
         joinset.spawn(async move {
             if let Err(e) = local2oss.exec_record_descriptions(records).await {
                 stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{}", e);
+                log::error!("{:?}", e);
             };
         });
     }
@@ -265,7 +265,7 @@ impl TransferTaskActions for TransferLocal2Oss {
                         let record_str = match struct_to_json_string(&record) {
                             Ok(r) => r,
                             Err(e) => {
-                                log::error!("{}", e);
+                                log::error!("{:?}", e);
                                 return;
                             }
                         };
@@ -344,7 +344,7 @@ impl TransferTaskActions for TransferLocal2Oss {
                     let record_str = match struct_to_json_string(&record) {
                         Ok(r) => r,
                         Err(e) => {
-                            log::error!("{}", e);
+                            log::error!("{:?}", e);
                             return Err(e);
                         }
                     };
@@ -463,7 +463,7 @@ impl TransferTaskActions for TransferLocal2Oss {
             match RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include) {
                 Ok(r) => r,
                 Err(e) => {
-                    log::error!("{}", e);
+                    log::error!("{:?}", e);
                     return;
                 }
             };
@@ -489,13 +489,13 @@ impl TransferTaskActions for TransferLocal2Oss {
             let mut file = match File::open(&local_notify.notify_file_path) {
                 Ok(f) => f,
                 Err(e) => {
-                    log::error!("{}", e);
+                    log::error!("{:?}", e);
                     return;
                 }
             };
 
             if let Err(e) = file.seek(SeekFrom::Start(offset)) {
-                log::error!("{}", e);
+                log::error!("{:?}", e);
                 continue;
             };
 
@@ -547,7 +547,7 @@ impl TransferTaskActions for TransferLocal2Oss {
                                 &mut error_file,
                                 offset_key.as_str(),
                             );
-                            log::error!("{}", e);
+                            log::error!("{:?}", e);
                         }
                     }
                 }
@@ -848,7 +848,7 @@ impl TransferLocal2OssExecuter {
                             &mut error_file,
                             offset_key.as_str(),
                         );
-                        log::error!("{}", e);
+                        log::error!("{:?}", e);
                         continue;
                     }
                 }
@@ -890,7 +890,7 @@ impl TransferLocal2OssExecuter {
                     &mut error_file,
                     offset_key.as_str(),
                 );
-                log::error!("{}", e);
+                log::error!("{:?}", e);
                 continue;
             }
         }

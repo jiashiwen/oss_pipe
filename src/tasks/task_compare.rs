@@ -350,7 +350,7 @@ impl CompareTask {
                 let checkpoint = match get_task_checkpoint(check_point_file.as_str()) {
                     Ok(c) => c,
                     Err(e) => {
-                        log::error!("{}", e);
+                        log::error!("{:?}", e);
                         interrupt = true;
                         return;
                     }
@@ -361,7 +361,7 @@ impl CompareTask {
                         source_list_file = Some(f);
                     }
                     Err(e) => {
-                        log::error!("{}", e);
+                        log::error!("{:?}", e);
                         interrupt = true;
                         return;
                     }
@@ -376,7 +376,7 @@ impl CompareTask {
                         compare_source_list = f;
                     }
                     Err(e) => {
-                        log::error!("{}", e);
+                        log::error!("{:?}", e);
                         interrupt = true;
                         return;
                     }
@@ -517,7 +517,7 @@ impl CompareTask {
                 task_begin_timestamp: i128::from(now.as_secs()),
             };
             if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
-                log::error!("{}", e);
+                log::error!("{:?}", e);
             };
 
             while sys_set.len() > 0 {

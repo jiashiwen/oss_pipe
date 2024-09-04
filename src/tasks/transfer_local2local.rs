@@ -87,7 +87,7 @@ impl TransferTaskActions for TransferLocal2Local {
                                 record_vec.push(record);
                             }
                             Err(e) => {
-                                log::error!("{}", e);
+                                log::error!("{:?}", e);
                                 return Err(anyhow!("{}", e));
                             }
                         }
@@ -139,7 +139,7 @@ impl TransferTaskActions for TransferLocal2Local {
         execute_set.spawn(async move {
             if let Err(e) = local2local.exec_listed_records(records).await {
                 stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{}", e);
+                log::error!("{:?}", e);
             };
         });
     }
@@ -167,7 +167,7 @@ impl TransferTaskActions for TransferLocal2Local {
         joinset.spawn(async move {
             if let Err(e) = local2local.exec_record_descriptions(records).await {
                 stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{}", e);
+                log::error!("{:?}", e);
             };
         });
     }
@@ -371,7 +371,7 @@ impl TransferTaskActions for TransferLocal2Local {
         let mut offset = match TryInto::<u64>::try_into(file_position.offset) {
             Ok(o) => o,
             Err(e) => {
-                log::error!("{}", e);
+                log::error!("{:?}", e);
                 return;
             }
         };
@@ -407,7 +407,7 @@ impl TransferTaskActions for TransferLocal2Local {
             match RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include) {
                 Ok(r) => r,
                 Err(e) => {
-                    log::error!("{}", e);
+                    log::error!("{:?}", e);
                     return;
                 }
             };
@@ -433,13 +433,13 @@ impl TransferTaskActions for TransferLocal2Local {
             let mut file = match File::open(&local_notify.notify_file_path) {
                 Ok(f) => f,
                 Err(e) => {
-                    log::error!("{}", e);
+                    log::error!("{:?}", e);
                     return;
                 }
             };
 
             if let Err(e) = file.seek(SeekFrom::Start(offset)) {
-                log::error!("{}", e);
+                log::error!("{:?}", e);
                 continue;
             };
 
@@ -451,7 +451,7 @@ impl TransferTaskActions for TransferLocal2Local {
             {
                 Ok(f) => f,
                 Err(e) => {
-                    log::error!("{}", e);
+                    log::error!("{:?}", e);
                     return;
                 }
             };
@@ -498,7 +498,7 @@ impl TransferTaskActions for TransferLocal2Local {
                                 &mut error_file,
                                 offset_key.as_str(),
                             );
-                            log::error!("{}", e);
+                            log::error!("{:?}", e);
                         }
                     }
                 }
@@ -666,7 +666,7 @@ impl TransferLocal2LocalExecutor {
                     &mut error_file,
                     offset_key.as_str(),
                 );
-                log::error!("{}", e);
+                log::error!("{:?}", e);
             };
         }
 
@@ -742,7 +742,7 @@ impl TransferLocal2LocalExecutor {
                     &mut error_file,
                     offset_key.as_str(),
                 );
-                log::error!("{}", e);
+                log::error!("{:?}", e);
             }
         }
 
