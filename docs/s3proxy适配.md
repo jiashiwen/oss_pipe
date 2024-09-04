@@ -63,7 +63,6 @@ jclouds.endpoint=https://account.blob.core.windows.net
 ```
 
 mc
-
-az storage blob list --account-key xxxxxxxxx --account-name jswblob --container-name testblob
+az storage blob list --account-key xxxxxxxxx --account-name xxxx --container-name xxxx
 
 上传下载通过，与s3交互和大文件分片待测试
