@@ -728,7 +728,7 @@ impl TransferLocal2OssExecuter {
                     &mut error_file,
                     offset_key.as_str(),
                 );
-                log::error!("{}", e);
+                log::error!("{:?}", e);
             }
             self.offset_map.remove(&offset_key);
         }

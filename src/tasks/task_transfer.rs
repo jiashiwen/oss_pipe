@@ -255,7 +255,7 @@ impl TransferTask {
             }
 
             let header = vec!["size_range", "objects", "percent"];
-            // builder.set_header(header);
+
             builder.insert_record(0, header);
 
             let mut table = builder.build();
@@ -579,12 +579,7 @@ impl TransferTask {
                     if snapshot_stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
                         break;
                     }
-                    // if err_counter.load(std::sync::atomic::Ordering::SeqCst)
-                    //     >= self.attributes.max_errors
-                    // {
-                    //     snapshot_stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-                    //     break;
-                    // }
+
                     if let Result::Ok(key) = line {
                         let len = key.bytes().len() + "\n".bytes().len();
                         list_file_position.offset += len;
