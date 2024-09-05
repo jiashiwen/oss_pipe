@@ -661,7 +661,6 @@ impl TransferTask {
             drop(lock);
 
             // 记录checkpoint
-
             let mut checkpoint: CheckPoint = CheckPoint {
                 task_id: self.task_id.clone(),
                 executed_file: executed_file.clone(),

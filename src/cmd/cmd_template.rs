@@ -4,7 +4,7 @@ pub fn new_template() -> Command {
     clap::Command::new("template")
         .about("generate oss task description yaml template")
         .subcommand(template_transfer())
-        .subcommand(truncate_bucket())
+        .subcommand(delete_bucket())
         .subcommand(compare())
 }
 
@@ -56,8 +56,8 @@ fn template_transfer_local2local() -> Command {
             .help("specific output file path")])
 }
 
-fn truncate_bucket() -> Command {
-    clap::Command::new("truncate_bucket")
+fn delete_bucket() -> Command {
+    clap::Command::new("delete_bucket")
         .about("generate oss task description template for local to local task")
         .args(&[Arg::new("file")
             .value_name("file")
