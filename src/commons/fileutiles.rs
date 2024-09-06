@@ -370,7 +370,6 @@ pub fn generate_files(
             let l_ck = last_chunk.clone();
             s.spawn(move |_| {
                 let mut file_prefix = rand_string(file_prefix_len);
-                // let mut file_name = file_prefix.clone();
                 let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos();
                 file_prefix.push_str(now.to_string().as_str());
 

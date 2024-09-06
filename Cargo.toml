@@ -53,12 +53,12 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing-appender = "0.2.3"
 # tracing-error = "0.2.0"
 
-# jd and aws oss
-# aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
-# aws-sdk-s3 = "1.17.0"
-# aws-credential-types = "1.1.2"
-# aws-smithy-types = "1.1.3"
-# aws-types = { version = "1.1.2", feature = ["hardcoded-credentials"] }
+# s3 from craitcrates.io
+# aws-config = { version = "1.5.5", features = ["behavior-version-latest"] }
+# aws-sdk-s3 = "1.48.0"
+# aws-credential-types = "1.2.1"
+# aws-smithy-types = "1.2.4"
+# aws-types = { version = "1.3.3", feature = ["hardcoded-credentials"] }
 
 
 # sudo apt update && sudo apt upgrade
@@ -83,17 +83,14 @@ azure_storage = "0.20.0"
 azure_storage_blobs = "0.20.0"
 futures = "0.3.30"
 
-[[example]]
-name = "multi_transfer"
-path = "examples/multi_transfer.rs"
-
-[[example]]
-name = "splite_test"
-path = "examples/splite_test.rs"
 
 [[example]]
 name = "blob_sample"
 path = "examples/blob_sample.rs"
+
+[[example]]
+name = "use_hosts"
+path = "examples/use_hosts.rs"
 
 
 [profile.release]

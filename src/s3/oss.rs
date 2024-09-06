@@ -81,6 +81,18 @@ pub enum OssProvider {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub enum S3RequestStyle {
+    PathStyle,
+    VirtualHostedStyle,
+}
+
+impl Default for S3RequestStyle {
+    fn default() -> Self {
+        S3RequestStyle::VirtualHostedStyle
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct OssObjectsList {
     pub object_list: Option<Vec<String>>,
     pub next_token: Option<String>,
@@ -97,6 +109,7 @@ pub struct OSSDescription {
     #[serde(default = "OSSDescription::prefix_default")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prefix: Option<String>,
+    pub request_style: S3RequestStyle,
 }
 
 impl Default for OSSDescription {
@@ -109,6 +122,7 @@ impl Default for OSSDescription {
             region: "cn-north-1".to_string(),
             bucket: "bucket_name".to_string(),
             prefix: Some("test/samples/".to_string()),
+            request_style: S3RequestStyle::default(),
         }
     }
 }
@@ -136,7 +150,10 @@ impl OSSDescription {
                     .region(Region::new(self.region.clone()))
                     .build();
 
-                let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+                let mut s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+                if let S3RequestStyle::PathStyle = self.request_style {
+                    s3_config_builder = s3_config_builder.force_path_style(true);
+                }
                 let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
                 let jdclient = OssJdClient { client };
                 Ok(Box::new(jdclient))
@@ -184,7 +201,10 @@ impl OSSDescription {
                     .behavior_version(BehaviorVersion::latest())
                     .build();
 
-                let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+                let mut s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+                if let S3RequestStyle::PathStyle = self.request_style {
+                    s3_config_builder = s3_config_builder.force_path_style(true);
+                }
 
                 let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
 
@@ -205,7 +225,11 @@ impl OSSDescription {
                     .behavior_version(BehaviorVersion::latest())
                     .build();
 
-                let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+                let mut s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+                if let S3RequestStyle::PathStyle = self.request_style {
+                    s3_config_builder = s3_config_builder.force_path_style(true);
+                }
+
                 let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
                 let oss_client = OssClient { client };
                 Ok(oss_client)
@@ -245,7 +269,12 @@ impl OSSDescription {
                     .region(Region::new(self.region.clone()))
                     .behavior_version(BehaviorVersion::latest())
                     .build();
-                let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+
+                let mut s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+                if let S3RequestStyle::PathStyle = self.request_style {
+                    s3_config_builder = s3_config_builder.force_path_style(true);
+                }
+
                 let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
                 let oss_client = OssClient { client };
                 Ok(oss_client)
@@ -263,7 +292,11 @@ impl OSSDescription {
                     .region(Region::new(self.region.clone()))
                     .behavior_version(BehaviorVersion::latest())
                     .build();
-                let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+                let mut s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+                if let S3RequestStyle::PathStyle = self.request_style {
+                    s3_config_builder = s3_config_builder.force_path_style(true);
+                }
+
                 let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
                 let oss_client = OssClient { client };
                 Ok(oss_client)
@@ -282,7 +315,12 @@ impl OSSDescription {
                     .region(Region::new(self.region.clone()))
                     .behavior_version(BehaviorVersion::latest())
                     .build();
-                let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+
+                let mut s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+                if let S3RequestStyle::PathStyle = self.request_style {
+                    s3_config_builder = s3_config_builder.force_path_style(true);
+                }
+
                 let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
                 let oss_client = OssClient { client };
                 Ok(oss_client)
@@ -301,7 +339,12 @@ impl OSSDescription {
                     .region(Region::new(self.region.clone()))
                     .behavior_version(BehaviorVersion::latest())
                     .build();
-                let s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+
+                let mut s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
+                if let S3RequestStyle::PathStyle = self.request_style {
+                    s3_config_builder = s3_config_builder.force_path_style(true);
+                }
+
                 let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
                 let oss_client = OssClient { client };
                 Ok(oss_client)

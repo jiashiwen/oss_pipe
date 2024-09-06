@@ -283,3 +283,207 @@ flamegraph -o flamegraph_01.svg --pid 2017221
 
 
 Duration { seconds: 2524, nanoseconds: 680871254 }
+
+
+## 使用 /etc/hosts 绑定，部分api不可用
+hi：
+当使用 /etc/hosts 进行绑定时，部分api 报错，这里分别验证了list_buckets，list_objects_v2,get_object
+
+```rust
+#[tokio::main]
+async fn main() {
+    let ak = "xxx";
+    let sk = "xxx";
+    let region = "cn-north-1";
+    let endpoint = "http://xxx.cn-north-1.xxx.com";
+    let bucket = "jsw-bucket";
+    // let endpoint = "http://100.64.130.88";
+
+    // let ep = Endpoint::builder().url(endpoint).build();
+    // let ep = Endpoint::immutable(Uri::from_static(endpoint));
+    let config = SdkConfig::builder()
+        .credentials_provider(SharedCredentialsProvider::new(Credentials::new(
+            ak, sk, None, None, "Static",
+        )))
+        .endpoint_url(endpoint)
+        .region(Region::new(region))
+        .behavior_version(BehaviorVersion::v2024_03_28())
+        .build();
+
+    let s3_config_builder = aws_sdk_s3::config::Builder::from(&config);
+    let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
+
+    let buckets = client.list_buckets().send().await;
+    println!("got buckets: {:#?}", buckets);
+
+    let list = client
+        .list_objects_v2()
+        .bucket("jsw-bucket")
+        .max_keys(20)
+        .send()
+        .await;
+    println!("objects: {:#?}", list);
+
+    let obj = client
+        .get_object()
+        .bucket(bucket)
+        .key("100k/!!41725505223551787799")
+        .send()
+        .await;
+    println!("obj: {:#?}", obj);
+}
+```
+
+此时关闭DNS，/etc/hosts 配置
+```
+ip xxx.cn-north-1.xxx.com
+```
+
+报错如下
+```
+got buckets: Ok(
+    ListBucketsOutput {
+        buckets: Some(
+            [
+                Bucket {
+                    name: Some(
+                        "ai-datasets",
+                    ),
+                    creation_date: Some(
+                        2024-02-05T02:28:04Z,
+                    ),
+                },
+                Bucket {
+                    name: Some(
+                        "cs-monitor",
+                    ),
+                    creation_date: Some(
+                        2023-02-07T10:12:00Z,
+                    ),
+                },
+                Bucket {
+                    name: Some(
+                        "dataroom",
+                    ),
+                    creation_date: Some(
+                        2024-05-16T10:26:42Z,
+                    ),
+                },
+                Bucket {
+                    name: Some(
+                        "hackthon2023",
+                    ),
+                    creation_date: Some(
+                        2023-08-01T01:43:57Z,
+                    ),
+                },
+                Bucket {
+                    name: Some(
+                        "jsw-bucket",
+                    ),
+                    creation_date: Some(
+                        2023-02-23T03:11:46Z,
+                    ),
+                },
+                Bucket {
+                    name: Some(
+                        "jsw-bucket-1",
+                    ),
+                    creation_date: Some(
+                        2023-09-20T09:43:15Z,
+                    ),
+                },
+                Bucket {
+                    name: Some(
+                        "pingdata",
+                    ),
+                    creation_date: Some(
+                        2021-08-27T03:35:08Z,
+                    ),
+                },
+                Bucket {
+                    name: Some(
+                        "robot-test",
+                    ),
+                    creation_date: Some(
+                        2022-04-12T06:41:43Z,
+                    ),
+                },
+                Bucket {
+                    name: Some(
+                        "robots",
+                    ),
+                    creation_date: Some(
+                        2021-11-09T03:03:23Z,
+                    ),
+                },
+                Bucket {
+                    name: Some(
+                        "tsp-picture",
+                    ),
+                    creation_date: Some(
+                        2022-01-10T03:17:10Z,
+                    ),
+                },
+            ],
+        ),
+        owner: Some(
+            Owner {
+                display_name: Some(
+                    "jcloud_edUmprJ",
+                ),
+                id: Some(
+                    "577257366345",
+                ),
+            },
+        ),
+        continuation_token: None,
+        _extended_request_id: None,
+        _request_id: Some(
+            "917104E844BBC1FA",
+        ),
+    },
+)
+objects: Err(
+    DispatchFailure(
+        DispatchFailure {
+            source: ConnectorError {
+                kind: Io,
+                source: hyper::Error(
+                    Connect,
+                    ConnectError(
+                        "dns error",
+                        Custom {
+                            kind: Uncategorized,
+                            error: "failed to lookup address information: Name or service not known",
+                        },
+                    ),
+                ),
+                connection: Unknown,
+            },
+        },
+    ),
+)
+obj: Err(
+    DispatchFailure(
+        DispatchFailure {
+            source: ConnectorError {
+                kind: Io,
+                source: hyper::Error(
+                    Connect,
+                    ConnectError(
+                        "dns error",
+                        Custom {
+                            kind: Uncategorized,
+                            error: "failed to lookup address information: Name or service not known",
+                        },
+                    ),
+                ),
+                connection: Unknown,
+            },
+        },
+    ),
+)
+```
+
+某些api只通过解析DNS而不能通过 /etc/hosts 绑定域名吗

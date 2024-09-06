@@ -5,7 +5,7 @@ use crate::{
         RegexFilter, DOWNLOAD_TMP_FILE_SUBFFIX,
     },
 };
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use aws_sdk_s3::operation::{
     abort_multipart_upload::AbortMultipartUploadOutput,
     complete_multipart_upload::CompleteMultipartUploadOutput, get_object::GetObjectOutput,
@@ -66,7 +66,7 @@ impl OssClient {
         let mut total_lines = 0;
         let path = std::path::Path::new(file_path);
         if let Some(p) = path.parent() {
-            std::fs::create_dir_all(p)?;
+            std::fs::create_dir_all(p).context(format!("{}:{}", file!(), line!()))?;
         };
         //准备写入文件
         let file = OpenOptions::new()
@@ -98,7 +98,8 @@ impl OssClient {
 
         let resp = self
             .list_objects(bucket.clone(), prefix.clone(), batch, None)
-            .await?;
+            .await
+            .context(format!("{}:{}", file!(), line!()))?;
         let mut token = resp.next_token;
 
         if let Some(objects) = resp.object_list {
@@ -108,7 +109,8 @@ impl OssClient {
         while token.is_some() {
             let resp = self
                 .list_objects(bucket.clone(), prefix.clone(), batch, token.clone())
-                .await?;
+                .await
+                .context(format!("{}:{}", file!(), line!()))?;
             if let Some(objects) = resp.object_list {
                 process_objects(objects)?
             }
@@ -407,7 +409,10 @@ impl OssClient {
             obj_list = obj_list.continuation_token(token_str);
         }
 
-        let list = obj_list.send().await?;
+        let list = obj_list
+            .send()
+            .await
+            .context(format!("{}:{}", file!(), line!()))?;
 
         let mut obj_list = None;
 
@@ -1236,8 +1241,6 @@ pub async fn transfer_object_parts_by_range(
 }
 
 pub async fn transfer_parts_batch_by_range(
-    // s_client: Arc<Client>,
-    // t_client: Arc<Client>,
     s_client: Arc<OssClient>,
     t_client: Arc<OssClient>,
     s_bucket: &str,
@@ -1268,8 +1271,8 @@ pub async fn transfer_parts_batch_by_range(
             .upload_id(upload_id)
             .body(s_obj.body)
             .part_number(p.part_num)
-            // .send()
             .send_with_plugins(presigning)
+            // .send()
             .await?;
 
         let completed_part = CompletedPart::builder()
@@ -1309,8 +1312,8 @@ pub async fn upload_file_parts_batch(
             .upload_id(upload_id)
             .body(stream)
             .part_number(p.part_num)
-            // .send()
             .send_with_plugins(presigning)
+            // .send()
             .await?;
 
         let completed_part = CompletedPart::builder()

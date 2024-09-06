@@ -3,25 +3,15 @@ use crate::{
     commons::{
         byte_size_str_to_usize, byte_size_usize_to_str, struct_to_yaml_string, LastModifyFilter,
     },
-    s3::OSSDescription,
     tasks::LogInfo,
 };
-use anyhow::{anyhow, Result};
-use aws_sdk_s3::types::ObjectIdentifier;
+use anyhow::Result;
 use serde::{
     de::{self},
     Deserialize, Deserializer, Serialize, Serializer,
 };
 use snowflake::SnowflakeIdGenerator;
 use std::time::Instant;
-use std::{
-    fs::{self, File},
-    io::{self, BufRead},
-};
-use tokio::{
-    runtime::{self},
-    task::JoinSet,
-};
 
 pub const TRANSFER_OBJECT_LIST_FILE_PREFIX: &'static str = "transfer_objects_list_";
 pub const COMPARE_SOURCE_OBJECT_LIST_FILE_PREFIX: &'static str = "compare_source_list_";
