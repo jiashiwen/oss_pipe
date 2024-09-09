@@ -4,7 +4,10 @@ use crate::{
     s3::{oss_client::OssClient, OSSDescription},
 };
 use anyhow::Result;
-use aws_sdk_s3::types::Object;
+use aws_sdk_s3::{
+    types::{Delete, Object, ObjectIdentifier},
+    waiters::object_exists::ObjectExistsFinalPoll,
+};
 use serde::{Deserialize, Serialize};
 use tokio::{runtime, task::JoinSet};
 
@@ -118,11 +121,13 @@ impl TaskDeleteBucket {
             if let Some(objects) = resp.object_list {
                 let c = client.clone();
                 let b = oss_d.bucket.clone();
+                let keys = process_objects(objects);
+
                 while set.len() >= self.attributes.task_parallelism {
                     set.join_next().await;
                 }
                 set.spawn(async move {
-                    delete_objects(c, &b, objects).await;
+                    delete_objects(c, &b, keys).await;
                 });
             }
 
@@ -144,9 +149,10 @@ impl TaskDeleteBucket {
                     }
                     let c = client.clone();
                     let b = oss_d.bucket.clone();
+                    let keys = process_objects(objects);
 
                     set.spawn(async move {
-                        delete_objects(c, &b, objects).await;
+                        delete_objects(c, &b, keys).await;
                     });
                 }
                 token = resp.next_token;
@@ -161,21 +167,43 @@ impl TaskDeleteBucket {
     }
 }
 
-async fn delete_objects(client: OssClient, bucket: &str, objs: Vec<Object>) {
-    for obj in objs {
-        let key = match obj.key() {
-            Some(k) => k,
+fn process_objects(objects: Vec<Object>) -> Vec<ObjectIdentifier> {
+    let mut keys = vec![];
+    for obj in objects {
+        match obj.key {
+            Some(k) => {
+                let objidentifier = match ObjectIdentifier::builder().key(k).build() {
+                    Ok(o) => o,
+                    Err(e) => {
+                        log::error!("{:?}", e);
+                        continue;
+                    }
+                };
+                keys.push(objidentifier);
+            }
             None => continue,
         };
-        if let Err(e) = client
-            .client
-            .delete_object()
-            .bucket(bucket)
-            .key(key)
-            .send()
-            .await
-        {
-            log::error!("{:?}", e);
-        };
     }
+    keys
+}
+
+async fn delete_objects(client: OssClient, bucket: &str, keys: Vec<ObjectIdentifier>) {
+    let del = match Delete::builder().set_objects(Some(keys)).build() {
+        Ok(d) => d,
+        Err(e) => {
+            log::error!("{:?}", e);
+            return;
+        }
+    };
+
+    if let Err(e) = client
+        .client
+        .delete_objects()
+        .bucket(bucket)
+        .delete(del)
+        .send()
+        .await
+    {
+        log::error!("{:?}", e);
+    };
 }

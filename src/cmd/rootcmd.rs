@@ -465,7 +465,7 @@ fn cmd_match(matches: &ArgMatches) {
             println!("{:?}", OssProvider::JD);
             println!("{:?}", OssProvider::JRSS);
             println!("{:?}", OssProvider::ALI);
-            println!("{:?}", OssProvider::AWS);
+            println!("{:?}", OssProvider::S3);
             println!("{:?}", OssProvider::HUAWEI);
             println!("{:?}", OssProvider::COS);
             println!("{:?}", OssProvider::MINIO);

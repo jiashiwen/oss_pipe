@@ -1014,9 +1014,6 @@ impl OssClient {
 
                 if let Some(f) = last_modify_filter {
                     if let Some(d) = obj.last_modified() {
-                        // if !f.filter(i128::from(d.secs())) {
-                        //     continue;
-                        // }
                         if !f.filter(usize::try_from(d.secs())?) {
                             continue;
                         }

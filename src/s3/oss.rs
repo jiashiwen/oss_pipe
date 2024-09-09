@@ -74,7 +74,7 @@ pub enum OssProvider {
     JD,
     JRSS,
     ALI,
-    AWS,
+    S3,
     HUAWEI,
     COS,
     MINIO,
@@ -109,6 +109,7 @@ pub struct OSSDescription {
     #[serde(default = "OSSDescription::prefix_default")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prefix: Option<String>,
+    #[serde(default = "OSSDescription::s3requeststyle")]
     pub request_style: S3RequestStyle,
 }
 
@@ -130,6 +131,10 @@ impl Default for OSSDescription {
 impl OSSDescription {
     fn prefix_default() -> Option<String> {
         None
+    }
+
+    fn s3requeststyle() -> S3RequestStyle {
+        S3RequestStyle::VirtualHostedStyle
     }
 }
 
@@ -159,7 +164,7 @@ impl OSSDescription {
                 Ok(Box::new(jdclient))
             }
 
-            OssProvider::AWS => {
+            OssProvider::S3 => {
                 let shared_config = SdkConfig::builder()
                     .credentials_provider(SharedCredentialsProvider::new(Credentials::new(
                         self.access_key_id.clone(),
@@ -256,7 +261,7 @@ impl OSSDescription {
                 Ok(oss_client)
             }
 
-            OssProvider::AWS => {
+            OssProvider::S3 => {
                 let shared_config = SdkConfig::builder()
                     .credentials_provider(SharedCredentialsProvider::new(Credentials::new(
                         self.access_key_id.clone(),
