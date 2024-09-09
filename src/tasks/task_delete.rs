@@ -121,8 +121,8 @@ impl TaskDeleteBucket {
             if let Some(objects) = resp.object_list {
                 let c = client.clone();
                 let b = oss_d.bucket.clone();
-                let keys = process_objects(objects);
 
+                let keys = process_objects(objects);
                 while set.len() >= self.attributes.task_parallelism {
                     set.join_next().await;
                 }
@@ -147,10 +147,10 @@ impl TaskDeleteBucket {
                     while set.len() >= self.attributes.task_parallelism {
                         set.join_next().await;
                     }
+
+                    let keys = process_objects(objects);
                     let c = client.clone();
                     let b = oss_d.bucket.clone();
-                    let keys = process_objects(objects);
-
                     set.spawn(async move {
                         delete_objects(c, &b, keys).await;
                     });
