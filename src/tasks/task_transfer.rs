@@ -580,23 +580,44 @@ impl TransferTask {
                         break;
                     }
 
-                    if let Result::Ok(key) = line {
-                        let len = key.bytes().len() + "\n".bytes().len();
-                        list_file_position.offset += len;
-                        list_file_position.line_num += 1;
+                    match line {
+                        Ok(key) => {
+                            let len = key.bytes().len() + "\n".bytes().len();
+                            list_file_position.offset += len;
+                            list_file_position.line_num += 1;
 
-                        if !key.ends_with("/") {
-                            let record = ListedRecord {
-                                key,
-                                offset: list_file_position.offset,
-                                line_num: list_file_position.line_num,
-                            };
+                            if !key.ends_with("/") {
+                                let record = ListedRecord {
+                                    key,
+                                    offset: list_file_position.offset,
+                                    line_num: list_file_position.line_num,
+                                };
 
-                            if regex_filter.filter(&record.key) {
-                                vec_keys.push(record);
+                                if regex_filter.filter(&record.key) {
+                                    vec_keys.push(record);
+                                }
                             }
                         }
-                    };
+                        Err(e) => log::error!("{:?}", e),
+                    }
+
+                    // if let Result::Ok(key) = line {
+                    //     let len = key.bytes().len() + "\n".bytes().len();
+                    //     list_file_position.offset += len;
+                    //     list_file_position.line_num += 1;
+
+                    //     if !key.ends_with("/") {
+                    //         let record = ListedRecord {
+                    //             key,
+                    //             offset: list_file_position.offset,
+                    //             line_num: list_file_position.line_num,
+                    //         };
+
+                    //         if regex_filter.filter(&record.key) {
+                    //             vec_keys.push(record);
+                    //         }
+                    //     }
+                    // };
 
                     if vec_keys
                         .len()
@@ -661,15 +682,25 @@ impl TransferTask {
             drop(lock);
 
             // 记录checkpoint
-            let mut checkpoint: CheckPoint = CheckPoint {
-                task_id: self.task_id.clone(),
-                executed_file: executed_file.clone(),
-                executed_file_position: list_file_position.clone(),
-                file_for_notify: notify,
-                task_stage: TransferStage::Stock,
-                modify_checkpoint_timestamp: 0,
-                task_begin_timestamp: i128::from(now.as_secs()),
+            // let mut checkpoint: CheckPoint = CheckPoint {
+            //     task_id: self.task_id.clone(),
+            //     executed_file: executed_file.clone(),
+            //     executed_file_position: list_file_position.clone(),
+            //     file_for_notify: notify,
+            //     task_stage: TransferStage::Stock,
+            //     modify_checkpoint_timestamp: 0,
+            //     task_begin_timestamp: i128::from(now.as_secs()),
+            // };
+
+            let mut checkpoint = match get_task_checkpoint(check_point_file.as_str()) {
+                Ok(c) => c,
+                Err(e) => {
+                    log::error!("{:?}", e);
+                    return;
+                }
             };
+            checkpoint.file_for_notify = notify;
+            // checkpoint.task_begin_timestamp = i128::from(now.as_secs());
             if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
                 log::error!("{:?}", e);
             };

@@ -1,15 +1,27 @@
-use super::{ObjectStorage, TaskDefaultParameters};
+use super::{
+    gen_file_path, ObjectStorage, TaskDefaultParameters, TaskStatusSaver, TransferStage,
+    OFFSET_PREFIX, TRANSFER_CHECK_POINT_FILE, TRANSFER_OBJECT_LIST_FILE_PREFIX,
+};
 use crate::{
-    commons::LastModifyFilter,
-    s3::{oss_client::OssClient, OSSDescription},
+    checkpoint::{get_task_checkpoint, FileDescription, FilePosition, ListedRecord},
+    commons::{LastModifyFilter, RegexFilter},
+    s3::OSSDescription,
 };
 use anyhow::Result;
-use aws_sdk_s3::{
-    types::{Delete, Object, ObjectIdentifier},
-    waiters::object_exists::ObjectExistsFinalPoll,
-};
+use anyhow::{anyhow, Context};
+use aws_sdk_s3::types::ObjectIdentifier;
+use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
-use tokio::{runtime, task::JoinSet};
+use std::{
+    fs::{self, File},
+    io::{self, BufRead, Seek},
+    sync::{atomic::AtomicBool, Arc},
+    time::{SystemTime, UNIX_EPOCH},
+};
+use tokio::{
+    runtime,
+    task::{self, JoinSet},
+};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DeleteTaskAttributes {
@@ -23,8 +35,8 @@ pub struct DeleteTaskAttributes {
     pub meta_dir: String,
     // #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
     // pub target_exists_skip: bool,
-    // #[serde(default = "TaskDefaultParameters::start_from_checkpoint_default")]
-    // pub start_from_checkpoint: bool,
+    #[serde(default = "TaskDefaultParameters::start_from_checkpoint_default")]
+    pub start_from_checkpoint: bool,
     // #[serde(default = "TaskDefaultParameters::large_file_size_default")]
     // #[serde(serialize_with = "se_usize_to_str")]
     // #[serde(deserialize_with = "de_usize_from_str")]
@@ -56,6 +68,7 @@ impl Default for DeleteTaskAttributes {
             include: TaskDefaultParameters::filter_default(),
             last_modify_filter: TaskDefaultParameters::last_modify_filter_default(),
             meta_dir: TaskDefaultParameters::meta_dir_default(),
+            start_from_checkpoint: TaskDefaultParameters::start_from_checkpoint_default(),
         }
     }
 }
@@ -80,86 +93,231 @@ impl Default for TaskDeleteBucket {
         }
     }
 }
+
+//Todo
+// 增加 start_from_checkpoint arttribute
 impl TaskDeleteBucket {
-    pub fn exec_multi_threads(&self) -> Result<()> {
+    pub fn execute(&self) -> Result<()> {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        let stop_mark = Arc::new(AtomicBool::new(false));
+        let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
+        let regex_filter =
+            RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.exclude)?;
+
+        let check_point_file = gen_file_path(
+            self.attributes.meta_dir.as_str(),
+            TRANSFER_CHECK_POINT_FILE,
+            "",
+        );
+        // let mut list_file: Option<File> = None;
+        let mut list_file_position = FilePosition::default();
+
+        let mut executed_file = FileDescription {
+            path: gen_file_path(
+                self.attributes.meta_dir.as_str(),
+                TRANSFER_OBJECT_LIST_FILE_PREFIX,
+                now.as_secs().to_string().as_str(),
+            ),
+            size: 0,
+            total_lines: 0,
+        };
+
         let rt = runtime::Builder::new_multi_thread()
             .worker_threads(num_cpus::get())
             .enable_all()
             .build()?;
 
-        let mut set: JoinSet<()> = JoinSet::new();
-        let mut imterrupt = false;
+        let oss_d = match self.source.clone() {
+            ObjectStorage::Local(_) => {
+                return Err(anyhow::anyhow!("parse oss description error"));
+            }
+            ObjectStorage::OSS(d) => d,
+        };
 
-        rt.block_on(async {
-            let oss_d = match self.source.clone() {
-                ObjectStorage::Local(_) => {
-                    imterrupt = true;
-                    return;
-                }
-                ObjectStorage::OSS(d) => d,
-            };
+        let client = match oss_d.gen_oss_client() {
+            Ok(c) => c,
+            Err(e) => {
+                log::error!("{:?}", e);
+                return Err(e);
+            }
+        };
 
-            let client = match oss_d.gen_oss_client() {
-                Ok(c) => c,
-                Err(e) => {
-                    log::error!("{:?}", e);
-                    return;
-                }
-            };
+        let c = client.clone();
+        let last_modify_filter = self.attributes.last_modify_filter.clone();
 
-            let resp = client
-                .list_objects(
-                    oss_d.bucket.clone(),
-                    oss_d.prefix.clone(),
-                    self.attributes.objects_per_batch,
-                    None,
-                )
-                .await
-                .unwrap();
-            let mut token = resp.next_token;
-
-            if let Some(objects) = resp.object_list {
-                let c = client.clone();
-                let b = oss_d.bucket.clone();
-
-                let keys = process_objects(objects);
-                while set.len() >= self.attributes.task_parallelism {
-                    set.join_next().await;
-                }
-                set.spawn(async move {
-                    delete_objects(c, &b, keys).await;
+        let objects_list_file = match self.attributes.start_from_checkpoint {
+            true => {
+                let checkpoint = get_task_checkpoint(&check_point_file).context(format!(
+                    "{}:{}",
+                    file!(),
+                    line!()
+                ))?;
+                let f =
+                    checkpoint
+                        .seeked_execute_file()
+                        .context(format!("{}:{}", file!(), line!()))?;
+                list_file_position = checkpoint.executed_file_position;
+                executed_file = checkpoint.executed_file;
+                f
+            }
+            false => {
+                let mut interrupt = false;
+                // 获取删除列表
+                rt.block_on(async {
+                    let _ = fs::remove_dir_all(self.attributes.meta_dir.as_str());
+                    match c
+                        .append_object_list_to_file(
+                            oss_d.bucket.clone(),
+                            oss_d.prefix.clone(),
+                            self.attributes.objects_per_batch,
+                            &executed_file.path,
+                            last_modify_filter,
+                        )
+                        .await
+                    {
+                        Ok(f) => {
+                            log::info!("append file: {:?}", f);
+                            executed_file = f;
+                        }
+                        Err(e) => {
+                            log::error!("{:?}", e);
+                            interrupt = true;
+                        }
+                    };
                 });
-            }
 
-            while token.is_some() {
-                log::info!("{:?}", token);
-                let resp = client
-                    .list_objects(
-                        oss_d.bucket.clone(),
-                        oss_d.prefix.clone(),
-                        self.attributes.objects_per_batch,
-                        None,
-                    )
-                    .await
-                    .unwrap();
-
-                if let Some(objects) = resp.object_list {
-                    while set.len() >= self.attributes.task_parallelism {
-                        set.join_next().await;
-                    }
-
-                    let keys = process_objects(objects);
-                    let c = client.clone();
-                    let b = oss_d.bucket.clone();
-                    set.spawn(async move {
-                        delete_objects(c, &b, keys).await;
-                    });
+                if interrupt {
+                    return Err(anyhow!("get object list error"));
                 }
-                token = resp.next_token;
+
+                let f = File::open(executed_file.path.as_str())?;
+                f
+            }
+        };
+
+        // let objects_list_file = File::open(executed_file.path.as_str())?;
+        let o_d = oss_d.clone();
+
+        // sys_set 用于执行checkpoint、notify等辅助任务
+        let mut sys_set = JoinSet::new();
+        // execut_set 用于执行任务
+        let mut execut_set = JoinSet::new();
+        rt.block_on(async {
+            // 启动checkpoint记录线程
+            let stock_status_saver = TaskStatusSaver {
+                check_point_path: check_point_file.clone(),
+                executed_file: executed_file.clone(),
+                stop_mark: Arc::clone(&stop_mark),
+                list_file_positon_map: Arc::clone(&offset_map),
+                file_for_notify: None,
+                task_stage: TransferStage::Stock,
+                interval: 3,
+            };
+            let task_id = self.task_id.clone();
+            sys_set.spawn(async move {
+                stock_status_saver.snapshot_to_file(task_id).await;
+            });
+
+            let mut vec_record = vec![];
+
+            let lines = io::BufReader::new(objects_list_file).lines();
+            for (num, line) in lines.enumerate() {
+                match line {
+                    Ok(key) => {
+                        let len = key.bytes().len() + "\n".bytes().len();
+                        list_file_position.offset += len;
+                        list_file_position.line_num += 1;
+
+                        if !key.ends_with("/") {
+                            let record = ListedRecord {
+                                key,
+                                offset: list_file_position.offset,
+                                line_num: list_file_position.line_num,
+                            };
+
+                            if regex_filter.filter(&record.key) {
+                                vec_record.push(record);
+                            }
+                        }
+                    }
+                    Err(e) => log::error!("{:?}", e),
+                }
+
+                if vec_record
+                    .len()
+                    .to_string()
+                    .eq(&self.attributes.objects_per_batch.to_string())
+                    || executed_file
+                        .total_lines
+                        .eq(&TryInto::<u64>::try_into(num + 1).unwrap())
+                {
+                    while execut_set.len() >= self.attributes.task_parallelism {
+                        execut_set.join_next().await;
+                    }
+                    let c = match o_d.gen_oss_client() {
+                        Ok(c) => c,
+                        Err(e) => {
+                            log::error!("{:?}", e);
+                            continue;
+                        }
+                    };
+                    let mut keys = vec![];
+
+                    for record in &vec_record {
+                        if let Ok(obj_id) = ObjectIdentifier::builder()
+                            .set_key(Some(record.key.clone()))
+                            .build()
+                        {
+                            keys.push(obj_id);
+                        }
+                    }
+                    let bucket = o_d.bucket.clone();
+                    let o_m = offset_map.clone();
+                    let subffix = &vec_record[0].offset.to_string();
+                    let mut offset_key = OFFSET_PREFIX.to_string();
+                    offset_key.push_str(&subffix);
+                    let f_p = FilePosition {
+                        offset: vec_record[0].offset,
+                        line_num: vec_record[0].line_num,
+                    };
+                    execut_set.spawn(async move {
+                        // 插入文件offset记录
+                        o_m.insert(offset_key.clone(), f_p);
+                        match c.remove_objects(bucket.as_str(), keys).await {
+                            Ok(_) => {
+                                log::info!("remove objects ok")
+                            }
+                            Err(e) => {
+                                log::error!("{:?}", e);
+                            }
+                        }
+                        o_m.remove(&offset_key);
+                    });
+
+                    vec_record.clear();
+                }
             }
 
-            while set.len() > 0 {
-                set.join_next().await;
+            if execut_set.len() > 0 {
+                execut_set.join_next().await;
+            }
+            // 配置停止 offset save 标识为 true
+            stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
+            // let mut checkpoint = match get_task_checkpoint(&check_point_file) {
+            //     Ok(c) => c,
+            //     Err(e) => {
+            //         log::error!("{:?}", e);
+            //         return;
+            //     }
+            // };
+            // checkpoint.modify_checkpoint_timestamp = i128::from(now.as_secs());
+            // if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
+            //     log::error!("{:?}", e);
+            // };
+
+            while sys_set.len() > 0 {
+                task::yield_now().await;
+                sys_set.join_next().await;
             }
         });
 
@@ -167,43 +325,59 @@ impl TaskDeleteBucket {
     }
 }
 
-fn process_objects(objects: Vec<Object>) -> Vec<ObjectIdentifier> {
-    let mut keys = vec![];
-    for obj in objects {
-        match obj.key {
-            Some(k) => {
-                let objidentifier = match ObjectIdentifier::builder().key(k).build() {
-                    Ok(o) => o,
-                    Err(e) => {
-                        log::error!("{:?}", e);
-                        continue;
-                    }
-                };
-                keys.push(objidentifier);
-            }
-            None => continue,
-        };
-    }
-    keys
+#[derive(Debug, Clone)]
+pub struct DeleteBucketExecutor {
+    pub source: OSSDescription,
+    pub stop_mark: Arc<AtomicBool>,
+    pub offset_map: Arc<DashMap<String, FilePosition>>,
+    pub attributes: DeleteTaskAttributes,
+    pub list_file_path: String,
 }
 
-async fn delete_objects(client: OssClient, bucket: &str, keys: Vec<ObjectIdentifier>) {
-    let del = match Delete::builder().set_objects(Some(keys)).build() {
-        Ok(d) => d,
-        Err(e) => {
-            log::error!("{:?}", e);
+impl DeleteBucketExecutor {
+    pub async fn delete_listed_records(&self, records: Vec<ListedRecord>) {
+        let subffix = records[0].offset.to_string();
+        let mut offset_key = OFFSET_PREFIX.to_string();
+        offset_key.push_str(&subffix);
+
+        let source_client = match self.source.gen_oss_client() {
+            Ok(c) => c,
+            Err(e) => {
+                log::error!("{:?}", e);
+                return;
+            }
+        };
+        let s_c = Arc::new(source_client);
+
+        // 插入文件offset记录
+        self.offset_map.insert(
+            offset_key.clone(),
+            FilePosition {
+                offset: records[0].offset,
+                line_num: records[0].line_num,
+            },
+        );
+
+        let mut del_objs = vec![];
+
+        for record in records {
+            match ObjectIdentifier::builder().key(record.key).build() {
+                Ok(k) => del_objs.push(k),
+                Err(e) => {
+                    log::error!("{:?}", e);
+                    continue;
+                }
+            };
+        }
+
+        if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
             return;
         }
-    };
 
-    if let Err(e) = client
-        .client
-        .delete_objects()
-        .bucket(bucket)
-        .delete(del)
-        .send()
-        .await
-    {
-        log::error!("{:?}", e);
-    };
+        if let Err(e) = s_c.remove_objects(&self.source.bucket, del_objs).await {
+            log::error!("{:?}", e);
+        };
+
+        self.offset_map.remove(&offset_key);
+    }
 }

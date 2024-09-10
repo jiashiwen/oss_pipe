@@ -84,7 +84,7 @@ impl Task {
                     "Truncate Task Start:\n{}",
                     struct_to_yaml_string(truncate).unwrap()
                 );
-                match truncate.exec_multi_threads() {
+                match truncate.execute() {
                     Ok(_) => {
                         let log_info = LogInfo {
                             task_id: truncate.task_id.clone(),
