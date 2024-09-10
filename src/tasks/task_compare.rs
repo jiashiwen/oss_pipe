@@ -7,7 +7,7 @@ use super::{
 use crate::{
     checkpoint::{get_task_checkpoint, CheckPoint, FileDescription, FilePosition, ListedRecord},
     commons::{
-        json_to_struct, promote_processbar, quantify_processbar, LastModifyFilter, RegexFilter,
+        json_to_struct, prompt_processbar, quantify_processbar, LastModifyFilter, RegexFilter,
     },
 };
 use anyhow::anyhow;
@@ -343,7 +343,7 @@ impl CompareTask {
         let mut source_list_file = None;
         let mut source_list_file_position = FilePosition::default();
 
-        let pd = promote_processbar("Generating object list ...");
+        let pd = prompt_processbar("Generating object list ...");
         rt.block_on(async {
             if self.attributes.start_from_checkpoint {
                 // 变更object_list_file_name文件名

@@ -10,7 +10,7 @@ use crate::checkpoint::RecordDescription;
 use crate::commons::{json_to_struct, LastModifyFilter};
 use crate::{
     checkpoint::FileDescription,
-    commons::{promote_processbar, RegexFilter},
+    commons::{prompt_processbar, RegexFilter},
     s3::OSSDescription,
     tasks::NOTIFY_FILE_PREFIX,
 };
@@ -309,7 +309,7 @@ impl TransferTask {
             .max_io_events_per_tick(self.attributes.task_parallelism)
             .build()?;
 
-        let pd = promote_processbar("Generating object list ...");
+        // let pd = prompt_processbar("Generating object list ...");
         // 生成执行文件
         rt.block_on(async {
             if self.attributes.start_from_checkpoint {
@@ -395,6 +395,7 @@ impl TransferTask {
                     }
                 }
             } else {
+                let pd = prompt_processbar("Generating object list ...");
                 // 清理 meta 目录
                 // 重新生成object list file
                 let _ = fs::remove_dir_all(self.attributes.meta_dir.as_str());
@@ -415,6 +416,7 @@ impl TransferTask {
                         return;
                     }
                 }
+                pd.finish_with_message("object list generated");
             }
         });
 
@@ -422,7 +424,7 @@ impl TransferTask {
             return Err(anyhow!("get object list error"));
         }
 
-        pd.finish_with_message("object list generated");
+        // pd.finish_with_message("object list generated");
 
         // sys_set 用于执行checkpoint、notify等辅助任务
         let mut sys_set = JoinSet::new();
@@ -601,24 +603,6 @@ impl TransferTask {
                         }
                         Err(e) => log::error!("{:?}", e),
                     }
-
-                    // if let Result::Ok(key) = line {
-                    //     let len = key.bytes().len() + "\n".bytes().len();
-                    //     list_file_position.offset += len;
-                    //     list_file_position.line_num += 1;
-
-                    //     if !key.ends_with("/") {
-                    //         let record = ListedRecord {
-                    //             key,
-                    //             offset: list_file_position.offset,
-                    //             line_num: list_file_position.line_num,
-                    //         };
-
-                    //         if regex_filter.filter(&record.key) {
-                    //             vec_keys.push(record);
-                    //         }
-                    //     }
-                    // };
 
                     if vec_keys
                         .len()

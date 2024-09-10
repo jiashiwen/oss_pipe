@@ -8,7 +8,7 @@ use crate::{
         get_task_checkpoint, FileDescription, FilePosition, ListedRecord, Opt, RecordDescription,
     },
     commons::{
-        json_to_struct, merge_file, promote_processbar, read_lines, struct_to_json_string,
+        json_to_struct, merge_file, prompt_processbar, read_lines, struct_to_json_string,
         LastModifyFilter, RegexFilter,
     },
     s3::{
@@ -480,7 +480,7 @@ impl TransferTaskActions for TransferOss2Oss {
             };
 
         let mut sleep_time = 5;
-        let pd = promote_processbar("executing increment:waiting for data...");
+        let pd = prompt_processbar("executing increment:waiting for data...");
         let mut finished_total_objects = 0;
 
         while !stop_mark.load(std::sync::atomic::Ordering::SeqCst)

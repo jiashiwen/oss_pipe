@@ -63,7 +63,7 @@ pub async fn quantify_processbar(
     pb.finish_with_message("Finish");
 }
 
-pub fn promote_processbar(message: &str) -> ProgressBar {
+pub fn prompt_processbar(message: &str) -> ProgressBar {
     let pd = ProgressBar::new_spinner();
     pd.enable_steady_tick(Duration::from_millis(200));
     pd.set_style(
