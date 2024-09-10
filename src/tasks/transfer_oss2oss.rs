@@ -491,8 +491,6 @@ impl TransferTaskActions for TransferOss2Oss {
         {
             let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
             let modified = match self
-                // .changed_object_capture_based_target(checkpoint.task_begin_timestamp)
-                // .await
                 .changed_object_capture_based_target(
                     usize::try_from(checkpoint.task_begin_timestamp).unwrap(),
                 )

@@ -312,22 +312,25 @@ impl TaskDeleteBucket {
             }
             // 配置停止 offset save 标识为 true
             stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
-            // let mut checkpoint = match get_task_checkpoint(&check_point_file) {
-            //     Ok(c) => c,
-            //     Err(e) => {
-            //         log::error!("{:?}", e);
-            //         return;
-            //     }
-            // };
-            // checkpoint.modify_checkpoint_timestamp = i128::from(now.as_secs());
-            // if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
-            //     log::error!("{:?}", e);
-            // };
 
             while sys_set.len() > 0 {
                 task::yield_now().await;
                 sys_set.join_next().await;
             }
+
+            let mut checkpoint = match get_task_checkpoint(&check_point_file) {
+                Ok(c) => c,
+                Err(e) => {
+                    log::error!("{:?}", e);
+                    return;
+                }
+            };
+            checkpoint.executed_file_position.line_num = checkpoint.executed_file.total_lines;
+            checkpoint.executed_file_position.offset =
+                TryInto::<usize>::try_into(checkpoint.executed_file.size).unwrap();
+            if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
+                log::error!("{:?}", e);
+            };
         });
 
         Ok(())
