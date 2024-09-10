@@ -222,6 +222,9 @@ impl TaskDeleteBucket {
 
             let lines = io::BufReader::new(objects_list_file).lines();
             for (num, line) in lines.enumerate() {
+                if stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+                    return;
+                }
                 match line {
                     Ok(key) => {
                         let len = key.bytes().len() + "\n".bytes().len();
@@ -273,6 +276,7 @@ impl TaskDeleteBucket {
                     }
                     let bucket = o_d.bucket.clone();
                     let o_m = offset_map.clone();
+                    let s_m = stop_mark.clone();
                     let subffix = &vec_record[0].offset.to_string();
                     let mut offset_key = OFFSET_PREFIX.to_string();
                     offset_key.push_str(&subffix);
@@ -280,7 +284,11 @@ impl TaskDeleteBucket {
                         offset: vec_record[0].offset,
                         line_num: vec_record[0].line_num,
                     };
+
                     execut_set.spawn(async move {
+                        if s_m.load(std::sync::atomic::Ordering::SeqCst) {
+                            return;
+                        }
                         // 插入文件offset记录
                         o_m.insert(offset_key.clone(), f_p);
                         match c.remove_objects(bucket.as_str(), keys).await {
@@ -289,6 +297,7 @@ impl TaskDeleteBucket {
                             }
                             Err(e) => {
                                 log::error!("{:?}", e);
+                                s_m.store(true, std::sync::atomic::Ordering::SeqCst);
                             }
                         }
                         o_m.remove(&offset_key);

@@ -1,5 +1,5 @@
 use super::{TransferStage, OFFSET_PREFIX};
-use crate::checkpoint::{CheckPoint, FileDescription, FilePosition};
+use crate::checkpoint::{get_task_checkpoint, CheckPoint, FileDescription, FilePosition};
 use dashmap::DashMap;
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use std::{
@@ -23,28 +23,50 @@ pub struct TaskStatusSaver {
 impl TaskStatusSaver {
     pub async fn snapshot_to_file(&self, task_id: String) {
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-        let mut checkpoint = CheckPoint {
-            task_id,
-            executed_file: self.executed_file.clone(),
-            executed_file_position: FilePosition {
-                offset: 0,
-                line_num: 0,
-            },
-            file_for_notify: self.file_for_notify.clone(),
-            task_stage: self.task_stage,
-            modify_checkpoint_timestamp: 0,
-            task_begin_timestamp: i128::from(now.as_secs()),
+        let mut checkpoint = match get_task_checkpoint(&self.check_point_path) {
+            Ok(c) => c,
+            Err(_) => {
+                let mut checkpoint = CheckPoint {
+                    task_id,
+                    executed_file: self.executed_file.clone(),
+                    executed_file_position: FilePosition {
+                        offset: 0,
+                        line_num: 0,
+                    },
+                    file_for_notify: self.file_for_notify.clone(),
+                    task_stage: self.task_stage,
+                    modify_checkpoint_timestamp: 0,
+                    task_begin_timestamp: i128::from(now.as_secs()),
+                };
+                let _ = checkpoint.save_to(&self.check_point_path);
+                checkpoint
+            }
         };
-        let _ = checkpoint.save_to(&self.check_point_path);
+        // let mut checkpoint = CheckPoint {
+        //     task_id,
+        //     executed_file: self.executed_file.clone(),
+        //     executed_file_position: FilePosition {
+        //         offset: 0,
+        //         line_num: 0,
+        //     },
+        //     file_for_notify: self.file_for_notify.clone(),
+        //     task_stage: self.task_stage,
+        //     modify_checkpoint_timestamp: 0,
+        //     task_begin_timestamp: i128::from(now.as_secs()),
+        // };
+        // let _ = checkpoint.save_to(&self.check_point_path);
 
         while !self.stop_mark.load(std::sync::atomic::Ordering::Relaxed) {
-            let mut file_position = FilePosition {
-                offset: 0,
-                line_num: 0,
-            };
+            // let mut file_position = FilePosition {
+            //     offset: 0,
+            //     line_num: 0,
+            // };
+
+            let mut file_position = checkpoint.executed_file_position;
 
             // 获取最小offset的FilePosition
-            self.list_file_positon_map
+            let offset = self
+                .list_file_positon_map
                 .iter()
                 .filter(|item| item.key().starts_with(OFFSET_PREFIX))
                 .map(|m| {
@@ -57,7 +79,7 @@ impl TaskStatusSaver {
             checkpoint.executed_file_position = file_position.clone();
 
             if let Err(e) = checkpoint.save_to(&self.check_point_path) {
-                log::error!("{},{}", e, self.check_point_path);
+                log::error!("{:?},{:?}", e, self.check_point_path);
             } else {
                 log::debug!("checkpoint:\n{:?}", checkpoint);
             };
