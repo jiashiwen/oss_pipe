@@ -1,4 +1,4 @@
-use crate::checkpoint::FilePosition;
+use crate::checkpoint::{get_task_checkpoint, FilePosition};
 use dashmap::DashMap;
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use std::{
@@ -14,6 +14,7 @@ pub async fn quantify_processbar(
     total: u64,
     stop_mark: Arc<AtomicBool>,
     status_map: Arc<DashMap<String, FilePosition>>,
+    checkpoint_file_path: &str,
     key_prefix: &str,
 ) {
     let pb = ProgressBar::new(total);
@@ -28,20 +29,33 @@ pub async fn quantify_processbar(
     pb.set_style(progress_style);
 
     while !stop_mark.load(std::sync::atomic::Ordering::Relaxed) {
-        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
-        let line_num = status_map
-            .iter()
-            .filter(|f| f.key().starts_with(key_prefix))
-            .map(|m| m.line_num)
-            .min();
-        match line_num {
-            Some(current) => {
-                let new = min(current, total);
-                pb.set_position(new);
-                log::info!("total:{},executed:{}", total, new)
+        tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+        let checkpoint = match get_task_checkpoint(checkpoint_file_path) {
+            Ok(c) => c,
+            Err(e) => {
+                log::error!("{:?}", e);
+                continue;
             }
-            None => {}
-        }
+        };
+        pb.set_position(checkpoint.executed_file_position.line_num);
+        log::info!(
+            "total:{},executed:{}",
+            total,
+            checkpoint.executed_file_position.line_num
+        );
+        // let line_num = status_map
+        //     .iter()
+        //     .filter(|f| f.key().starts_with(key_prefix))
+        //     .map(|m| m.line_num)
+        //     .min();
+        // match line_num {
+        //     Some(current) => {
+        //         let new = min(current, total);
+        //         pb.set_position(new);
+        //         log::info!("total:{},executed:{}", total, new)
+        //     }
+        //     None => {}
+        // }
         yield_now().await;
     }
     log::info!("total:{},executed:{}", total, total);

@@ -35,7 +35,7 @@ impl TaskStatusSaver {
                     },
                     file_for_notify: self.file_for_notify.clone(),
                     task_stage: self.task_stage,
-                    modify_checkpoint_timestamp: 0,
+                    modify_checkpoint_timestamp: i128::from(now.as_secs()),
                     task_begin_timestamp: i128::from(now.as_secs()),
                 };
                 let _ = checkpoint.save_to(&self.check_point_path);

@@ -563,9 +563,10 @@ impl TransferTask {
                 let map = Arc::clone(&offset_map);
                 let bar_stop_mark = Arc::clone(&snapshot_stop_mark);
                 let total = executed_file.total_lines;
+                let cp = check_point_file.clone();
                 sys_set.spawn(async move {
                     // Todo 调整进度条
-                    quantify_processbar(total, bar_stop_mark, map, OFFSET_PREFIX).await;
+                    quantify_processbar(total, bar_stop_mark, map, &cp, OFFSET_PREFIX).await;
                 });
                 let task_stock = self.gen_transfer_actions();
                 let mut vec_keys: Vec<ListedRecord> = vec![];
