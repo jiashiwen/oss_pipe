@@ -198,18 +198,27 @@ impl OssClient {
         multi_part_chunk_per_batch: usize,
         multi_part_parallelism: usize,
     ) -> Result<()> {
-        let file = File::open(local_file)?;
-        let file_meta = file.metadata()?;
-        let file_max_size_u64 = TryInto::<u64>::try_into(splited_file_size)?;
+        let file = File::open(local_file).context(format!("{}:{}", file!(), line!()))?;
+        let file_meta = file
+            .metadata()
+            .context(format!("{}:{}", file!(), line!()))?;
+        let file_max_size_u64 = TryInto::<u64>::try_into(splited_file_size).context(format!(
+            "{}:{}",
+            file!(),
+            line!()
+        ))?;
         if file_meta.len().le(&file_max_size_u64) {
-            let body = ByteStream::from_path(Path::new(&local_file)).await?;
+            let body = ByteStream::from_path(Path::new(&local_file))
+                .await
+                .context(format!("{}:{}", file!(), line!()))?;
             self.client
                 .put_object()
                 .bucket(bucket)
                 .key(key)
                 .body(body)
                 .send()
-                .await?;
+                .await
+                .context(format!("{}:{}", file!(), line!()))?;
             return Ok(());
         }
 
@@ -227,7 +236,6 @@ impl OssClient {
 
     pub async fn download_object_by_range(
         &self,
-        // s_client: Arc<Client>,
         s_bucket: &str,
         s_key: &str,
         file_path: &str,
@@ -572,8 +580,10 @@ impl OssClient {
         multi_part_chunk_per_batch: usize,
         multi_part_parallelism: usize,
     ) -> Result<()> {
-        let multipart_upload_res: CreateMultipartUploadOutput =
-            self.create_multipart_upload(bucket, key, None).await?;
+        let multipart_upload_res: CreateMultipartUploadOutput = self
+            .create_multipart_upload(bucket, key, None)
+            .await
+            .context(format!("{}:{}", file!(), line!()))?;
         let upload_id = match multipart_upload_res.upload_id() {
             Some(id) => id,
             None => {
@@ -592,11 +602,13 @@ impl OssClient {
                 multi_part_chunk_per_batch,
                 multi_part_parallelism,
             )
-            .await?;
+            .await
+            .context(format!("{}:{}", file!(), line!()))?;
 
         // 完成上传文件合并
         self.complete_multipart_upload(bucket, key, upload_id, completed_parts)
-            .await?;
+            .await
+            .context(format!("{}:{}", file!(), line!()))?;
         Ok(())
     }
 
@@ -1063,9 +1075,6 @@ impl OssClient {
 
                     if let Some(f) = last_modify_filter {
                         if let Some(d) = obj.last_modified() {
-                            // if !f.filter(i128::from(d.secs())) {
-                            //     continue;
-                            // }
                             if !f.filter(usize::try_from(d.secs())?) {
                                 continue;
                             }

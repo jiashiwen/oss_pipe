@@ -156,8 +156,8 @@ pub struct CompareTaskAttributes {
     pub include: Option<Vec<String>>,
     #[serde(default = "TaskDefaultParameters::exprirs_diff_scope_default")]
     pub exprirs_diff_scope: i64,
-    #[serde(default = "TaskDefaultParameters::continuous_default")]
-    pub continuous: bool,
+    // #[serde(default = "TaskDefaultParameters::continuous_default")]
+    // pub continuous: bool,
     #[serde(default = "TaskDefaultParameters::last_modify_filter_default")]
     pub last_modify_filter: Option<LastModifyFilter>,
 }
@@ -174,7 +174,7 @@ impl Default for CompareTaskAttributes {
             multi_part_chunk: TaskDefaultParameters::multi_part_chunk_size_default(),
             exclude: TaskDefaultParameters::filter_default(),
             include: TaskDefaultParameters::filter_default(),
-            continuous: TaskDefaultParameters::continuous_default(),
+            // continuous: TaskDefaultParameters::continuous_default(),
             last_modify_filter: TaskDefaultParameters::last_modify_filter_default(),
             exprirs_diff_scope: TaskDefaultParameters::exprirs_diff_scope_default(),
         }
@@ -528,7 +528,7 @@ impl CompareTask {
 
         // Todo
         // 持续同步逻辑，循环比较不相等记录，并指定校验次数
-        if self.attributes.continuous {}
+        // if self.attributes.continuous {}
 
         for entry in WalkDir::new(&self.attributes.meta_dir)
             .into_iter()

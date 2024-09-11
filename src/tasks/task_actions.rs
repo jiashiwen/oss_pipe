@@ -1,7 +1,7 @@
 use super::IncrementAssistant;
 use crate::{
     checkpoint::{FileDescription, FilePosition, ListedRecord, RecordDescription},
-    commons::{LastModifyFilter, RegexFilter},
+    commons::LastModifyFilter,
 };
 use anyhow::Result;
 use async_trait::async_trait;

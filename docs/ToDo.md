@@ -157,10 +157,13 @@ $$s_t^3$$
 
 问题是由于 request style 引发，变更为path style 问题解决
 
-```rust
-    let s3_config_builder = aws_sdk_s3::config::Builder::from(&config).force_path_style(true);
-    let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
+The problem is caused by request style, change to path style to solve the problem
 
+```rust
+let s3_config_builder = aws_sdk_s3::config::Builder::from(&config).force_path_style(true);
+let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
 ```
+
+thanks!
 
 

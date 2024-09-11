@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     checkpoint::{get_task_checkpoint, FileDescription, FilePosition, ListedRecord},
-    commons::{LastModifyFilter, RegexFilter},
+    commons::{prompt_processbar, LastModifyFilter, RegexFilter},
     s3::OSSDescription,
 };
 use anyhow::Result;
@@ -164,6 +164,7 @@ impl TaskDeleteBucket {
                 let mut interrupt = false;
                 // 获取删除列表
                 rt.block_on(async {
+                    let pd = prompt_processbar("Generating object list ...");
                     let _ = fs::remove_dir_all(self.attributes.meta_dir.as_str());
                     match c
                         .append_object_list_to_file(
@@ -184,6 +185,7 @@ impl TaskDeleteBucket {
                             interrupt = true;
                         }
                     };
+                    pd.finish_with_message("object list generated");
                 });
 
                 if interrupt {

@@ -782,7 +782,6 @@ impl TransferLocal2OssExecuter {
 
         // ToDo
         // 新增阐述chunk_batch 定义分片上传每批上传分片的数量
-
         target_oss
             .upload_local_file_paralle(
                 source_file,
