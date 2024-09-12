@@ -275,6 +275,7 @@ impl OSSDescription {
                     .endpoint_url(self.endpoint.clone())
                     .region(Region::new(self.region.clone()))
                     .behavior_version(BehaviorVersion::latest())
+                    .stalled_stream_protection(StalledStreamProtectionConfig::disabled())
                     .build();
 
                 let mut s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
@@ -298,6 +299,7 @@ impl OSSDescription {
                     .endpoint_url(self.endpoint.clone())
                     .region(Region::new(self.region.clone()))
                     .behavior_version(BehaviorVersion::latest())
+                    .stalled_stream_protection(StalledStreamProtectionConfig::disabled())
                     .build();
                 let mut s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
                 if let S3RequestStyle::PathStyle = self.request_style {
@@ -321,6 +323,7 @@ impl OSSDescription {
                     .endpoint_url(self.endpoint.clone())
                     .region(Region::new(self.region.clone()))
                     .behavior_version(BehaviorVersion::latest())
+                    .stalled_stream_protection(StalledStreamProtectionConfig::disabled())
                     .build();
 
                 let mut s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
@@ -345,6 +348,7 @@ impl OSSDescription {
                     .endpoint_url(self.endpoint.clone())
                     .region(Region::new(self.region.clone()))
                     .behavior_version(BehaviorVersion::latest())
+                    .stalled_stream_protection(StalledStreamProtectionConfig::disabled())
                     .build();
 
                 let mut s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
