@@ -690,7 +690,7 @@ impl TransferLocal2OssExecuter {
             if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
                 return Ok(());
             }
-            // 文件位置提前记录，避免漏记
+            // 文件位置提前记录
             self.offset_map.insert(
                 offset_key.clone(),
                 FilePosition {
