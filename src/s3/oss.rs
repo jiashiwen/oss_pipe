@@ -3,7 +3,7 @@ use anyhow::{Ok, Result};
 use async_trait::async_trait;
 use aws_config::{BehaviorVersion, SdkConfig};
 use aws_credential_types::{provider::SharedCredentialsProvider, Credentials};
-use aws_sdk_s3::config::Region;
+use aws_sdk_s3::config::{Region, StalledStreamProtectionConfig};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
@@ -204,6 +204,7 @@ impl OSSDescription {
                     .endpoint_url(self.endpoint.clone())
                     .region(Region::new(self.region.clone()))
                     .behavior_version(BehaviorVersion::latest())
+                    .stalled_stream_protection(StalledStreamProtectionConfig::disabled())
                     .build();
 
                 let mut s3_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
@@ -252,6 +253,7 @@ impl OSSDescription {
                     .endpoint_url(self.endpoint.clone())
                     .region(Region::new(self.region.clone()))
                     .behavior_version(BehaviorVersion::latest())
+                    .stalled_stream_protection(StalledStreamProtectionConfig::disabled())
                     .build();
 
                 let s3_config_builder =
