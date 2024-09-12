@@ -57,27 +57,46 @@ impl TaskStatusSaver {
         // let _ = checkpoint.save_to(&self.check_point_path);
 
         while !self.stop_mark.load(std::sync::atomic::Ordering::Relaxed) {
-            // let mut file_position = FilePosition {
-            //     offset: 0,
-            //     line_num: 0,
-            // };
-
             let mut file_position = checkpoint.executed_file_position;
 
             // 获取最小offset的FilePosition
-            let offset = self
-                .list_file_positon_map
-                .iter()
-                .filter(|item| item.key().starts_with(OFFSET_PREFIX))
-                .map(|m| {
-                    file_position = m.clone();
-                    m.offset
-                })
-                .min();
+            // let offset = self
+            //     .list_file_positon_map
+            //     .iter()
+            //     .filter(|item| item.key().starts_with(OFFSET_PREFIX))
+            //     .map(|m| {
+            //         file_position = m.clone();
+            //         m.offset
+            //     })
+            //     .min();
+
+            // if offset.is_some() {
+            //     self.list_file_positon_map.shrink_to_fit();
+            //     checkpoint.executed_file_position = file_position.clone();
+
+            //     if let Err(e) = checkpoint.save_to(&self.check_point_path) {
+            //         log::error!("{:?},{:?}", e, self.check_point_path);
+            //     } else {
+            //         log::debug!("checkpoint:\n{:?}", checkpoint);
+            //     };
+            // }
+
+            let mut idx = 0;
+            for item in self.list_file_positon_map.iter() {
+                if item.key().starts_with(OFFSET_PREFIX) {
+                    if idx.eq(&0) {
+                        file_position = item.value().clone();
+                        idx += 1;
+                    } else {
+                        if file_position.offset > item.value().offset {
+                            file_position = item.value().clone();
+                        }
+                    }
+                }
+            }
 
             self.list_file_positon_map.shrink_to_fit();
             checkpoint.executed_file_position = file_position.clone();
-
             if let Err(e) = checkpoint.save_to(&self.check_point_path) {
                 log::error!("{:?},{:?}", e, self.check_point_path);
             } else {

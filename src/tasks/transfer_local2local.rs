@@ -669,6 +669,7 @@ impl TransferLocal2LocalExecutor {
                 log::error!("{:?}", e);
             };
         }
+
         self.offset_map.remove(&offset_key);
         let _ = error_file.flush();
         match error_file.metadata() {

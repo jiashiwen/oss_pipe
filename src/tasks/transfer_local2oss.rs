@@ -666,8 +666,8 @@ impl TransferLocal2OssExecuter {
         records: Vec<ListedRecord>,
         executing_transfers: Arc<RwLock<usize>>,
     ) -> Result<()> {
-        let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
+        let subffix = records[0].offset.to_string();
         offset_key.push_str(&subffix);
 
         // Todo
@@ -678,11 +678,18 @@ impl TransferLocal2OssExecuter {
             &records[0].offset.to_string(),
         );
 
-        let mut error_file = OpenOptions::new()
+        let mut error_file = match OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
-            .open(error_file_name.as_str())?;
+            .open(error_file_name.as_str())
+        {
+            Ok(ef) => ef,
+            Err(e) => {
+                log::error!("{:?}", e);
+                return Err(anyhow!(e));
+            }
+        };
 
         let target_oss_client = self.target.gen_oss_client()?;
 
@@ -690,14 +697,7 @@ impl TransferLocal2OssExecuter {
             if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
                 return Ok(());
             }
-            // 文件位置提前记录
-            self.offset_map.insert(
-                offset_key.clone(),
-                FilePosition {
-                    offset: record.offset,
-                    line_num: record.line_num,
-                },
-            );
+
             let source_file_path = gen_file_path(self.source.as_str(), &record.key.as_str(), "");
             let mut target_key = "".to_string();
             if let Some(s) = self.target.prefix.clone() {
@@ -730,9 +730,18 @@ impl TransferLocal2OssExecuter {
                 );
                 log::error!("{:?}", e);
             }
-            self.offset_map.remove(&offset_key);
+
+            // 文件位置记录后置，避免中断时已记录而传输未完成，续传时丢记录
+            self.offset_map.insert(
+                offset_key.clone(),
+                FilePosition {
+                    offset: record.offset,
+                    line_num: record.line_num,
+                },
+            );
         }
 
+        self.offset_map.remove(&offset_key);
         let _ = error_file.flush();
         match error_file.metadata() {
             Ok(meta) => {

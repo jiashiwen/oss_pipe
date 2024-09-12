@@ -91,6 +91,9 @@ path = "examples/blob_sample.rs"
 [[example]]
 name = "use_hosts"
 path = "examples/use_hosts.rs"
+[[example]]
+name = "read_line"
+path = "examples/read_line.rs"
 
 
 [profile.release]

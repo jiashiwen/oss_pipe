@@ -125,10 +125,8 @@ impl Local2LocalRecordsComparator {
                     line_num: record.line_num,
                 },
             );
-            let mut s_key = self.source.clone();
-            s_key.push_str(&record.key);
-            let mut t_key = self.target.clone();
-            t_key.push_str(&record.key);
+            let s_key = gen_file_path(self.source.as_str(), record.key.as_str(), "");
+            let t_key = gen_file_path(self.target.as_str(), record.key.as_str(), "");
 
             match self.compare_listed_record(&record, &s_key, &t_key).await {
                 Ok(r) => {

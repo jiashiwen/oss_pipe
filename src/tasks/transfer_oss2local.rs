@@ -615,6 +615,7 @@ impl TransferOss2LocalRecordsExecutor {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
+
         let error_file_name = gen_file_path(
             &self.attributes.meta_dir,
             TRANSFER_ERROR_RECORD_PREFIX,

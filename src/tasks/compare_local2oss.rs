@@ -135,8 +135,10 @@ impl Local2OssRecordsComparator {
                 },
             );
 
-            let mut s_key = self.source.clone();
-            s_key.push_str(&record.key);
+            // let mut s_key = self.source.clone();
+            // s_key.push_str(&record.key);
+
+            let s_key = gen_file_path(self.source.as_str(), record.key.as_str(), "");
 
             let mut target_key = match self.target.prefix.clone() {
                 Some(s) => s,
@@ -222,10 +224,6 @@ impl Local2OssRecordsComparator {
                     true => {}
                     false => return Err(service_err.into()),
                 }
-                // match service_err.kind {
-                //     GetObjectErrorKind::NoSuchKey(_) => {}
-                //     _ => return Err(service_err.into()),
-                // }
             }
         };
 
@@ -273,7 +271,6 @@ impl Local2OssRecordsComparator {
     ) -> Result<Option<ObjectDiff>> {
         let s_file = File::open(source_key)?;
         let len_s = i128::from(s_file.metadata()?.len());
-        // let len_t = i128::from(t_obj.content_length());
         let len_t = match t_obj.content_length() {
             Some(l) => i128::from(l),
             None => return Err(anyhow!("content length is None")),

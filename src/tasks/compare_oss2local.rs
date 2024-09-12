@@ -143,8 +143,7 @@ impl Oss2LocalRecordsComparator {
                 },
             );
 
-            let mut t_key = self.target.clone();
-            t_key.push_str(&record.key);
+            let t_key = gen_file_path(self.target.as_str(), record.key.as_str(), "");
 
             match self.compare_listed_record(&record, &c_s, &t_key).await {
                 Ok(r) => {
@@ -215,10 +214,6 @@ impl Oss2LocalRecordsComparator {
                     true => {}
                     false => return Err(service_err.into()),
                 }
-                // match service_err.kind {
-                //     GetObjectErrorKind::NoSuchKey(_) => {}
-                //     _ => return Err(service_err.into()),
-                // }
             }
         };
         let t_path = Path::new(target_key);
