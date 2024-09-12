@@ -631,14 +631,6 @@ impl TransferLocal2LocalExecutor {
             if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
                 return Ok(());
             }
-            // 记录文件执行位置
-            self.offset_map.insert(
-                offset_key.clone(),
-                FilePosition {
-                    offset: record.offset,
-                    line_num: record.line_num,
-                },
-            );
 
             let s_file_name = gen_file_path(self.source.as_str(), record.key.as_str(), "");
             let t_file_name = gen_file_path(self.target.as_str(), record.key.as_str(), "");
@@ -668,6 +660,15 @@ impl TransferLocal2LocalExecutor {
                 );
                 log::error!("{:?}", e);
             };
+
+            // 文件位置记录后置，避免中断时已记录而传输未完成，续传时丢记录
+            self.offset_map.insert(
+                offset_key.clone(),
+                FilePosition {
+                    offset: record.offset,
+                    line_num: record.line_num,
+                },
+            );
         }
 
         self.offset_map.remove(&offset_key);

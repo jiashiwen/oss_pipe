@@ -713,15 +713,6 @@ impl TransferOss2OssRecordsExecutor {
                 return Ok(());
             }
 
-            // 插入文件offset记录
-            self.offset_map.insert(
-                offset_key.clone(),
-                FilePosition {
-                    offset: record.offset,
-                    line_num: record.line_num,
-                },
-            );
-
             let mut target_key = match self.target.prefix.clone() {
                 Some(s) => s,
                 None => "".to_string(),
@@ -753,6 +744,15 @@ impl TransferOss2OssRecordsExecutor {
                 );
                 log::error!("{:?}", e);
             }
+
+            // 文件位置记录后置，避免中断时已记录而传输未完成，续传时丢记录
+            self.offset_map.insert(
+                offset_key.clone(),
+                FilePosition {
+                    offset: record.offset,
+                    line_num: record.line_num,
+                },
+            );
         }
 
         self.offset_map.remove(&offset_key);

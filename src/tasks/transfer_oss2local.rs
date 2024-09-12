@@ -633,14 +633,6 @@ impl TransferOss2LocalRecordsExecutor {
             if stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
                 return Ok(());
             }
-            // 文件位置提前记录避免漏记
-            self.offset_map.insert(
-                offset_key.clone(),
-                FilePosition {
-                    offset: record.offset,
-                    line_num: record.line_num,
-                },
-            );
 
             let t_file_name = gen_file_path(self.target.as_str(), &record.key.as_str(), "");
             let e_u = Arc::clone(&executing_transfers);
@@ -668,6 +660,15 @@ impl TransferOss2LocalRecordsExecutor {
                 );
                 log::error!("{:?}", e);
             }
+
+            // 文件位置记录后置，避免中断时已记录而传输未完成，续传时丢记录
+            self.offset_map.insert(
+                offset_key.clone(),
+                FilePosition {
+                    offset: record.offset,
+                    line_num: record.line_num,
+                },
+            );
         }
 
         self.offset_map.remove(&offset_key);
