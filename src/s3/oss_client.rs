@@ -93,6 +93,7 @@ impl OssClient {
                 }
             }
             let _ = line_writer.flush()?;
+            log::info!("get objects list ok");
             Ok(())
         };
 
