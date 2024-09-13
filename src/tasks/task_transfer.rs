@@ -173,7 +173,8 @@ impl Default for TransferTask {
 }
 
 impl TransferTask {
-    pub fn gen_transfer_actions(&self) -> Box<dyn TransferTaskActions + Send + Sync> {
+    // pub fn gen_transfer_actions(&self) -> Box<dyn TransferTaskActions + Send + Sync> {
+    pub fn gen_transfer_actions(&self) -> Arc<dyn TransferTaskActions + Send + Sync> {
         match &self.source {
             ObjectStorage::Local(path_s) => match &self.target {
                 ObjectStorage::Local(path_t) => {
@@ -184,7 +185,8 @@ impl TransferTask {
                         target: path_t.to_string(),
                         attributes: self.attributes.clone(),
                     };
-                    Box::new(t)
+                    // Box::new(t)
+                    Arc::new(t)
                 }
                 ObjectStorage::OSS(oss_t) => {
                     let t = TransferLocal2Oss {
@@ -194,7 +196,8 @@ impl TransferTask {
                         target: oss_t.clone(),
                         attributes: self.attributes.clone(),
                     };
-                    Box::new(t)
+                    // Box::new(t)
+                    Arc::new(t)
                 }
             },
             ObjectStorage::OSS(oss_s) => match &self.target {
@@ -204,7 +207,8 @@ impl TransferTask {
                         target: path_t.to_string(),
                         attributes: self.attributes.clone(),
                     };
-                    Box::new(t)
+                    // Box::new(t)
+                    Arc::new(t)
                 }
                 ObjectStorage::OSS(oss_t) => {
                     let t = TransferOss2Oss {
@@ -214,7 +218,8 @@ impl TransferTask {
                         target: oss_t.clone(),
                         attributes: self.attributes.clone(),
                     };
-                    Box::new(t)
+                    // Box::new(t)
+                    Arc::new(t)
                 }
             },
         }
@@ -309,7 +314,6 @@ impl TransferTask {
             .max_io_events_per_tick(self.attributes.task_parallelism)
             .build()?;
 
-        // let pd = prompt_processbar("Generating object list ...");
         // 生成执行文件
         rt.block_on(async {
             if self.attributes.start_from_checkpoint {
