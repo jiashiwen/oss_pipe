@@ -37,6 +37,29 @@ impl RegexFilter {
         })
     }
 
+    pub fn from_vec_option(
+        exclude_regex: &Option<Vec<String>>,
+        include_regex: &Option<Vec<String>>,
+    ) -> Result<Option<Self>> {
+        let exclude_regex = match exclude_regex {
+            Some(v) => Some(RegexSet::new(v)?),
+            None => None,
+        };
+        let include_regex = match include_regex {
+            Some(v) => Some(RegexSet::new(v)?),
+            None => None,
+        };
+
+        if exclude_regex.is_none() && include_regex.is_none() {
+            return Ok(None);
+        }
+
+        Ok(Some(Self {
+            exclude_regex,
+            include_regex,
+        }))
+    }
+
     #[allow(dead_code)]
     pub fn new(exclude_regex: Option<RegexSet>, include_regex: Option<RegexSet>) -> Self {
         Self {

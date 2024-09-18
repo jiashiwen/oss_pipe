@@ -406,7 +406,7 @@ impl TransferTask {
                 match task
                     .gen_source_object_list_file(
                         // regex_filter.clone(),
-                        self.attributes.last_modify_filter,
+                        // self.attributes.last_modify_filter,
                         &executed_file.path,
                     )
                     .await

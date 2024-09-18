@@ -11,6 +11,7 @@ use super::OFFSET_PREFIX;
 use super::{gen_file_path, DateTime, DiffContent, DiffExpires, DiffLength};
 use crate::checkpoint::FileDescription;
 use crate::commons::LastModifyFilter;
+use crate::commons::RegexFilter;
 use crate::{
     checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
     s3::{oss_client::OssClient, OSSDescription},
@@ -43,19 +44,18 @@ pub struct CompareOss2Oss {
 
 #[async_trait]
 impl CompareTaskActions for CompareOss2Oss {
-    async fn gen_list_file(
-        &self,
-        last_modify_filter: Option<LastModifyFilter>,
-        object_list_file: &str,
-    ) -> Result<FileDescription> {
+    async fn gen_list_file(&self, object_list_file: &str) -> Result<FileDescription> {
         let client_source = self.source.gen_oss_client()?;
+        let regex_filter =
+            RegexFilter::from_vec_option(&self.attributes.exclude, &self.attributes.include)?;
         client_source
             .append_object_list_to_file(
                 self.source.bucket.clone(),
                 self.source.prefix.clone(),
                 self.attributes.objects_per_batch,
                 object_list_file,
-                last_modify_filter,
+                regex_filter,
+                self.attributes.last_modify_filter,
             )
             .await
     }
@@ -65,19 +65,19 @@ impl CompareTaskActions for CompareOss2Oss {
         joinset: &mut JoinSet<()>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
-        err_counter: Arc<AtomicUsize>,
+        // err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
-        source_objects_list_file: String,
+        // source_objects_list_file: String,
     ) {
         let comparator = Oss2OssRecordsComparator {
             source: self.source.clone(),
             target: self.target.clone(),
             stop_mark: Arc::clone(&stop_mark),
-            err_counter,
+            // err_counter,
             offset_map,
             check_option: self.check_option.clone(),
             attributes: self.attributes.clone(),
-            list_file_path: source_objects_list_file,
+            // list_file_path: source_objects_list_file,
         };
 
         joinset.spawn(async move {
@@ -94,32 +94,22 @@ pub struct Oss2OssRecordsComparator {
     pub source: OSSDescription,
     pub target: OSSDescription,
     pub stop_mark: Arc<AtomicBool>,
-    pub err_counter: Arc<AtomicUsize>,
+    // pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
     pub check_option: CompareCheckOption,
     pub attributes: CompareTaskAttributes,
-    pub list_file_path: String,
+    // pub list_file_path: String,
 }
 
 impl Oss2OssRecordsComparator {
     pub async fn compare_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
-        // let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
-        let error_file_name = gen_file_path(
-            &self.attributes.meta_dir,
-            COMPARE_ERROR_RECORD_PREFIX,
-            &subffix,
-        );
+
         let compare_result_file_name =
             gen_file_path(&self.attributes.meta_dir, COMPARE_RESULT_PREFIX, &subffix);
 
-        let mut error_file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(error_file_name.as_str())?;
         let mut compare_result_file = OpenOptions::new()
             .create(true)
             .write(true)
@@ -130,6 +120,9 @@ impl Oss2OssRecordsComparator {
         let c_t = self.target.gen_oss_client()?;
 
         for record in records {
+            if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+                return Ok(());
+            }
             self.offset_map.insert(
                 offset_key.clone(),
                 FilePosition {
@@ -154,40 +147,18 @@ impl Oss2OssRecordsComparator {
                     }
                 }
                 Err(e) => {
-                    let recorddesc = RecordDescription {
-                        source_key: record.key.clone(),
-                        target_key: target_key.clone(),
-                        list_file_path: self.list_file_path.clone(),
-                        list_file_position: FilePosition {
-                            offset: record.offset,
-                            line_num: record.line_num,
-                        },
-                        option: Opt::PUT,
-                    };
-                    recorddesc.handle_error(
-                        self.stop_mark.clone(),
-                        &self.err_counter,
-                        self.attributes.max_errors,
-                        &self.offset_map,
-                        &mut error_file,
-                        offset_key.as_str(),
-                    );
                     log::error!("{:?}", e);
+                    self.stop_mark
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
                 }
             };
         }
 
-        let _ = error_file.flush();
         let _ = compare_result_file.flush();
         self.offset_map.remove(&offset_key);
         if let Ok(m) = compare_result_file.metadata() {
             if m.len().eq(&0) {
                 let _ = fs::remove_file(compare_result_file_name.as_str());
-            }
-        };
-        if let Ok(m) = error_file.metadata() {
-            if m.len().eq(&0) {
-                let _ = fs::remove_file(error_file_name.as_str());
             }
         };
 

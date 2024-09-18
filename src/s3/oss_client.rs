@@ -23,9 +23,11 @@ use aws_smithy_types::{body::SdkBody, byte_stream::ByteStream};
 use dashmap::DashMap;
 
 use std::{
+    borrow::Borrow,
     collections::BTreeMap,
     fs::{self, File, OpenOptions},
     io::{LineWriter, Read, Seek, SeekFrom, Write},
+    os::unix::fs::MetadataExt,
     path::Path,
     sync::{atomic::AtomicBool, Arc},
 };
@@ -61,6 +63,7 @@ impl OssClient {
         prefix: Option<String>,
         batch: i32,
         file_path: &str,
+        regex_filter: Option<RegexFilter>,
         last_modify_filter: Option<LastModifyFilter>,
     ) -> Result<FileDescription> {
         let mut total_lines = 0;
@@ -87,6 +90,12 @@ impl OssClient {
                 }
 
                 if let Some(key) = obj.key() {
+                    if let Some(ref f) = regex_filter {
+                        if !f.filter(key) {
+                            continue;
+                        }
+                    }
+
                     let _ = line_writer.write_all(key.as_bytes());
                     let _ = line_writer.write_all("\n".as_bytes());
                     total_lines += 1;
@@ -124,6 +133,125 @@ impl OssClient {
             total_lines,
         };
         Ok(execute_file)
+    }
+
+    pub async fn append_object_list_to_files(
+        &self,
+        bucket: String,
+        prefix: Option<String>,
+        batch: i32,
+        parallel: usize,
+        file_path_prefix: &str,
+        last_modify_filter: Option<LastModifyFilter>,
+    ) -> Result<()> {
+        // 任务停止标准，用于通知所有协程任务结束
+        let stop_mark = Arc::new(AtomicBool::new(false));
+        let mut file_number = 0;
+        let mut joinset = JoinSet::new();
+
+        let path = std::path::Path::new(file_path_prefix);
+        if let Some(p) = path.parent() {
+            std::fs::create_dir_all(p).context(format!("{}:{}", file!(), line!()))?;
+        };
+
+        let process_objects = |file_path: &str,
+                               last_modify_filter: Option<LastModifyFilter>,
+                               objects: Vec<Object>|
+         -> Result<FileDescription> {
+            let mut total_lines = 0;
+            let file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .append(true)
+                .open(file_path)?;
+            let mut line_writer = LineWriter::new(&file);
+            for obj in objects {
+                if let Some(f) = last_modify_filter {
+                    if let Some(d) = obj.last_modified() {
+                        if !f.filter(usize::try_from(d.secs())?) {
+                            continue;
+                        }
+                    }
+                }
+
+                if let Some(key) = obj.key() {
+                    let _ = line_writer.write_all(key.as_bytes());
+                    let _ = line_writer.write_all("\n".as_bytes());
+                    total_lines += 1;
+                }
+            }
+            let _ = line_writer.flush()?;
+            let size = file.metadata()?.len();
+
+            let file_desc = FileDescription {
+                path: file_path.to_string(),
+                size,
+                total_lines,
+            };
+
+            Ok(file_desc)
+        };
+
+        let resp = self
+            .list_objects(bucket.clone(), prefix.clone(), batch, None)
+            .await
+            .context(format!("{}:{}", file!(), line!()))?;
+        let mut token = resp.next_token;
+
+        if let Some(objects) = resp.object_list {
+            while joinset.len() >= parallel {
+                joinset.join_next().await;
+            }
+            //准备写入文件
+            let mut file_name = file_path_prefix.to_string();
+            file_name.push_str(file_number.to_string().as_str());
+            let l_m = last_modify_filter.clone();
+            let s_p = stop_mark.clone();
+            joinset.spawn(async move {
+                if let Err(e) = process_objects(file_name.as_str(), l_m, objects) {
+                    log::error!("{}", e);
+                    s_p.store(true, std::sync::atomic::Ordering::SeqCst)
+                };
+            });
+            file_number += 1;
+        }
+
+        while token.is_some() {
+            while joinset.len() >= parallel {
+                joinset.join_next().await;
+            }
+            if stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
+            }
+            let resp = self
+                .list_objects(bucket.clone(), prefix.clone(), batch, token.clone())
+                .await
+                .context(format!("{}:{}", file!(), line!()))?;
+            token = resp.next_token;
+            if let Some(objects) = resp.object_list {
+                let mut file_name = file_path_prefix.to_string();
+                file_name.push_str(file_number.to_string().as_str());
+                let l_m = last_modify_filter.clone();
+                let s_p = stop_mark.clone();
+                joinset.spawn(async move {
+                    if let Err(e) = process_objects(file_name.as_str(), l_m, objects) {
+                        log::error!("{}", e);
+                        s_p.store(true, std::sync::atomic::Ordering::SeqCst)
+                    };
+                });
+            }
+            file_number += 1;
+        }
+
+        while joinset.len() > 0 {
+            joinset.join_next().await;
+        }
+
+        if stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(anyhow!("gen object list error"));
+        }
+
+        Ok(())
     }
 
     pub async fn transfer_object(
@@ -254,6 +382,7 @@ impl OssClient {
             .key(s_key)
             .send()
             .await?;
+
         let vec_obj_range = gen_object_part_plan(&s_obj, multi_part_chunk_size)?;
         let content_len = match s_obj.content_length() {
             Some(l) => l,

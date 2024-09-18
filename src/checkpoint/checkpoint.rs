@@ -163,7 +163,7 @@ mod test {
     fn test_checkpoint() {
         let path = "/tmp/jddownload/objlist";
         let _ = fs::remove_file(path);
-        scan_folder_files_to_file("/tmp", path, None).unwrap();
+        scan_folder_files_to_file("/tmp", path, None, None).unwrap();
         let mut f = File::open(path).unwrap();
 
         let mut positon = 0;

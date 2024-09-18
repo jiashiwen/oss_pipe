@@ -95,6 +95,14 @@ path = "examples/use_hosts.rs"
 name = "read_line"
 path = "examples/read_line.rs"
 
+[[example]]
+name = "append"
+path = "examples/append_file_vs_multifile.rs"
+
+[[example]]
+name = "f"
+path = "examples/file_append.rs"
+
 
 [profile.release]
 lto = true

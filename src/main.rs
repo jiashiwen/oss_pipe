@@ -1,15 +1,7 @@
-use logger::tracing_init;
+// use logger::tracing_init;
+use oss_pipe::run_app;
+use oss_pipe::tracing_init;
 use serde::{Deserialize, Serialize};
-mod checkers;
-pub mod checkpoint;
-mod cmd;
-mod commons;
-mod configure;
-mod exception;
-mod interact;
-mod logger;
-mod s3;
-mod tasks;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Test {
@@ -46,5 +38,5 @@ fn main() {
     //         )
     //     }
     // }
-    cmd::run_app();
+    run_app();
 }

@@ -65,14 +65,14 @@ impl Default for TransferOss2Oss {
 #[async_trait]
 impl TransferTaskActions for TransferOss2Oss {
     async fn analyze_source(&self) -> Result<DashMap<String, i128>> {
-        let regex_filter =
-            RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include)?;
         let client = self.source.gen_oss_client()?;
+        let regex_filter =
+            RegexFilter::from_vec_option(&self.attributes.exclude, &self.attributes.include)?;
         client
             .analyze_objects_size(
                 &self.source.bucket,
                 self.source.prefix.clone(),
-                Some(regex_filter),
+                regex_filter,
                 self.attributes.last_modify_filter.clone(),
                 self.attributes.objects_per_batch,
             )
@@ -202,18 +202,23 @@ impl TransferTaskActions for TransferOss2Oss {
     // 生成对象列表
     async fn gen_source_object_list_file(
         &self,
-        last_modify_filter: Option<LastModifyFilter>,
+        // last_modify_filter: Option<LastModifyFilter>,
         object_list_file: &str,
     ) -> Result<FileDescription> {
         let client_source = self.source.gen_oss_client()?;
         // 若为持续同步模式，且 last_modify_timestamp 大于 0，则将 last_modify 属性大于last_modify_timestamp变量的对象加入执行列表
+
+        let regex_filter =
+            RegexFilter::from_vec_option(&self.attributes.exclude, &self.attributes.include)?;
+
         client_source
             .append_object_list_to_file(
                 self.source.bucket.clone(),
                 self.source.prefix.clone(),
                 self.attributes.objects_per_batch,
                 object_list_file,
-                last_modify_filter,
+                regex_filter,
+                self.attributes.last_modify_filter.clone(),
             )
             .await
     }
@@ -703,6 +708,8 @@ impl TransferOss2OssRecordsExecutor {
             .write(true)
             .truncate(true)
             .open(error_file_name.as_str())?;
+
+        // drop(error_file);
 
         let source_client = self.source.gen_oss_client()?;
         let target_client = self.target.gen_oss_client()?;

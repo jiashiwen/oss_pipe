@@ -174,7 +174,6 @@ impl Default for CompareTaskAttributes {
             multi_part_chunk: TaskDefaultParameters::multi_part_chunk_size_default(),
             exclude: TaskDefaultParameters::filter_default(),
             include: TaskDefaultParameters::filter_default(),
-            // continuous: TaskDefaultParameters::continuous_default(),
             last_modify_filter: TaskDefaultParameters::last_modify_filter_default(),
             exprirs_diff_scope: TaskDefaultParameters::exprirs_diff_scope_default(),
         }
@@ -343,7 +342,6 @@ impl CompareTask {
         let mut source_list_file = None;
         let mut source_list_file_position = FilePosition::default();
 
-        let pd = prompt_processbar("Generating object list ...");
         rt.block_on(async {
             if self.attributes.start_from_checkpoint {
                 // 变更object_list_file_name文件名
@@ -370,8 +368,9 @@ impl CompareTask {
                 compare_source_list = checkpoint.executed_file.clone();
             } else {
                 // 清理 meta 目录
+                let pd = prompt_processbar("Generating object list ...");
                 let _ = fs::remove_dir_all(self.attributes.meta_dir.as_str());
-                match task.gen_list_file(None, &compare_source_list.path).await {
+                match task.gen_list_file(&compare_source_list.path).await {
                     Ok(f) => {
                         compare_source_list = f;
                     }
@@ -381,14 +380,13 @@ impl CompareTask {
                         return;
                     }
                 }
+                pd.finish_with_message("object list generated");
             }
         });
 
         if interrupt {
             return Err(anyhow!("get object list error"));
         }
-
-        pd.finish_with_message("object list generated");
 
         // sys_set 用于执行checkpoint、notify等辅助任务
         let mut sys_set = JoinSet::new();
@@ -429,11 +427,15 @@ impl CompareTask {
             let mut vec_keys = vec![];
             // 按列表传输object from source to target
             let lines: Lines<BufReader<File>> = BufReader::new(compare_list_file).lines();
+            let s_m = snapshot_stop_mark.clone();
             for line in lines {
                 // 若错误达到上限，则停止任务
-                if err_counter.load(std::sync::atomic::Ordering::SeqCst)
-                    >= self.attributes.max_errors
-                {
+                // if err_counter.load(std::sync::atomic::Ordering::SeqCst)
+                //     >= self.attributes.max_errors
+                // {
+                //     break;
+                // }
+                if s_m.load(std::sync::atomic::Ordering::SeqCst) {
                     break;
                 }
                 if let Result::Ok(key) = line {
@@ -468,9 +470,9 @@ impl CompareTask {
                             &mut execut_set,
                             vk,
                             Arc::clone(&snapshot_stop_mark),
-                            Arc::clone(&err_counter),
+                            // Arc::clone(&err_counter),
                             Arc::clone(&offset_map),
-                            compare_source_list.path.clone(),
+                            // compare_source_list.path.clone(),
                         )
                         .await;
 
@@ -494,9 +496,9 @@ impl CompareTask {
                         &mut execut_set,
                         vk,
                         Arc::clone(&snapshot_stop_mark),
-                        Arc::clone(&err_counter),
+                        // Arc::clone(&err_counter),
                         Arc::clone(&offset_map),
-                        compare_source_list.path.clone(),
+                        // compare_source_list.path.clone(),
                     )
                     .await;
             }

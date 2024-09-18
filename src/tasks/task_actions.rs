@@ -53,12 +53,7 @@ pub trait TransferTaskActions {
     );
 
     // 生成对象列表
-    async fn gen_source_object_list_file(
-        &self,
-        // regex_filter: RegexFilter,
-        last_modify_filter: Option<LastModifyFilter>,
-        object_list_file: &str,
-    ) -> Result<FileDescription>;
+    async fn gen_source_object_list_file(&self, object_list_file: &str) -> Result<FileDescription>;
 
     // 以target为基础，抓取变动object
     // 扫描target storage，source 不存在为removed object
@@ -85,19 +80,15 @@ pub trait TransferTaskActions {
 
 #[async_trait]
 pub trait CompareTaskActions {
-    async fn gen_list_file(
-        &self,
-        last_modify_filter: Option<LastModifyFilter>,
-        object_list_file: &str,
-    ) -> Result<FileDescription>;
+    async fn gen_list_file(&self, object_list_file: &str) -> Result<FileDescription>;
 
     async fn listed_records_comparator(
         &self,
         joinset: &mut JoinSet<()>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
-        err_counter: Arc<AtomicUsize>,
+        // err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
-        source_objects_list_file: String,
+        // source_objects_list_file: String,
     );
 }

@@ -67,10 +67,11 @@ impl Default for TransferLocal2Oss {
 #[async_trait]
 impl TransferTaskActions for TransferLocal2Oss {
     async fn analyze_source(&self) -> Result<DashMap<String, i128>> {
-        let filter = RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.include)?;
+        let regex_filter =
+            RegexFilter::from_vec_option(&self.attributes.exclude, &self.attributes.include)?;
         analyze_folder_files_size(
             &self.source,
-            Some(filter),
+            regex_filter,
             self.attributes.last_modify_filter.clone(),
         )
     }
@@ -199,10 +200,17 @@ impl TransferTaskActions for TransferLocal2Oss {
     // 生成对象列表
     async fn gen_source_object_list_file(
         &self,
-        last_modify_filter: Option<LastModifyFilter>,
+        // last_modify_filter: Option<LastModifyFilter>,
         object_list_file: &str,
     ) -> Result<FileDescription> {
-        scan_folder_files_to_file(self.source.as_str(), &object_list_file, last_modify_filter)
+        let regex_filter =
+            RegexFilter::from_vec_option(&self.attributes.exclude, &self.attributes.include)?;
+        scan_folder_files_to_file(
+            self.source.as_str(),
+            &object_list_file,
+            regex_filter,
+            self.attributes.last_modify_filter,
+        )
     }
 
     async fn changed_object_capture_based_target(

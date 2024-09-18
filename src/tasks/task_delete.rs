@@ -101,8 +101,8 @@ impl TaskDeleteBucket {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let stop_mark = Arc::new(AtomicBool::new(false));
         let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
-        let regex_filter =
-            RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.exclude)?;
+        // let regex_filter =
+        //     RegexFilter::from_vec(&self.attributes.exclude, &self.attributes.exclude)?;
 
         let check_point_file = gen_file_path(
             self.attributes.meta_dir.as_str(),
@@ -143,6 +143,9 @@ impl TaskDeleteBucket {
         };
 
         let c = client.clone();
+        let regex_filter =
+            RegexFilter::from_vec_option(&self.attributes.exclude, &self.attributes.include)?;
+        let reg_filter = regex_filter.clone();
         let last_modify_filter = self.attributes.last_modify_filter.clone();
 
         let objects_list_file = match self.attributes.start_from_checkpoint {
@@ -172,6 +175,7 @@ impl TaskDeleteBucket {
                             oss_d.prefix.clone(),
                             self.attributes.objects_per_batch,
                             &executed_file.path,
+                            reg_filter,
                             last_modify_filter,
                         )
                         .await
@@ -240,8 +244,10 @@ impl TaskDeleteBucket {
                                 line_num: list_file_position.line_num,
                             };
 
-                            if regex_filter.filter(&record.key) {
-                                vec_record.push(record);
+                            if let Some(ref f) = regex_filter {
+                                if f.filter(&record.key) {
+                                    vec_record.push(record);
+                                }
                             }
                         }
                     }
