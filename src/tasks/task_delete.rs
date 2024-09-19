@@ -14,7 +14,7 @@ use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File},
-    io::{self, BufRead, Seek},
+    io::{self, BufRead},
     sync::{atomic::AtomicBool, Arc},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -228,9 +228,6 @@ impl TaskDeleteBucket {
                 match line {
                     Ok(key) => {
                         let len = key.bytes().len() + "\n".bytes().len();
-                        list_file_position.offset += len;
-                        list_file_position.line_num += 1;
-
                         if !key.ends_with("/") {
                             let record = ListedRecord {
                                 key,
@@ -244,6 +241,8 @@ impl TaskDeleteBucket {
                                 }
                             }
                         }
+                        list_file_position.offset += len;
+                        list_file_position.line_num += 1;
                     }
                     Err(e) => log::error!("{:?}", e),
                 }
@@ -310,7 +309,7 @@ impl TaskDeleteBucket {
                 }
             }
 
-            if execut_set.len() > 0 {
+            while execut_set.len() > 0 {
                 execut_set.join_next().await;
             }
             // 配置停止 offset save 标识为 true
@@ -320,20 +319,6 @@ impl TaskDeleteBucket {
                 task::yield_now().await;
                 sys_set.join_next().await;
             }
-
-            let mut checkpoint = match get_task_checkpoint(&check_point_file) {
-                Ok(c) => c,
-                Err(e) => {
-                    log::error!("{:?}", e);
-                    return;
-                }
-            };
-            checkpoint.executed_file_position.line_num = checkpoint.executed_file.total_lines;
-            checkpoint.executed_file_position.offset =
-                TryInto::<usize>::try_into(checkpoint.executed_file.size).unwrap();
-            if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
-                log::error!("{:?}", e);
-            };
         });
 
         Ok(())
