@@ -154,7 +154,7 @@ impl TaskDeleteBucket {
                     stop_mark: stop_mark.clone(),
                     attributes: self.attributes.clone(),
                 };
-                execut_set.spawn(async move { del.delete_listed_records(objects).await });
+                execut_set.spawn(async move { del.delete_listed_records_batch(objects).await });
             }
 
             while token.is_some() {
@@ -187,7 +187,7 @@ impl TaskDeleteBucket {
                     while execut_set.len() >= self.attributes.task_parallelism {
                         execut_set.join_next().await;
                     }
-                    execut_set.spawn(async move { del.delete_listed_records(objects).await });
+                    execut_set.spawn(async move { del.delete_listed_records_batch(objects).await });
                 }
                 token = resp.next_token;
             }
