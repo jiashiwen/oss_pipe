@@ -116,9 +116,7 @@ pub fn analyze_folder_files_size(
                     .modified()?
                     .duration_since(UNIX_EPOCH)?
                     .as_secs();
-                // if !f.filter(i128::from(modified_time)) {
-                //     continue;
-                // }
+
                 if !f.filter(usize::try_from(modified_time).unwrap()) {
                     continue;
                 }
@@ -137,8 +135,6 @@ pub fn analyze_folder_files_size(
     Ok(size_map)
 }
 
-// Todo
-// 加入正则过滤功能
 pub fn scan_folder_files_to_file(
     folder: &str,
     file_name: &str,
@@ -204,6 +200,14 @@ pub fn scan_folder_files_to_file(
         total_lines,
     };
     Ok(executed_file)
+}
+
+pub fn append_file_line(file_name: &str, content: &str) -> Result<()> {
+    let append_file = OpenOptions::new().append(true).open(file_name)?;
+    let mut append_linewiter = LineWriter::new(&append_file);
+    append_linewiter.write_all(content.as_bytes())?;
+    append_linewiter.write_all("\n".as_bytes())?;
+    Ok(())
 }
 
 // 生成指定字节数的文件

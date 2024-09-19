@@ -167,7 +167,6 @@ impl Default for CompareTaskAttributes {
         Self {
             objects_per_batch: TaskDefaultParameters::objects_per_batch_default(),
             task_parallelism: TaskDefaultParameters::task_parallelism_default(),
-            // max_errors: TaskDefaultParameters::max_errors_default(),
             meta_dir: TaskDefaultParameters::meta_dir_default(),
             start_from_checkpoint: TaskDefaultParameters::target_exists_skip_default(),
             large_file_size: TaskDefaultParameters::large_file_size_default(),

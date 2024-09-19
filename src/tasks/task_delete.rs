@@ -261,6 +261,7 @@ impl TaskDeleteBucket {
                     || executed_file
                         .total_lines
                         .eq(&TryInto::<u64>::try_into(num + 1).unwrap())
+                        && vec_record.len() > 0
                 {
                     while execut_set.len() >= self.attributes.task_parallelism {
                         execut_set.join_next().await;
