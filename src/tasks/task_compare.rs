@@ -136,8 +136,8 @@ pub struct CompareTaskAttributes {
     pub objects_per_batch: i32,
     #[serde(default = "TaskDefaultParameters::task_parallelism_default")]
     pub task_parallelism: usize,
-    #[serde(default = "TaskDefaultParameters::max_errors_default")]
-    pub max_errors: usize,
+    // #[serde(default = "TaskDefaultParameters::max_errors_default")]
+    // pub max_errors: usize,
     #[serde(default = "TaskDefaultParameters::meta_dir_default")]
     pub meta_dir: String,
     #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
@@ -167,7 +167,7 @@ impl Default for CompareTaskAttributes {
         Self {
             objects_per_batch: TaskDefaultParameters::objects_per_batch_default(),
             task_parallelism: TaskDefaultParameters::task_parallelism_default(),
-            max_errors: TaskDefaultParameters::max_errors_default(),
+            // max_errors: TaskDefaultParameters::max_errors_default(),
             meta_dir: TaskDefaultParameters::meta_dir_default(),
             start_from_checkpoint: TaskDefaultParameters::target_exists_skip_default(),
             large_file_size: TaskDefaultParameters::large_file_size_default(),
@@ -483,8 +483,8 @@ impl CompareTask {
 
             // 处理集合中的剩余数据，若错误达到上限，则不执行后续操作
             if vec_keys.len() > 0
-                && err_counter.load(std::sync::atomic::Ordering::SeqCst)
-                    < self.attributes.max_errors
+            // && err_counter.load(std::sync::atomic::Ordering::SeqCst)
+            //     < self.attributes.max_errors
             {
                 while execut_set.len() >= self.attributes.task_parallelism {
                     execut_set.join_next().await;
@@ -507,7 +507,7 @@ impl CompareTask {
                 execut_set.join_next().await;
             }
             // 配置停止 offset save 标识为 true
-            snapshot_stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
+            snapshot_stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
 
             // 记录checkpoint
             let mut checkpoint: CheckPoint = CheckPoint {
