@@ -228,82 +228,51 @@ impl TaskDeleteBucket {
                 match line {
                     Ok(key) => {
                         let len = key.bytes().len() + "\n".bytes().len();
-                        if !key.ends_with("/") {
-                            let record = ListedRecord {
-                                key,
-                                offset: list_file_position.offset,
-                                line_num: list_file_position.line_num,
-                            };
+                        let record = ListedRecord {
+                            key,
+                            offset: list_file_position.offset,
+                            line_num: list_file_position.line_num,
+                        };
 
-                            if let Some(ref f) = regex_filter {
+                        match regex_filter {
+                            Some(ref f) => {
                                 if f.filter(&record.key) {
                                     vec_record.push(record);
                                 }
                             }
+                            None => vec_record.push(record),
                         }
+
                         list_file_position.offset += len;
                         list_file_position.line_num += 1;
                     }
-                    Err(e) => log::error!("{:?}", e),
+                    Err(e) => {
+                        log::error!("{:?}", e);
+                        // stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+                    }
                 }
 
                 if vec_record
                     .len()
                     .to_string()
                     .eq(&self.attributes.objects_per_batch.to_string())
-                    || executed_file
+                    || (executed_file
                         .total_lines
                         .eq(&TryInto::<u64>::try_into(num + 1).unwrap())
-                        && vec_record.len() > 0
+                        && vec_record.len() > 0)
                 {
                     while execut_set.len() >= self.attributes.task_parallelism {
                         execut_set.join_next().await;
                     }
-                    let c = match o_d.gen_oss_client() {
-                        Ok(c) => c,
-                        Err(e) => {
-                            log::error!("{:?}", e);
-                            continue;
-                        }
-                    };
-                    let mut keys = vec![];
 
-                    for record in &vec_record {
-                        if let Ok(obj_id) = ObjectIdentifier::builder()
-                            .set_key(Some(record.key.clone()))
-                            .build()
-                        {
-                            keys.push(obj_id);
-                        }
-                    }
-                    let bucket = o_d.bucket.clone();
-                    let o_m = offset_map.clone();
-                    let s_m = stop_mark.clone();
-                    let subffix = &vec_record[0].offset.to_string();
-                    let mut offset_key = OFFSET_PREFIX.to_string();
-                    offset_key.push_str(&subffix);
-                    let f_p = FilePosition {
-                        offset: vec_record[0].offset,
-                        line_num: vec_record[0].line_num,
+                    let del = DeleteBucketExecutor {
+                        source: o_d.clone(),
+                        stop_mark: stop_mark.clone(),
+                        attributes: self.attributes.clone(),
+                        offset_map: offset_map.clone(),
                     };
-
-                    execut_set.spawn(async move {
-                        if s_m.load(std::sync::atomic::Ordering::SeqCst) {
-                            return;
-                        }
-                        // 插入文件offset记录
-                        o_m.insert(offset_key.clone(), f_p);
-                        match c.remove_objects(bucket.as_str(), keys).await {
-                            Ok(_) => {
-                                log::info!("remove objects ok")
-                            }
-                            Err(e) => {
-                                log::error!("{:?}", e);
-                                s_m.store(true, std::sync::atomic::Ordering::SeqCst);
-                            }
-                        }
-                        o_m.remove(&offset_key);
-                    });
+                    let keys = vec_record.clone();
+                    execut_set.spawn(async move { del.delete_listed_records(keys).await });
 
                     vec_record.clear();
                 }
@@ -331,7 +300,7 @@ pub struct DeleteBucketExecutor {
     pub stop_mark: Arc<AtomicBool>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
     pub attributes: DeleteTaskAttributes,
-    pub list_file_path: String,
+    // pub list_file_path: String,
 }
 
 impl DeleteBucketExecutor {
@@ -374,8 +343,11 @@ impl DeleteBucketExecutor {
             return;
         }
 
-        if let Err(e) = s_c.remove_objects(&self.source.bucket, del_objs).await {
-            log::error!("{:?}", e);
+        match s_c.remove_objects(&self.source.bucket, del_objs).await {
+            Ok(_) => {
+                log::info!("removed objects")
+            }
+            Err(e) => log::error!("{:?}", e),
         };
 
         self.offset_map.remove(&offset_key);
