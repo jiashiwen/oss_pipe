@@ -103,6 +103,10 @@ path = "examples/append_file_vs_multifile.rs"
 name = "f"
 path = "examples/file_append.rs"
 
+[[example]]
+name = "x"
+path = "examples/xingneng.rs"
+
 
 [profile.release]
 lto = true
