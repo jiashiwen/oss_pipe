@@ -9,7 +9,10 @@ use crate::{
 };
 use anyhow::Result;
 use anyhow::{anyhow, Context};
-use aws_sdk_s3::types::{Object, ObjectIdentifier};
+use aws_sdk_s3::{
+    operation::RequestIdExt,
+    types::{Object, ObjectIdentifier},
+};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -155,6 +158,7 @@ impl TaskDeleteBucket {
             }
 
             while token.is_some() {
+                let now = SystemTime::now();
                 let resp = match c
                     .list_objects(
                         list_ossdesc.bucket.clone(),
@@ -171,6 +175,9 @@ impl TaskDeleteBucket {
                         return;
                     }
                 };
+
+                log::info!("list objects elapsed:{:?}", now.elapsed());
+
                 if let Some(objects) = resp.object_list {
                     let del = DeleteBucketExecutor {
                         source: o_d.clone(),
@@ -203,7 +210,7 @@ pub struct DeleteBucketExecutor {
 }
 
 impl DeleteBucketExecutor {
-    pub async fn delete_listed_records(&self, records: Vec<Object>) {
+    pub async fn delete_listed_records_batch(&self, records: Vec<Object>) {
         let regex_filter = match RegexFilter::from_vec_option(
             &self.attributes.exclude,
             &self.attributes.include,
@@ -257,12 +264,89 @@ impl DeleteBucketExecutor {
         if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
             return;
         }
-        if let Err(e) = s_c.remove_objects(&self.source.bucket, del_objs).await {
-            self.stop_mark
-                .store(true, std::sync::atomic::Ordering::SeqCst);
-            log::error!("{:?}", e);
-            return;
+        let now = SystemTime::now();
+        match s_c.remove_objects(&self.source.bucket, del_objs).await {
+            Ok(_) => {
+                log::info!("objects deleted")
+            }
+            Err(e) => {
+                log::error!("{:?}", e);
+            }
+        }
+        log::info!("remove elapsed:{:?}", now.elapsed());
+    }
+
+    pub async fn delete_listed_records(&self, records: Vec<Object>) {
+        let regex_filter = match RegexFilter::from_vec_option(
+            &self.attributes.exclude,
+            &self.attributes.include,
+        ) {
+            Ok(reg) => reg,
+            Err(e) => {
+                log::error!("{:?}", e);
+                return;
+            }
         };
-        log::info!("objects deleted");
+        let source_client = match self.source.gen_oss_client() {
+            Ok(c) => c,
+            Err(e) => {
+                log::error!("{:?}", e);
+                return;
+            }
+        };
+        let s_c = Arc::new(source_client);
+
+        // let mut del_objs = vec![];
+        let now = SystemTime::now();
+        for record in records {
+            if let Some(ref f) = self.attributes.last_modify_filter {
+                match record.last_modified() {
+                    Some(d) => {
+                        if !f.filter(usize::try_from(d.secs()).unwrap()) {
+                            continue;
+                        }
+                    }
+                    None => {}
+                }
+            }
+
+            if let Some(key) = record.key() {
+                if let Some(ref reg) = regex_filter {
+                    if !reg.filter(key) {
+                        continue;
+                    }
+                }
+
+                match s_c.remove_object(&self.source.bucket, key).await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        log::error!("{:?}", e);
+                        continue;
+                    }
+                }
+
+                // match ObjectIdentifier::builder().key(key).build() {
+                //     Ok(k) => del_objs.push(k),
+                //     Err(e) => {
+                //         log::error!("{:?}", e);
+                //         continue;
+                //     }
+                // };
+            }
+        }
+
+        if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+
+        // match s_c.remove_objects(&self.source.bucket, del_objs).await {
+        //     Ok(_) => {
+        //         log::info!("objects deleted")
+        //     }
+        //     Err(e) => {
+        //         log::error!("{:?}", e);
+        //     }
+        // }
+        log::info!("remove elapsed:{:?}", now.elapsed());
     }
 }
