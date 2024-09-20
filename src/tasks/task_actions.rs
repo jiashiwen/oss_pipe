@@ -1,4 +1,4 @@
-use super::{IncrementAssistant, TransferLocal2Local, TransferTaskAttributes};
+use super::IncrementAssistant;
 use crate::checkpoint::{FileDescription, FilePosition, ListedRecord, RecordDescription};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -91,22 +91,15 @@ pub trait CompareTaskActions {
 
 #[async_trait]
 pub trait TransferExecutor {
-    fn gen_task_action(&self) -> Arc<dyn TransferTaskActions + Send + Sync>;
-}
-
-pub struct TE {
-    a: String,
-    b: u64,
-}
-
-impl TransferExecutor for TE {
-    fn gen_task_action(&self) -> Arc<dyn TransferTaskActions + Send + Sync> {
-        Arc::new(TransferLocal2Local {
-            task_id: "111".to_string(),
-            name: "xxx".to_string(),
-            source: "/tmp".to_string(),
-            target: "/tmp".to_string(),
-            attributes: TransferTaskAttributes::default(),
-        })
-    }
+    // fn gen_task_action(&self) -> Arc<dyn TransferTaskActions + Send + Sync>;
+    async fn exec_listed_records(
+        &self,
+        records: Vec<ListedRecord>,
+        executing_transfers: Arc<RwLock<usize>>,
+    ) -> Result<()>;
+    async fn exec_record_descriptions(
+        &self,
+        executing_transfers: Arc<RwLock<usize>>,
+        records: Vec<RecordDescription>,
+    ) -> Result<()>;
 }
