@@ -42,45 +42,9 @@ impl TaskStatusSaver {
                 checkpoint
             }
         };
-        // let mut checkpoint = CheckPoint {
-        //     task_id,
-        //     executed_file: self.executed_file.clone(),
-        //     executed_file_position: FilePosition {
-        //         offset: 0,
-        //         line_num: 0,
-        //     },
-        //     file_for_notify: self.file_for_notify.clone(),
-        //     task_stage: self.task_stage,
-        //     modify_checkpoint_timestamp: 0,
-        //     task_begin_timestamp: i128::from(now.as_secs()),
-        // };
-        // let _ = checkpoint.save_to(&self.check_point_path);
 
         while !self.stop_mark.load(std::sync::atomic::Ordering::Relaxed) {
             let mut file_position = checkpoint.executed_file_position;
-
-            // 获取最小offset的FilePosition
-            // let offset = self
-            //     .list_file_positon_map
-            //     .iter()
-            //     .filter(|item| item.key().starts_with(OFFSET_PREFIX))
-            //     .map(|m| {
-            //         file_position = m.clone();
-            //         m.offset
-            //     })
-            //     .min();
-
-            // if offset.is_some() {
-            //     self.list_file_positon_map.shrink_to_fit();
-            //     checkpoint.executed_file_position = file_position.clone();
-
-            //     if let Err(e) = checkpoint.save_to(&self.check_point_path) {
-            //         log::error!("{:?},{:?}", e, self.check_point_path);
-            //     } else {
-            //         log::debug!("checkpoint:\n{:?}", checkpoint);
-            //     };
-            // }
-
             let mut idx = 0;
             for item in self.list_file_positon_map.iter() {
                 if item.key().starts_with(OFFSET_PREFIX) {

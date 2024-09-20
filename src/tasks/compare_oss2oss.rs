@@ -5,15 +5,13 @@ use super::Diff;
 use super::DiffExists;
 use super::DiffMeta;
 use super::ObjectDiff;
-use super::COMPARE_ERROR_RECORD_PREFIX;
 use super::COMPARE_RESULT_PREFIX;
 use super::OFFSET_PREFIX;
 use super::{gen_file_path, DateTime, DiffContent, DiffExpires, DiffLength};
 use crate::checkpoint::FileDescription;
-use crate::commons::LastModifyFilter;
 use crate::commons::RegexFilter;
 use crate::{
-    checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
+    checkpoint::{FilePosition, ListedRecord},
     s3::{oss_client::OssClient, OSSDescription},
 };
 use anyhow::anyhow;
@@ -24,7 +22,6 @@ use dashmap::DashMap;
 use serde::Deserialize;
 use serde::Serialize;
 use std::sync::atomic::AtomicBool;
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::{
     fs::{self, OpenOptions},
@@ -65,19 +62,15 @@ impl CompareTaskActions for CompareOss2Oss {
         joinset: &mut JoinSet<()>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
-        // err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
-        // source_objects_list_file: String,
     ) {
         let comparator = Oss2OssRecordsComparator {
             source: self.source.clone(),
             target: self.target.clone(),
             stop_mark: Arc::clone(&stop_mark),
-            // err_counter,
             offset_map,
             check_option: self.check_option.clone(),
             attributes: self.attributes.clone(),
-            // list_file_path: source_objects_list_file,
         };
 
         joinset.spawn(async move {
@@ -264,20 +257,6 @@ impl Oss2OssRecordsComparator {
         t_obj: &GetObjectOutput,
         target_key: &str,
     ) -> Option<ObjectDiff> {
-        // let len_s = i128::from(s_obj.content_length());
-        // let len_t = i128::from(t_obj.content_length());
-        // if !len_s.eq(&len_t) {
-        //     let diff = ObjectDiff {
-        //         source: record.key.clone(),
-        //         target: target_key.to_string(),
-        //         diff: Diff::LengthDiff(DiffLength {
-        //             source_content_len: len_s,
-        //             target_content_len: len_t,
-        //         }),
-        //     };
-        //     return Some(diff);
-        // }
-
         let len_s = match s_obj.content_length() {
             Some(l) => i128::from(l),
             None => i128::from(0),
@@ -362,7 +341,6 @@ impl Oss2OssRecordsComparator {
         };
 
         let obj_len = TryInto::<usize>::try_into(s_obj_len)?;
-        // let obj_len = TryInto::<usize>::try_into(s_obj.content_length())?;
         let mut left = obj_len.clone();
         let mut reader_s = s_obj.body.into_async_read();
         let mut reader_t = t_obj.body.into_async_read();

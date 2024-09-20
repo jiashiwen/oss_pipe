@@ -87,8 +87,6 @@ pub trait CompareTaskActions {
         joinset: &mut JoinSet<()>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
-        // err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
-        // source_objects_list_file: String,
     );
 }

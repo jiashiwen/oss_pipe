@@ -4,14 +4,12 @@ use super::CompareTaskAttributes;
 use super::Diff;
 use super::DiffExists;
 use super::ObjectDiff;
-use super::COMPARE_ERROR_RECORD_PREFIX;
 use super::COMPARE_RESULT_PREFIX;
 use super::OFFSET_PREFIX;
 use super::{gen_file_path, DiffContent, DiffLength};
 use crate::checkpoint::FileDescription;
-use crate::checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription};
+use crate::checkpoint::{FilePosition, ListedRecord};
 use crate::commons::scan_folder_files_to_file;
-use crate::commons::LastModifyFilter;
 use crate::commons::RegexFilter;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -22,7 +20,6 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::{
     fs::{self, OpenOptions},
@@ -57,19 +54,15 @@ impl CompareTaskActions for CompareLocal2Local {
         joinset: &mut JoinSet<()>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
-        // err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
-        // source_objects_list_file: String,
     ) {
         let comparator = Local2LocalRecordsComparator {
             source: self.source.clone(),
             target: self.target.clone(),
             stop_mark: stop_mark.clone(),
-            // err_counter,
             offset_map,
             check_option: self.check_option.clone(),
             attributes: self.attributes.clone(),
-            // list_file_path: source_objects_list_file,
         };
 
         joinset.spawn(async move {
@@ -86,11 +79,9 @@ pub struct Local2LocalRecordsComparator {
     pub source: String,
     pub target: String,
     pub stop_mark: Arc<AtomicBool>,
-    // pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
     pub attributes: CompareTaskAttributes,
     pub check_option: CompareCheckOption,
-    // pub list_file_path: String,
 }
 
 impl Local2LocalRecordsComparator {
@@ -98,19 +89,10 @@ impl Local2LocalRecordsComparator {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
-        // let error_file_name = gen_file_path(
-        //     &self.attributes.meta_dir,
-        //     COMPARE_ERROR_RECORD_PREFIX,
-        //     &subffix,
-        // );
+
         let compare_result_file_name =
             gen_file_path(&self.attributes.meta_dir, COMPARE_RESULT_PREFIX, &subffix);
 
-        // let mut error_file = OpenOptions::new()
-        //     .create(true)
-        //     .write(true)
-        //     .truncate(true)
-        //     .open(error_file_name.as_str())?;
         let mut compare_result_file = OpenOptions::new()
             .create(true)
             .write(true)
@@ -138,24 +120,6 @@ impl Local2LocalRecordsComparator {
                     }
                 }
                 Err(e) => {
-                    // let recorddesc = RecordDescription {
-                    //     source_key: s_key,
-                    //     target_key: t_key,
-                    //     list_file_path: self.list_file_path.clone(),
-                    //     list_file_position: FilePosition {
-                    //         offset: record.offset,
-                    //         line_num: record.line_num,
-                    //     },
-                    //     option: Opt::COMPARE,
-                    // };
-                    // recorddesc.handle_error(
-                    //     self.stop_mark.clone(),
-                    //     &self.err_counter,
-                    //     self.attributes.max_errors,
-                    //     &self.offset_map,
-                    //     &mut error_file,
-                    //     offset_key.as_str(),
-                    // );
                     self.stop_mark
                         .store(true, std::sync::atomic::Ordering::SeqCst);
                     log::error!("{:?}", e);
@@ -170,11 +134,6 @@ impl Local2LocalRecordsComparator {
                 let _ = fs::remove_file(compare_result_file_name.as_str());
             }
         };
-        // if let Ok(m) = error_file.metadata() {
-        //     if m.len().eq(&0) {
-        //         let _ = fs::remove_file(error_file_name.as_str());
-        //     }
-        // };
 
         Ok(())
     }

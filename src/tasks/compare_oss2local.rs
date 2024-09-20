@@ -4,22 +4,19 @@ use super::CompareTaskAttributes;
 use super::Diff;
 use super::DiffExists;
 use super::ObjectDiff;
-use super::COMPARE_ERROR_RECORD_PREFIX;
 use super::COMPARE_RESULT_PREFIX;
 use super::OFFSET_PREFIX;
 use super::{gen_file_path, DiffContent, DiffLength};
 use crate::checkpoint::FileDescription;
-use crate::commons::LastModifyFilter;
 use crate::commons::RegexFilter;
 use crate::{
-    checkpoint::{FilePosition, ListedRecord, Opt, RecordDescription},
+    checkpoint::{FilePosition, ListedRecord},
     s3::{oss_client::OssClient, OSSDescription},
 };
 use anyhow::anyhow;
 use anyhow::Result;
 use async_trait::async_trait;
 use aws_sdk_s3::operation::get_object::GetObjectOutput;
-// use aws_sdk_s3::{error::GetObjectErrorKind, output::GetObjectOutput};
 use dashmap::DashMap;
 use serde::Deserialize;
 use serde::Serialize;
@@ -27,7 +24,6 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::{
     fs::{self, OpenOptions},
@@ -68,19 +64,15 @@ impl CompareTaskActions for CompareOss2Local {
         joinset: &mut JoinSet<()>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
-        // err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
-        // source_objects_list_file: String,
     ) {
         let comparator = Oss2LocalRecordsComparator {
             source: self.source.clone(),
             target: self.target.clone(),
             stop_mark: stop_mark.clone(),
-            // err_counter,
             offset_map,
             check_option: self.check_option.clone(),
             attributes: self.attributes.clone(),
-            // list_file_path: source_objects_list_file,
         };
 
         joinset.spawn(async move {
@@ -97,11 +89,9 @@ pub struct Oss2LocalRecordsComparator {
     pub source: OSSDescription,
     pub target: String,
     pub stop_mark: Arc<AtomicBool>,
-    // pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
     pub check_option: CompareCheckOption,
     pub attributes: CompareTaskAttributes,
-    // pub list_file_path: String,
 }
 
 impl Oss2LocalRecordsComparator {
@@ -149,7 +139,6 @@ impl Oss2LocalRecordsComparator {
             };
         }
 
-        // let _ = error_file.flush();
         let _ = compare_result_file.flush();
         self.offset_map.remove(&offset_key);
         if let Ok(m) = compare_result_file.metadata() {
@@ -157,11 +146,6 @@ impl Oss2LocalRecordsComparator {
                 let _ = fs::remove_file(compare_result_file_name.as_str());
             }
         };
-        // if let Ok(m) = error_file.metadata() {
-        //     if m.len().eq(&0) {
-        //         let _ = fs::remove_file(error_file_name.as_str());
-        //     }
-        // };
 
         Ok(())
     }
@@ -231,7 +215,6 @@ impl Oss2LocalRecordsComparator {
         s_obj: &GetObjectOutput,
         target_key: &str,
     ) -> Result<Option<ObjectDiff>> {
-        // let len_s = i128::from(s_obj.content_length());
         let len_s = match s_obj.content_length() {
             Some(l) => i128::from(l),
             None => return Err(anyhow!("content length is None")),
@@ -259,7 +242,7 @@ impl Oss2LocalRecordsComparator {
         target_key: &str,
     ) -> Result<Option<ObjectDiff>> {
         let buffer_size = 1048577;
-        // let s_len = TryInto::<usize>::try_into(s_obj.content_length())?;
+
         let s_len = match s_obj.content_length() {
             Some(l) => TryInto::<usize>::try_into(l)?,
             None => return Err(anyhow!("content length is None")),
