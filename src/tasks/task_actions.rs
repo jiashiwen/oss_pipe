@@ -1,8 +1,5 @@
 use super::IncrementAssistant;
-use crate::{
-    checkpoint::{FileDescription, FilePosition, ListedRecord, RecordDescription},
-    commons::LastModifyFilter,
-};
+use crate::checkpoint::{FileDescription, FilePosition, ListedRecord, RecordDescription};
 use anyhow::Result;
 use async_trait::async_trait;
 use dashmap::DashMap;

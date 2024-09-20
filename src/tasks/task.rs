@@ -63,7 +63,7 @@ impl Task {
                     "Transfer Task Start:\n{}",
                     struct_to_yaml_string(transfer).unwrap()
                 );
-                match transfer.execute() {
+                match transfer.start_task() {
                     Ok(_) => {
                         let log_info = LogInfo {
                             task_id: transfer.task_id.clone(),

@@ -270,7 +270,7 @@ impl TransferTask {
         Ok(())
     }
 
-    pub fn execute(&self) -> Result<()> {
+    pub fn start_task(&self) -> Result<()> {
         let task = self.gen_transfer_actions();
         let mut interrupt: bool = false;
         let mut exec_modified = false;
@@ -371,8 +371,6 @@ impl TransferTask {
                         // 流程逻辑
                         // 扫描target 文件list-> 抓取自扫描时间开始，源端的变动数据 -> 生成objlist，action 新增target change capture
                         let modified = match task
-                            // .changed_object_capture_based_target(checkpoint.task_begin_timestamp)
-                            // .await
                             .changed_object_capture_based_target(
                                 usize::try_from(checkpoint.task_begin_timestamp).unwrap(),
                             )
@@ -403,14 +401,7 @@ impl TransferTask {
                 // 清理 meta 目录
                 // 重新生成object list file
                 let _ = fs::remove_dir_all(self.attributes.meta_dir.as_str());
-                match task
-                    .gen_source_object_list_file(
-                        // regex_filter.clone(),
-                        // self.attributes.last_modify_filter,
-                        &executed_file.path,
-                    )
-                    .await
-                {
+                match task.gen_source_object_list_file(&executed_file.path).await {
                     Ok(f) => {
                         executed_file = f;
                     }
@@ -579,7 +570,7 @@ impl TransferTask {
                 let lines: io::Lines<io::BufReader<File>> =
                     io::BufReader::new(object_list_file).lines();
 
-                for line in lines {
+                for (idx, line) in lines.enumerate() {
                     // 若错误达到上限，则停止任务
                     if stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
                         break;
@@ -651,10 +642,6 @@ impl TransferTask {
                 }
 
                 // 处理集合中的剩余数据，若错误达到上限，则不执行后续操作
-                // if !vec_keys.is_empty()
-                //     && err_counter.load(std::sync::atomic::Ordering::SeqCst)
-                //         < self.attributes.max_errors
-                // {
                 if !vec_keys.is_empty() && !stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
                     while execut_set.len() >= self.attributes.task_parallelism {
                         execut_set.join_next().await;
@@ -744,4 +731,119 @@ impl TransferTask {
 
         Ok(())
     }
+
+    // async fn execute_stock_transfer(
+    //     &self,
+    //     execute_set: &mut JoinSet<()>,
+    //     stop_mark: Arc<AtomicBool>,
+    //     offset_map: Arc<DashMap<String, FilePosition>>,
+    //     file_position: FilePosition,
+    //     task_action: Arc<dyn TransferTaskActions + Send + Sync>,
+    //     list_file: File,
+    // ) {
+    //     let vec_keys = vec![];
+    //     let lines: io::Lines<io::BufReader<File>> = io::BufReader::new(list_file).lines();
+    //     for (idx, line) in lines.enumerate() {
+    //         // 若错误达到上限，则停止任务
+    //         if stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+    //             break;
+    //         }
+
+    //         match line {
+    //             Ok(key) => {
+    //                 // 先写入当前key 开头的 offset，然后更新list_file_position 作为下一个key的offset,待验证效果
+    //                 let len = key.bytes().len() + "\n".bytes().len();
+    //                 if !key.ends_with("/") {
+    //                     let record = ListedRecord {
+    //                         key,
+    //                         offset: file_position.offset,
+    //                         line_num: file_position.line_num,
+    //                     };
+
+    //                     // 在生成list文件时提前过滤key
+    //                     // if regex_filter.filter(&record.key) {
+    //                     //     vec_keys.push(record);
+    //                     // }
+    //                 }
+
+    //                 file_position.offset += len;
+    //                 file_position.line_num += 1;
+    //             }
+    //             Err(e) => {
+    //                 log::error!("{:?}", e);
+    //                 continue;
+    //             }
+    //         }
+
+    //         if vec_keys
+    //             .len()
+    //             .to_string()
+    //             .eq(&self.attributes.objects_per_batch.to_string())
+    //         {
+    //             while execut_set.len() >= self.attributes.task_parallelism {
+    //                 execut_set.join_next().await;
+    //             }
+
+    //             // 提前插入 offset 保证顺序性
+    //             let subffix = vec_keys[0].offset.to_string();
+    //             let mut offset_key = OFFSET_PREFIX.to_string();
+    //             offset_key.push_str(&subffix);
+
+    //             offset_map.insert(
+    //                 offset_key.clone(),
+    //                 FilePosition {
+    //                     offset: vec_keys[0].offset,
+    //                     line_num: vec_keys[0].line_num,
+    //                 },
+    //             );
+
+    //             let vk = vec_keys.clone();
+    //             task_stock
+    //                 .listed_records_transfor(
+    //                     &mut execute_set,
+    //                     Arc::clone(&executing_transfers),
+    //                     vk,
+    //                     Arc::clone(&stop_mark),
+    //                     Arc::clone(&err_counter),
+    //                     Arc::clone(&offset_map),
+    //                     executed_file.path.clone(),
+    //                 )
+    //                 .await;
+
+    //             // 清理临时key vec
+    //             vec_keys.clear();
+    //         }
+    //     }
+
+    //     // 处理集合中的剩余数据，若错误达到上限，则不执行后续操作
+    //     if !vec_keys.is_empty() && !stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+    //         while execute_set.len() >= self.attributes.task_parallelism {
+    //             execute_set.join_next().await;
+    //         }
+    //         // 提前插入 offset 保证顺序性
+    //         let subffix = vec_keys[0].offset.to_string();
+    //         let mut offset_key = OFFSET_PREFIX.to_string();
+    //         offset_key.push_str(&subffix);
+
+    //         offset_map.insert(
+    //             offset_key.clone(),
+    //             FilePosition {
+    //                 offset: vec_keys[0].offset,
+    //                 line_num: vec_keys[0].line_num,
+    //             },
+    //         );
+    //         let vk = vec_keys.clone();
+    //         task_action
+    //             .listed_records_transfor(
+    //                 &mut execute_set,
+    //                 Arc::clone(&executing_transfers),
+    //                 vk,
+    //                 Arc::clone(&stop_mark),
+    //                 Arc::clone(&err_counter),
+    //                 Arc::clone(&offset_map),
+    //                 executed_file.path.clone(),
+    //             )
+    //             .await;
+    //     }
+    // }
 }
