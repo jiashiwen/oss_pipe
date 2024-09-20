@@ -6,7 +6,7 @@ use super::{
     task_actions::TransferTaskActions, IncrementAssistant, TransferLocal2Local, TransferLocal2Oss,
     TransferOss2Local, TransferOss2Oss,
 };
-use crate::checkpoint::RecordDescription;
+use crate::checkpoint::{self, RecordDescription};
 use crate::commons::{json_to_struct, LastModifyFilter};
 use crate::{
     checkpoint::FileDescription,
@@ -15,7 +15,7 @@ use crate::{
     tasks::NOTIFY_FILE_PREFIX,
 };
 use crate::{
-    checkpoint::{get_task_checkpoint, CheckPoint, FilePosition, ListedRecord},
+    checkpoint::{get_task_checkpoint, FilePosition, ListedRecord},
     commons::quantify_processbar,
 };
 use anyhow::{anyhow, Context, Result};
@@ -430,6 +430,8 @@ impl TransferTask {
             Some(f) => f,
             None => File::open(&executed_file.path)?,
         };
+
+        // 根据参数执行任务
         rt.block_on(async {
             let mut file_for_notify = None;
             // 持续同步逻辑: 执行增量助理
@@ -459,6 +461,7 @@ impl TransferTask {
                 }
             }
 
+            // start from checkpoint 且 stage 为 increment
             if exec_modified {
                 let task_modify = self.gen_transfer_actions();
                 let mut vec_keys: Vec<RecordDescription> = vec![];
@@ -670,6 +673,7 @@ impl TransferTask {
                             executed_file.path.clone(),
                         )
                         .await;
+                    execut_set.spawn(async move {});
                 }
             }
 
@@ -732,118 +736,105 @@ impl TransferTask {
         Ok(())
     }
 
-    // async fn execute_stock_transfer(
-    //     &self,
-    //     execute_set: &mut JoinSet<()>,
-    //     stop_mark: Arc<AtomicBool>,
-    //     offset_map: Arc<DashMap<String, FilePosition>>,
-    //     file_position: FilePosition,
-    //     task_action: Arc<dyn TransferTaskActions + Send + Sync>,
-    //     list_file: File,
-    // ) {
-    //     let vec_keys = vec![];
-    //     let lines: io::Lines<io::BufReader<File>> = io::BufReader::new(list_file).lines();
-    //     for (idx, line) in lines.enumerate() {
-    //         // 若错误达到上限，则停止任务
-    //         if stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
-    //             break;
-    //         }
+    async fn generate_list_file(
+        &self,
+        stop_mark: Arc<AtomicBool>,
+        task: Arc<dyn TransferTaskActions + Send + Sync>,
+    ) -> Result<(File, FileDescription, bool)> {
+        let check_point_file = gen_file_path(
+            self.attributes.meta_dir.as_str(),
+            TRANSFER_CHECK_POINT_FILE,
+            "",
+        );
 
-    //         match line {
-    //             Ok(key) => {
-    //                 // 先写入当前key 开头的 offset，然后更新list_file_position 作为下一个key的offset,待验证效果
-    //                 let len = key.bytes().len() + "\n".bytes().len();
-    //                 if !key.ends_with("/") {
-    //                     let record = ListedRecord {
-    //                         key,
-    //                         offset: file_position.offset,
-    //                         line_num: file_position.line_num,
-    //                     };
+        let mut start_from_checkpoint_stage_is_increment = false;
+        return match self.attributes.start_from_checkpoint {
+            true => {
+                // 正在执行的任务数量，用于控制分片上传并行度
+                let executing_transfers = Arc::new(RwLock::new(0));
+                // 变更object_list_file_name文件名
+                let checkpoint = get_task_checkpoint(check_point_file.as_str())
+                    .context(format!("{}:{}", file!(), line!()))?;
 
-    //                     // 在生成list文件时提前过滤key
-    //                     // if regex_filter.filter(&record.key) {
-    //                     //     vec_keys.push(record);
-    //                     // }
-    //                 }
+                // 执行error retry
+                task.error_record_retry(stop_mark.clone(), executing_transfers)
+                    .context(format!("{}:{}", file!(), line!()))?;
 
-    //                 file_position.offset += len;
-    //                 file_position.line_num += 1;
-    //             }
-    //             Err(e) => {
-    //                 log::error!("{:?}", e);
-    //                 continue;
-    //             }
-    //         }
+                // 清理notify file
+                for entry in WalkDir::new(&self.attributes.meta_dir)
+                    .into_iter()
+                    .filter_map(Result::ok)
+                    .filter(|e| !e.file_type().is_dir())
+                {
+                    if let Some(p) = entry.path().to_str() {
+                        if p.contains(NOTIFY_FILE_PREFIX) {
+                            let _ = fs::remove_file(p);
+                        }
+                    };
+                }
 
-    //         if vec_keys
-    //             .len()
-    //             .to_string()
-    //             .eq(&self.attributes.objects_per_batch.to_string())
-    //         {
-    //             while execut_set.len() >= self.attributes.task_parallelism {
-    //                 execut_set.join_next().await;
-    //             }
+                match checkpoint.task_stage {
+                    TransferStage::Stock => {
+                        let list_file_desc = checkpoint.executed_file.clone();
+                        let list_file = checkpoint.seeked_execute_file()?;
+                        Ok((
+                            list_file,
+                            list_file_desc,
+                            start_from_checkpoint_stage_is_increment,
+                        ))
+                    }
+                    TransferStage::Increment => {
+                        // Todo 重新分析逻辑，需要再checkpoint中记录每次增量执行前的起始时间点
+                        // 清理文件重新生成object list 文件需大于指定时间戳,并根据原始object list 删除位于目标端但源端不存在的文件
+                        // 流程逻辑
+                        // 扫描target 文件list-> 抓取自扫描时间开始，源端的变动数据 -> 生成objlist，action 新增target change capture
+                        // exec_modified = true;
+                        let modified = task
+                            .changed_object_capture_based_target(
+                                usize::try_from(checkpoint.task_begin_timestamp).unwrap(),
+                            )
+                            .await?;
+                        start_from_checkpoint_stage_is_increment = true;
+                        let list_file = File::open(&modified.path)?;
+                        Ok((
+                            list_file,
+                            modified,
+                            start_from_checkpoint_stage_is_increment,
+                        ))
+                    }
+                }
+            }
+            false => {
+                let pd = prompt_processbar("Generating object list ...");
+                // 清理 meta 目录
+                // 重新生成object list file
+                let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+                let _ = fs::remove_dir_all(self.attributes.meta_dir.as_str());
+                let executed_file = FileDescription {
+                    path: gen_file_path(
+                        self.attributes.meta_dir.as_str(),
+                        TRANSFER_OBJECT_LIST_FILE_PREFIX,
+                        now.as_secs().to_string().as_str(),
+                    ),
+                    size: 0,
+                    total_lines: 0,
+                };
+                let list_file_desc =
+                    match task.gen_source_object_list_file(&executed_file.path).await {
+                        Ok(f) => f,
+                        Err(e) => {
+                            pd.finish_with_message("object list generated");
+                            return Err(e);
+                        }
+                    };
 
-    //             // 提前插入 offset 保证顺序性
-    //             let subffix = vec_keys[0].offset.to_string();
-    //             let mut offset_key = OFFSET_PREFIX.to_string();
-    //             offset_key.push_str(&subffix);
-
-    //             offset_map.insert(
-    //                 offset_key.clone(),
-    //                 FilePosition {
-    //                     offset: vec_keys[0].offset,
-    //                     line_num: vec_keys[0].line_num,
-    //                 },
-    //             );
-
-    //             let vk = vec_keys.clone();
-    //             task_stock
-    //                 .listed_records_transfor(
-    //                     &mut execute_set,
-    //                     Arc::clone(&executing_transfers),
-    //                     vk,
-    //                     Arc::clone(&stop_mark),
-    //                     Arc::clone(&err_counter),
-    //                     Arc::clone(&offset_map),
-    //                     executed_file.path.clone(),
-    //                 )
-    //                 .await;
-
-    //             // 清理临时key vec
-    //             vec_keys.clear();
-    //         }
-    //     }
-
-    //     // 处理集合中的剩余数据，若错误达到上限，则不执行后续操作
-    //     if !vec_keys.is_empty() && !stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
-    //         while execute_set.len() >= self.attributes.task_parallelism {
-    //             execute_set.join_next().await;
-    //         }
-    //         // 提前插入 offset 保证顺序性
-    //         let subffix = vec_keys[0].offset.to_string();
-    //         let mut offset_key = OFFSET_PREFIX.to_string();
-    //         offset_key.push_str(&subffix);
-
-    //         offset_map.insert(
-    //             offset_key.clone(),
-    //             FilePosition {
-    //                 offset: vec_keys[0].offset,
-    //                 line_num: vec_keys[0].line_num,
-    //             },
-    //         );
-    //         let vk = vec_keys.clone();
-    //         task_action
-    //             .listed_records_transfor(
-    //                 &mut execute_set,
-    //                 Arc::clone(&executing_transfers),
-    //                 vk,
-    //                 Arc::clone(&stop_mark),
-    //                 Arc::clone(&err_counter),
-    //                 Arc::clone(&offset_map),
-    //                 executed_file.path.clone(),
-    //             )
-    //             .await;
-    //     }
-    // }
+                let list_file = File::open(&list_file_desc.path)?;
+                Ok((
+                    list_file,
+                    list_file_desc,
+                    start_from_checkpoint_stage_is_increment,
+                ))
+            }
+        };
+    }
 }
