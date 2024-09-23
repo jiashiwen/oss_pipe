@@ -149,6 +149,7 @@ impl TransferTaskActions for TransferLocal2Local {
     fn gen_transfer_executor(
         &self,
         stop_mark: Arc<AtomicBool>,
+        err_occur: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file_path: String,
@@ -630,6 +631,7 @@ pub struct TransferLocal2LocalExecutor {
     pub source: String,
     pub target: String,
     pub stop_mark: Arc<AtomicBool>,
+    // pub err_occur: Arc<AtomicBool>,
     pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
     pub attributes: TransferTaskAttributes,

@@ -54,6 +54,7 @@ pub trait TransferTaskActions {
     fn gen_transfer_executor(
         &self,
         stop_mark: Arc<AtomicBool>,
+        err_occur: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file_path: String,

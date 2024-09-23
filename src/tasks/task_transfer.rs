@@ -444,7 +444,7 @@ impl TransferTask {
                 let executing_transfers = Arc::new(RwLock::new(0));
                 let task_increment = self.gen_transfer_actions();
 
-                let _ = task_increment
+                task_increment
                     .execute_increment(
                         Arc::clone(&stop_mark),
                         Arc::clone(&err_counter),

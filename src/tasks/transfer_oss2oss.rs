@@ -174,6 +174,7 @@ impl TransferTaskActions for TransferOss2Oss {
     fn gen_transfer_executor(
         &self,
         stop_mark: Arc<AtomicBool>,
+        err_occur: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file_path: String,
@@ -560,8 +561,6 @@ impl TransferTaskActions for TransferOss2Oss {
                 }
                 if let Result::Ok(line_str) = line {
                     let len = line_str.bytes().len() + "\n".bytes().len();
-                    list_file_position.offset += len;
-                    list_file_position.line_num += 1;
 
                     let record = match from_str::<RecordDescription>(&line_str) {
                         Ok(r) => r,
@@ -571,10 +570,13 @@ impl TransferTaskActions for TransferOss2Oss {
                             continue;
                         }
                     };
+                    list_file_position.offset += len;
+                    list_file_position.line_num += 1;
 
-                    if regex_filter.filter(&record.source_key) {
-                        vec_keys.push(record);
+                    if !regex_filter.filter(&record.source_key) {
+                        continue;
                     }
+                    vec_keys.push(record);
                 };
 
                 if vec_keys
@@ -709,6 +711,7 @@ pub struct TransferOss2OssRecordsExecutor {
     pub source: OSSDescription,
     pub target: OSSDescription,
     pub stop_mark: Arc<AtomicBool>,
+    // pub err_occur: Arc<AtomicBool>,
     pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
     pub attributes: TransferTaskAttributes,
@@ -890,8 +893,6 @@ impl TransferOss2OssRecordsExecutor {
             .write(true)
             .truncate(true)
             .open(error_file_name.as_str())?;
-
-        // drop(error_file);
 
         let source_client = self.source.gen_oss_client()?;
         let target_client = self.target.gen_oss_client()?;
