@@ -1,7 +1,8 @@
 use super::{
-    gen_file_path, task_actions::TransferTaskActions, IncrementAssistant, TransferStage,
-    TransferTaskAttributes, MODIFIED_PREFIX, OFFSET_PREFIX, REMOVED_PREFIX,
-    TRANSFER_ERROR_RECORD_PREFIX, TRANSFER_OBJECT_LIST_FILE_PREFIX,
+    gen_file_path,
+    task_actions::{TransferExecutor, TransferTaskActions},
+    IncrementAssistant, TransferStage, TransferTaskAttributes, MODIFIED_PREFIX, OFFSET_PREFIX,
+    REMOVED_PREFIX, TRANSFER_ERROR_RECORD_PREFIX, TRANSFER_OBJECT_LIST_FILE_PREFIX,
 };
 use crate::{
     checkpoint::{
@@ -316,6 +317,7 @@ impl TransferTaskActions for TransferOss2Local {
         executing_transfers: Arc<RwLock<usize>>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
+        err_occur: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file: String,
@@ -342,6 +344,25 @@ impl TransferTaskActions for TransferOss2Local {
                 log::error!("{:?}", e);
             };
         });
+    }
+
+    fn gen_transfer_executor(
+        &self,
+        stop_mark: Arc<AtomicBool>,
+        err_counter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, FilePosition>>,
+        list_file_path: String,
+    ) -> Arc<dyn TransferExecutor + Send + Sync> {
+        let executor = TransferOss2LocalRecordsExecutor {
+            source: self.source.clone(),
+            target: self.target.clone(),
+            stop_mark,
+            err_counter,
+            offset_map,
+            attributes: self.attributes.clone(),
+            list_file_path,
+        };
+        Arc::new(executor)
     }
 
     async fn record_descriptions_transfor(
@@ -608,6 +629,160 @@ pub struct TransferOss2LocalRecordsExecutor {
     pub list_file_path: String,
 }
 
+#[async_trait]
+impl TransferExecutor for TransferOss2LocalRecordsExecutor {
+    async fn exec_listed_records(
+        &self,
+        records: Vec<ListedRecord>,
+        executing_transfers: Arc<RwLock<usize>>,
+    ) -> Result<()> {
+        let subffix = records[0].offset.to_string();
+        let mut offset_key = OFFSET_PREFIX.to_string();
+        offset_key.push_str(&subffix);
+
+        let error_file_name = gen_file_path(
+            &self.attributes.meta_dir,
+            TRANSFER_ERROR_RECORD_PREFIX,
+            &subffix,
+        );
+
+        let mut error_file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(error_file_name.as_str())?;
+
+        let c_s = self.source.gen_oss_client()?;
+        for record in records {
+            if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+                return Ok(());
+            }
+
+            let t_file_name = gen_file_path(self.target.as_str(), &record.key.as_str(), "");
+            let e_u = Arc::clone(&executing_transfers);
+            if let Err(e) = self
+                .listed_record_handler(e_u, &record, &c_s, t_file_name.as_str())
+                .await
+            {
+                let record_desc = RecordDescription {
+                    source_key: record.key.clone(),
+                    target_key: t_file_name.clone(),
+                    list_file_path: self.list_file_path.clone(),
+                    list_file_position: FilePosition {
+                        offset: record.offset,
+                        line_num: record.line_num,
+                    },
+                    option: Opt::PUT,
+                };
+                record_desc.handle_error(
+                    self.stop_mark.clone(),
+                    &self.err_counter,
+                    self.attributes.max_errors,
+                    &self.offset_map,
+                    &mut error_file,
+                    offset_key.as_str(),
+                );
+                log::error!("{:?}", e);
+            }
+
+            // 文件位置记录后置，避免中断时已记录而传输未完成，续传时丢记录
+            self.offset_map.insert(
+                offset_key.clone(),
+                FilePosition {
+                    offset: record.offset,
+                    line_num: record.line_num,
+                },
+            );
+        }
+
+        self.offset_map.remove(&offset_key);
+        let _ = error_file.flush();
+        match error_file.metadata() {
+            Ok(meta) => {
+                if meta.len() == 0 {
+                    let _ = fs::remove_file(error_file_name.as_str());
+                }
+            }
+            Err(_) => {}
+        };
+
+        Ok(())
+    }
+
+    async fn exec_record_descriptions(
+        &self,
+        executing_transfers: Arc<RwLock<usize>>,
+        records: Vec<RecordDescription>,
+    ) -> Result<()> {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        let mut subffix = records[0].list_file_position.offset.to_string();
+        let mut offset_key = OFFSET_PREFIX.to_string();
+        offset_key.push_str(&subffix);
+
+        subffix.push_str("_");
+        subffix.push_str(now.as_secs().to_string().as_str());
+
+        let error_file_name = gen_file_path(
+            &self.attributes.meta_dir,
+            TRANSFER_ERROR_RECORD_PREFIX,
+            &subffix,
+        );
+
+        let mut error_file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(error_file_name.as_str())?;
+
+        let source_client = self.source.gen_oss_client()?;
+
+        for record in records {
+            // 记录执行文件位置
+            self.offset_map
+                .insert(offset_key.clone(), record.list_file_position.clone());
+
+            let t_path = Path::new(&record.target_key);
+            if let Some(p) = t_path.parent() {
+                std::fs::create_dir_all(p)?
+            };
+
+            // 目标object存在则不推送
+            if self.attributes.target_exists_skip {
+                if t_path.exists() {
+                    continue;
+                }
+            }
+
+            if let Err(e) = self
+                .record_description_handler(&source_client, &record)
+                .await
+            {
+                log::error!("{:?}", e);
+                record.handle_error(
+                    self.stop_mark.clone(),
+                    &self.err_counter,
+                    self.attributes.max_errors,
+                    &self.offset_map,
+                    &mut error_file,
+                    offset_key.as_str(),
+                );
+            };
+        }
+        self.offset_map.remove(&offset_key);
+        let _ = error_file.flush();
+        match error_file.metadata() {
+            Ok(meta) => {
+                if meta.len() == 0 {
+                    let _ = fs::remove_file(error_file_name.as_str());
+                }
+            }
+            Err(_) => {}
+        };
+
+        Ok(())
+    }
+}
+
 impl TransferOss2LocalRecordsExecutor {
     pub async fn exec_listed_records(
         &self,
@@ -687,7 +862,77 @@ impl TransferOss2LocalRecordsExecutor {
 
         Ok(())
     }
+    pub async fn exec_record_descriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        let mut subffix = records[0].list_file_position.offset.to_string();
+        let mut offset_key = OFFSET_PREFIX.to_string();
+        offset_key.push_str(&subffix);
 
+        subffix.push_str("_");
+        subffix.push_str(now.as_secs().to_string().as_str());
+
+        let error_file_name = gen_file_path(
+            &self.attributes.meta_dir,
+            TRANSFER_ERROR_RECORD_PREFIX,
+            &subffix,
+        );
+
+        let mut error_file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(error_file_name.as_str())?;
+
+        let source_client = self.source.gen_oss_client()?;
+
+        for record in records {
+            // 记录执行文件位置
+            self.offset_map
+                .insert(offset_key.clone(), record.list_file_position.clone());
+
+            let t_path = Path::new(&record.target_key);
+            if let Some(p) = t_path.parent() {
+                std::fs::create_dir_all(p)?
+            };
+
+            // 目标object存在则不推送
+            if self.attributes.target_exists_skip {
+                if t_path.exists() {
+                    continue;
+                }
+            }
+
+            if let Err(e) = self
+                .record_description_handler(&source_client, &record)
+                .await
+            {
+                log::error!("{:?}", e);
+                record.handle_error(
+                    self.stop_mark.clone(),
+                    &self.err_counter,
+                    self.attributes.max_errors,
+                    &self.offset_map,
+                    &mut error_file,
+                    offset_key.as_str(),
+                );
+            };
+        }
+        self.offset_map.remove(&offset_key);
+        let _ = error_file.flush();
+        match error_file.metadata() {
+            Ok(meta) => {
+                if meta.len() == 0 {
+                    let _ = fs::remove_file(error_file_name.as_str());
+                }
+            }
+            Err(_) => {}
+        };
+
+        Ok(())
+    }
+}
+
+impl TransferOss2LocalRecordsExecutor {
     async fn listed_record_handler(
         &self,
         executing_transfers: Arc<RwLock<usize>>,
@@ -765,75 +1010,6 @@ impl TransferOss2LocalRecordsExecutor {
         //     self.attributes.multi_part_chunk_size,
         // )
         // .await
-    }
-
-    pub async fn exec_record_descriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
-        let mut subffix = records[0].list_file_position.offset.to_string();
-        let mut offset_key = OFFSET_PREFIX.to_string();
-        offset_key.push_str(&subffix);
-
-        subffix.push_str("_");
-        subffix.push_str(now.as_secs().to_string().as_str());
-
-        let error_file_name = gen_file_path(
-            &self.attributes.meta_dir,
-            TRANSFER_ERROR_RECORD_PREFIX,
-            &subffix,
-        );
-
-        let mut error_file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(error_file_name.as_str())?;
-
-        let source_client = self.source.gen_oss_client()?;
-
-        for record in records {
-            // 记录执行文件位置
-            self.offset_map
-                .insert(offset_key.clone(), record.list_file_position.clone());
-
-            let t_path = Path::new(&record.target_key);
-            if let Some(p) = t_path.parent() {
-                std::fs::create_dir_all(p)?
-            };
-
-            // 目标object存在则不推送
-            if self.attributes.target_exists_skip {
-                if t_path.exists() {
-                    continue;
-                }
-            }
-
-            if let Err(e) = self
-                .record_description_handler(&source_client, &record)
-                .await
-            {
-                log::error!("{:?}", e);
-                record.handle_error(
-                    self.stop_mark.clone(),
-                    &self.err_counter,
-                    self.attributes.max_errors,
-                    &self.offset_map,
-                    &mut error_file,
-                    offset_key.as_str(),
-                );
-            };
-        }
-        self.offset_map.remove(&offset_key);
-        let _ = error_file.flush();
-        match error_file.metadata() {
-            Ok(meta) => {
-                if meta.len() == 0 {
-                    let _ = fs::remove_file(error_file_name.as_str());
-                }
-            }
-            Err(_) => {}
-        };
-
-        Ok(())
     }
 
     async fn record_description_handler(

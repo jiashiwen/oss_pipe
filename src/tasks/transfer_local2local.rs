@@ -1,4 +1,4 @@
-use super::task_actions::TransferTaskActions;
+use super::task_actions::{TransferExecutor, TransferTaskActions};
 use super::{
     gen_file_path, IncrementAssistant, LocalNotify, TaskStatusSaver, TransferStage,
     TransferTaskAttributes, MODIFIED_PREFIX, NOTIFY_FILE_PREFIX, OFFSET_PREFIX, REMOVED_PREFIX,
@@ -120,6 +120,7 @@ impl TransferTaskActions for TransferLocal2Local {
         _executing_transfers: Arc<RwLock<usize>>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
+        err_occur: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file: String,
@@ -143,6 +144,25 @@ impl TransferTaskActions for TransferLocal2Local {
                 log::error!("{:?}", e);
             };
         });
+    }
+
+    fn gen_transfer_executor(
+        &self,
+        stop_mark: Arc<AtomicBool>,
+        err_counter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, FilePosition>>,
+        list_file_path: String,
+    ) -> Arc<dyn TransferExecutor + Send + Sync> {
+        let executor = TransferLocal2LocalExecutor {
+            source: self.source.clone(),
+            target: self.target.clone(),
+            stop_mark,
+            err_counter,
+            offset_map,
+            attributes: self.attributes.clone(),
+            list_file_path,
+        };
+        Arc::new(executor)
     }
 
     async fn record_descriptions_transfor(
@@ -616,9 +636,140 @@ pub struct TransferLocal2LocalExecutor {
     pub list_file_path: String,
 }
 
+#[async_trait]
+impl TransferExecutor for TransferLocal2LocalExecutor {
+    async fn exec_listed_records(
+        &self,
+        records: Vec<ListedRecord>,
+        executing_transfers: Arc<RwLock<usize>>,
+    ) -> Result<()> {
+        let subffix = records[0].offset.to_string();
+        let mut offset_key = OFFSET_PREFIX.to_string();
+        offset_key.push_str(&subffix);
+        let error_file_name = gen_file_path(
+            &self.attributes.meta_dir,
+            TRANSFER_ERROR_RECORD_PREFIX,
+            &subffix,
+        );
+
+        let mut error_file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(error_file_name.as_str())?;
+
+        for record in records {
+            if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+                return Ok(());
+            }
+
+            let s_file_name = gen_file_path(self.source.as_str(), record.key.as_str(), "");
+            let t_file_name = gen_file_path(self.target.as_str(), record.key.as_str(), "");
+
+            if let Err(e) = self
+                .listed_record_handler(s_file_name.as_str(), t_file_name.as_str())
+                .await
+            {
+                // 记录错误记录
+                let recorddesc = RecordDescription {
+                    source_key: s_file_name,
+                    target_key: t_file_name,
+                    list_file_path: self.list_file_path.clone(),
+                    list_file_position: FilePosition {
+                        offset: record.offset,
+                        line_num: record.line_num,
+                    },
+                    option: Opt::PUT,
+                };
+                recorddesc.handle_error(
+                    self.stop_mark.clone(),
+                    &self.err_counter,
+                    self.attributes.max_errors,
+                    &self.offset_map,
+                    &mut error_file,
+                    offset_key.as_str(),
+                );
+                log::error!("{:?}", e);
+            };
+
+            // 文件位置记录后置，避免中断时已记录而传输未完成，续传时丢记录
+            self.offset_map.insert(
+                offset_key.clone(),
+                FilePosition {
+                    offset: record.offset,
+                    line_num: record.line_num,
+                },
+            );
+        }
+
+        self.offset_map.remove(&offset_key);
+        let _ = error_file.flush();
+        match error_file.metadata() {
+            Ok(meta) => {
+                if meta.len() == 0 {
+                    let _ = fs::remove_file(error_file_name.as_str());
+                }
+            }
+            Err(_) => {}
+        };
+
+        Ok(())
+    }
+
+    async fn exec_record_descriptions(
+        &self,
+        executing_transfers: Arc<RwLock<usize>>,
+        records: Vec<RecordDescription>,
+    ) -> Result<()> {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        let mut subffix = records[0].list_file_position.offset.to_string();
+        let mut offset_key = OFFSET_PREFIX.to_string();
+        offset_key.push_str(&subffix);
+
+        subffix.push_str("_");
+        subffix.push_str(now.as_secs().to_string().as_str());
+
+        let error_file_name = gen_file_path(
+            &self.attributes.meta_dir,
+            TRANSFER_ERROR_RECORD_PREFIX,
+            &subffix,
+        );
+
+        let mut error_file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(error_file_name.as_str())?;
+
+        for record in records {
+            if let Err(e) = self.record_description_handler(&record).await {
+                record.handle_error(
+                    self.stop_mark.clone(),
+                    &self.err_counter,
+                    self.attributes.max_errors,
+                    &self.offset_map,
+                    &mut error_file,
+                    offset_key.as_str(),
+                );
+                log::error!("{:?}", e);
+            }
+        }
+
+        let _ = error_file.flush();
+        match error_file.metadata() {
+            Ok(meta) => {
+                if meta.len() == 0 {
+                    let _ = fs::remove_file(error_file_name.as_str());
+                }
+            }
+            Err(_) => {}
+        };
+
+        Ok(())
+    }
+}
+
 impl TransferLocal2LocalExecutor {
-    // Todo
-    // 如果在批次处理开始前出现报错则整批数据都不执行，需要有逻辑执行错误记录
     pub async fn exec_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
@@ -693,33 +844,6 @@ impl TransferLocal2LocalExecutor {
         Ok(())
     }
 
-    async fn listed_record_handler(&self, source_file: &str, target_file: &str) -> Result<()> {
-        // 判断源文件是否存在，若不存判定为成功传输
-        let s_path = Path::new(source_file);
-        if !s_path.exists() {
-            return Ok(());
-        }
-
-        let t_path = Path::new(target_file);
-        if let Some(p) = t_path.parent() {
-            std::fs::create_dir_all(p)?
-        };
-
-        // 目标object存在则不推送
-        if self.attributes.target_exists_skip {
-            if t_path.exists() {
-                return Ok(());
-            }
-        }
-
-        copy_file(
-            source_file,
-            target_file,
-            self.attributes.large_file_size,
-            self.attributes.multi_part_chunk_size,
-        )
-    }
-
     pub async fn exec_record_descriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let mut subffix = records[0].list_file_position.offset.to_string();
@@ -766,6 +890,35 @@ impl TransferLocal2LocalExecutor {
         };
 
         Ok(())
+    }
+}
+
+impl TransferLocal2LocalExecutor {
+    async fn listed_record_handler(&self, source_file: &str, target_file: &str) -> Result<()> {
+        // 判断源文件是否存在，若不存判定为成功传输
+        let s_path = Path::new(source_file);
+        if !s_path.exists() {
+            return Ok(());
+        }
+
+        let t_path = Path::new(target_file);
+        if let Some(p) = t_path.parent() {
+            std::fs::create_dir_all(p)?
+        };
+
+        // 目标object存在则不推送
+        if self.attributes.target_exists_skip {
+            if t_path.exists() {
+                return Ok(());
+            }
+        }
+
+        copy_file(
+            source_file,
+            target_file,
+            self.attributes.large_file_size,
+            self.attributes.multi_part_chunk_size,
+        )
     }
 
     pub async fn record_description_handler(&self, record: &RecordDescription) -> Result<()> {

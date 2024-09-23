@@ -1,3 +1,4 @@
+use super::task_actions::TransferExecutor;
 use super::task_actions::TransferTaskActions;
 use super::IncrementAssistant;
 use super::LocalNotify;
@@ -141,6 +142,7 @@ impl TransferTaskActions for TransferLocal2Oss {
         executing_transfers: Arc<RwLock<usize>>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
+        err_ocure: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<std::string::String, FilePosition>>,
         list_file: String,
@@ -167,6 +169,25 @@ impl TransferTaskActions for TransferLocal2Oss {
                 log::error!("{:?}", e);
             };
         });
+    }
+
+    fn gen_transfer_executor(
+        &self,
+        stop_mark: Arc<AtomicBool>,
+        err_counter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, FilePosition>>,
+        list_file_path: String,
+    ) -> Arc<dyn TransferExecutor + Send + Sync> {
+        let executor = TransferLocal2OssExecuter {
+            source: self.source.clone(),
+            target: self.target.clone(),
+            stop_mark,
+            err_counter,
+            offset_map,
+            attributes: self.attributes.clone(),
+            list_file_path,
+        };
+        Arc::new(executor)
     }
 
     async fn record_descriptions_transfor(
@@ -668,8 +689,9 @@ pub struct TransferLocal2OssExecuter {
     pub list_file_path: String,
 }
 
-impl TransferLocal2OssExecuter {
-    pub async fn exec_listed_records(
+#[async_trait]
+impl TransferExecutor for TransferLocal2OssExecuter {
+    async fn exec_listed_records(
         &self,
         records: Vec<ListedRecord>,
         executing_transfers: Arc<RwLock<usize>>,
@@ -763,54 +785,215 @@ impl TransferLocal2OssExecuter {
         Ok(())
     }
 
-    async fn listed_record_handler(
+    async fn exec_record_descriptions(
         &self,
         executing_transfers: Arc<RwLock<usize>>,
-        source_file: &str,
-        target_oss: &OssClient,
-        target_key: &str,
+        records: Vec<RecordDescription>,
     ) -> Result<()> {
-        // 判断源文件是否存在
-        let s_path = Path::new(source_file);
-        if !s_path.exists() {
-            return Ok(());
-        }
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        let mut subffix = records[0].list_file_position.offset.to_string();
+        let mut offset_key = OFFSET_PREFIX.to_string();
+        offset_key.push_str(&subffix);
 
-        // 目标object存在则不推送
-        if self.attributes.target_exists_skip {
-            let target_obj_exists = target_oss
-                .object_exists(self.target.bucket.as_str(), target_key)
-                .await?;
+        subffix.push_str("_");
+        subffix.push_str(now.as_secs().to_string().as_str());
 
-            if target_obj_exists {
-                return Ok(());
+        let error_file_name = gen_file_path(
+            &self.attributes.meta_dir,
+            TRANSFER_ERROR_RECORD_PREFIX,
+            &subffix,
+        );
+
+        let mut error_file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(error_file_name.as_str())?;
+
+        let c_t = self.target.gen_oss_client()?;
+
+        // Todo
+        // 增加去重逻辑，当两条记录相邻为 create和modif时只put一次
+        // 增加目录删除逻辑，对应oss删除指定prefix下的所有文件，文件系统删除目录
+        for record in records {
+            // 记录执行文件位置
+            self.offset_map
+                .insert(offset_key.clone(), record.list_file_position.clone());
+
+            // 目标object存在则不推送
+            if self.attributes.target_exists_skip {
+                match c_t
+                    .object_exists(self.target.bucket.as_str(), &record.target_key)
+                    .await
+                {
+                    Ok(b) => {
+                        if b {
+                            continue;
+                        }
+                    }
+                    Err(e) => {
+                        record.handle_error(
+                            self.stop_mark.clone(),
+                            &self.err_counter,
+                            self.attributes.max_errors,
+                            &self.offset_map,
+                            &mut error_file,
+                            offset_key.as_str(),
+                        );
+                        log::error!("{:?}", e);
+                        continue;
+                    }
+                }
+            }
+
+            if let Err(e) = match record.option {
+                Opt::PUT => {
+                    // 判断源文件是否存在
+                    let s_path = Path::new(&record.source_key);
+                    if !s_path.exists() {
+                        continue;
+                    }
+
+                    c_t.upload_local_file(
+                        self.target.bucket.as_str(),
+                        &record.target_key,
+                        &record.source_key,
+                        self.attributes.large_file_size,
+                        self.attributes.multi_part_chunk_size,
+                    )
+                    .await
+                }
+                Opt::REMOVE => {
+                    match c_t
+                        .remove_object(self.target.bucket.as_str(), &record.target_key)
+                        .await
+                    {
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(anyhow!("{}", e)),
+                    }
+                }
+                _ => Err(anyhow!("option unkown")),
+            } {
+                record.handle_error(
+                    self.stop_mark.clone(),
+                    &self.err_counter,
+                    self.attributes.max_errors,
+                    &self.offset_map,
+                    &mut error_file,
+                    offset_key.as_str(),
+                );
+                log::error!("{:?}", e);
+                continue;
             }
         }
+        self.offset_map.remove(&offset_key);
+        let _ = error_file.flush();
+        match error_file.metadata() {
+            Ok(meta) => {
+                if meta.len() == 0 {
+                    let _ = fs::remove_file(error_file_name.as_str());
+                }
+            }
+            Err(_) => {}
+        };
 
-        // target_oss
-        //     .upload_local_file(
-        //         self.target.bucket.as_str(),
-        //         target_key,
-        //         source_file,
-        //         self.attributes.large_file_size,
-        //         self.attributes.multi_part_chunk,
-        //     )
-        //     .await
+        Ok(())
+    }
+}
 
-        // ToDo
-        // 新增阐述chunk_batch 定义分片上传每批上传分片的数量
-        target_oss
-            .upload_local_file_paralle(
-                source_file,
-                self.target.bucket.as_str(),
-                target_key,
-                self.attributes.large_file_size,
-                Arc::clone(&executing_transfers),
-                self.attributes.multi_part_chunk_size,
-                self.attributes.multi_part_chunks_per_batch,
-                self.attributes.multi_part_parallelism,
-            )
-            .await
+impl TransferLocal2OssExecuter {
+    pub async fn exec_listed_records(
+        &self,
+        records: Vec<ListedRecord>,
+        executing_transfers: Arc<RwLock<usize>>,
+    ) -> Result<()> {
+        let mut offset_key = OFFSET_PREFIX.to_string();
+        let subffix = records[0].offset.to_string();
+        offset_key.push_str(&subffix);
+
+        // Todo
+        // 若第一行出错则整组record写入错误记录，若错误记录文件打开报错则停止任务
+        let error_file_name = gen_file_path(
+            &self.attributes.meta_dir,
+            TRANSFER_ERROR_RECORD_PREFIX,
+            &records[0].offset.to_string(),
+        );
+
+        let mut error_file = match OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(error_file_name.as_str())
+        {
+            Ok(ef) => ef,
+            Err(e) => {
+                log::error!("{:?}", e);
+                return Err(anyhow!(e));
+            }
+        };
+
+        let target_oss_client = self.target.gen_oss_client()?;
+
+        for record in records {
+            if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+                return Ok(());
+            }
+
+            let source_file_path = gen_file_path(self.source.as_str(), &record.key.as_str(), "");
+            let mut target_key = "".to_string();
+            if let Some(s) = self.target.prefix.clone() {
+                target_key.push_str(&s);
+            };
+            target_key.push_str(&record.key);
+
+            let e_u = Arc::clone(&executing_transfers);
+            if let Err(e) = self
+                .listed_record_handler(e_u, &source_file_path, &target_oss_client, &target_key)
+                .await
+            {
+                let record_desc = RecordDescription {
+                    source_key: source_file_path.clone(),
+                    target_key: target_key.clone(),
+                    list_file_path: self.list_file_path.clone(),
+                    list_file_position: FilePosition {
+                        offset: record.offset,
+                        line_num: record.line_num,
+                    },
+                    option: Opt::PUT,
+                };
+                record_desc.handle_error(
+                    self.stop_mark.clone(),
+                    &self.err_counter,
+                    self.attributes.max_errors,
+                    &self.offset_map,
+                    &mut error_file,
+                    offset_key.as_str(),
+                );
+                log::error!("{:?}", e);
+            }
+
+            // 文件位置记录后置，避免中断时已记录而传输未完成，续传时丢记录
+            self.offset_map.insert(
+                offset_key.clone(),
+                FilePosition {
+                    offset: record.offset,
+                    line_num: record.line_num,
+                },
+            );
+        }
+
+        self.offset_map.remove(&offset_key);
+        let _ = error_file.flush();
+        match error_file.metadata() {
+            Ok(meta) => {
+                if 0.eq(&meta.len()) {
+                    let _ = fs::remove_file(error_file_name.as_str());
+                }
+            }
+            Err(_) => {}
+        };
+
+        Ok(())
     }
 
     pub async fn exec_record_descriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
@@ -922,5 +1105,57 @@ impl TransferLocal2OssExecuter {
         };
 
         Ok(())
+    }
+}
+
+impl TransferLocal2OssExecuter {
+    async fn listed_record_handler(
+        &self,
+        executing_transfers: Arc<RwLock<usize>>,
+        source_file: &str,
+        target_oss: &OssClient,
+        target_key: &str,
+    ) -> Result<()> {
+        // 判断源文件是否存在
+        let s_path = Path::new(source_file);
+        if !s_path.exists() {
+            return Ok(());
+        }
+
+        // 目标object存在则不推送
+        if self.attributes.target_exists_skip {
+            let target_obj_exists = target_oss
+                .object_exists(self.target.bucket.as_str(), target_key)
+                .await?;
+
+            if target_obj_exists {
+                return Ok(());
+            }
+        }
+
+        // target_oss
+        //     .upload_local_file(
+        //         self.target.bucket.as_str(),
+        //         target_key,
+        //         source_file,
+        //         self.attributes.large_file_size,
+        //         self.attributes.multi_part_chunk,
+        //     )
+        //     .await
+
+        // ToDo
+        // 新增阐述chunk_batch 定义分片上传每批上传分片的数量
+        target_oss
+            .upload_local_file_paralle(
+                source_file,
+                self.target.bucket.as_str(),
+                target_key,
+                self.attributes.large_file_size,
+                Arc::clone(&executing_transfers),
+                self.attributes.multi_part_chunk_size,
+                self.attributes.multi_part_chunks_per_batch,
+                self.attributes.multi_part_parallelism,
+            )
+            .await
     }
 }

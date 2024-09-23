@@ -33,6 +33,7 @@ pub trait TransferTaskActions {
         executing_transfers: Arc<RwLock<usize>>,
         records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
+        err_occur: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file: String,
@@ -49,6 +50,14 @@ pub trait TransferTaskActions {
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file: String,
     );
+
+    fn gen_transfer_executor(
+        &self,
+        stop_mark: Arc<AtomicBool>,
+        err_counter: Arc<AtomicUsize>,
+        offset_map: Arc<DashMap<String, FilePosition>>,
+        list_file_path: String,
+    ) -> Arc<dyn TransferExecutor + Send + Sync>;
 
     // 生成对象列表
     async fn gen_source_object_list_file(&self, object_list_file: &str) -> Result<FileDescription>;
@@ -97,6 +106,7 @@ pub trait TransferExecutor {
         records: Vec<ListedRecord>,
         executing_transfers: Arc<RwLock<usize>>,
     ) -> Result<()>;
+
     async fn exec_record_descriptions(
         &self,
         executing_transfers: Arc<RwLock<usize>>,
