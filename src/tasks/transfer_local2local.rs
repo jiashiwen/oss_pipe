@@ -345,7 +345,12 @@ impl TransferTaskActions for TransferLocal2Local {
         Ok(file_desc)
     }
 
-    async fn increment_prelude(&self, assistant: Arc<Mutex<IncrementAssistant>>) -> Result<()> {
+    async fn increment_prelude(
+        &self,
+        stop_mark: Arc<AtomicBool>,
+        err_occur: Arc<AtomicBool>,
+        assistant: Arc<Mutex<IncrementAssistant>>,
+    ) -> Result<()> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let notify_file_path = gen_file_path(
             self.attributes.meta_dir.as_str(),
@@ -354,16 +359,20 @@ impl TransferTaskActions for TransferLocal2Local {
         );
 
         let watcher = NotifyWatcher::new(&self.source)?;
-        let notify_file_size = Arc::new(AtomicU64::new(0));
-
         let file_for_notify = OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
             .open(notify_file_path.as_str())?;
 
+        let notify_file_size = Arc::new(AtomicU64::new(0));
         watcher
-            .watch_to_file(file_for_notify, Arc::clone(&notify_file_size))
+            .watch_to_file(
+                stop_mark,
+                err_occur,
+                file_for_notify,
+                Arc::clone(&notify_file_size),
+            )
             .await;
 
         let local_notify = LocalNotify {
@@ -532,6 +541,7 @@ impl TransferTaskActions for TransferLocal2Local {
                                 &mut error_file,
                                 offset_key.as_str(),
                             );
+                            err_occur.store(true, std::sync::atomic::Ordering::SeqCst);
                             log::error!("{:?}", e);
                         }
                     }
@@ -660,11 +670,21 @@ impl TransferExecutor for TransferLocal2LocalExecutor {
             &subffix,
         );
 
-        let mut error_file = OpenOptions::new()
+        let mut error_file = match OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
-            .open(error_file_name.as_str())?;
+            .open(error_file_name.as_str())
+        {
+            Ok(f) => f,
+            Err(e) => {
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                self.stop_mark
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                return Err(anyhow!("{}", e));
+            }
+        };
 
         for record in records {
             if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
@@ -697,6 +717,8 @@ impl TransferExecutor for TransferLocal2LocalExecutor {
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{:?}", e);
             };
 
@@ -759,6 +781,8 @@ impl TransferExecutor for TransferLocal2LocalExecutor {
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{:?}", e);
             }
         }
@@ -825,6 +849,8 @@ impl TransferLocal2LocalExecutor {
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{:?}", e);
             };
 
@@ -883,6 +909,8 @@ impl TransferLocal2LocalExecutor {
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{:?}", e);
             }
         }

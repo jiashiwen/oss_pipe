@@ -23,11 +23,9 @@ use aws_smithy_types::{body::SdkBody, byte_stream::ByteStream};
 use dashmap::DashMap;
 
 use std::{
-    borrow::Borrow,
     collections::BTreeMap,
     fs::{self, File, OpenOptions},
     io::{LineWriter, Read, Seek, SeekFrom, Write},
-    os::unix::fs::MetadataExt,
     path::Path,
     sync::{atomic::AtomicBool, Arc},
 };

@@ -20,6 +20,7 @@ use crate::commons::{
 use crate::s3::oss_client::OssClient;
 use crate::tasks::TaskDefaultParameters;
 use crate::{checkpoint::ListedRecord, s3::OSSDescription};
+use anyhow::Context;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 // use aws_sdk_s3::model::Object;
@@ -408,7 +409,12 @@ impl TransferTaskActions for TransferLocal2Oss {
         Ok(file_desc)
     }
 
-    async fn increment_prelude(&self, assistant: Arc<Mutex<IncrementAssistant>>) -> Result<()> {
+    async fn increment_prelude(
+        &self,
+        stop_mark: Arc<AtomicBool>,
+        err_occur: Arc<AtomicBool>,
+        assistant: Arc<Mutex<IncrementAssistant>>,
+    ) -> Result<()> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let notify_file_path = gen_file_path(
             self.attributes.meta_dir.as_str(),
@@ -435,8 +441,14 @@ impl TransferTaskActions for TransferLocal2Oss {
         drop(lock);
 
         watcher
-            .watch_to_file(file_for_notify, Arc::clone(&notify_file_size))
+            .watch_to_file(
+                stop_mark,
+                err_occur,
+                file_for_notify,
+                Arc::clone(&notify_file_size),
+            )
             .await;
+        log::info!("notify");
 
         Ok(())
     }
@@ -582,6 +594,7 @@ impl TransferTaskActions for TransferLocal2Oss {
                                 &mut error_file,
                                 offset_key.as_str(),
                             );
+                            err_occur.store(true, std::sync::atomic::Ordering::SeqCst);
                             log::error!("{:?}", e);
                         }
                     }
@@ -724,12 +737,26 @@ impl TransferExecutor for TransferLocal2OssExecuter {
         {
             Ok(ef) => ef,
             Err(e) => {
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                self.stop_mark
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{:?}", e);
                 return Err(anyhow!(e));
             }
         };
 
-        let target_oss_client = self.target.gen_oss_client()?;
+        let target_oss_client = match self.target.gen_oss_client() {
+            Ok(c) => c,
+            Err(e) => {
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                self.stop_mark
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                log::error!("{:?}", e);
+                return Err(anyhow!(e));
+            }
+        };
 
         for record in records {
             if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
@@ -748,26 +775,41 @@ impl TransferExecutor for TransferLocal2OssExecuter {
                 .listed_record_handler(e_u, &source_file_path, &target_oss_client, &target_key)
                 .await
             {
-                let record_desc = RecordDescription {
-                    source_key: source_file_path.clone(),
-                    target_key: target_key.clone(),
-                    list_file_path: self.list_file_path.clone(),
-                    list_file_position: FilePosition {
-                        offset: record.offset,
-                        line_num: record.line_num,
-                    },
-                    option: Opt::PUT,
-                };
-                record_desc.handle_error(
-                    self.stop_mark.clone(),
-                    &self.err_counter,
-                    self.attributes.max_errors,
-                    &self.offset_map,
-                    &mut error_file,
-                    offset_key.as_str(),
-                );
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                self.stop_mark
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{:?}", e);
-            }
+                break;
+            };
+            // .context(format!("{}:{}", file!(), line!()))?;
+
+            // if let Err(e) = self
+            //     .listed_record_handler(e_u, &source_file_path, &target_oss_client, &target_key)
+            //     .await
+            // {
+            //     let record_desc = RecordDescription {
+            //         source_key: source_file_path.clone(),
+            //         target_key: target_key.clone(),
+            //         list_file_path: self.list_file_path.clone(),
+            //         list_file_position: FilePosition {
+            //             offset: record.offset,
+            //             line_num: record.line_num,
+            //         },
+            //         option: Opt::PUT,
+            //     };
+            //     record_desc.handle_error(
+            //         self.stop_mark.clone(),
+            //         &self.err_counter,
+            //         self.attributes.max_errors,
+            //         &self.offset_map,
+            //         &mut error_file,
+            //         offset_key.as_str(),
+            //     );
+            //     self.err_occur
+            //         .store(true, std::sync::atomic::Ordering::SeqCst);
+            //     log::error!("{:?}", e);
+            // }
 
             // 文件位置记录后置，避免中断时已记录而传输未完成，续传时丢记录
             self.offset_map.insert(
@@ -848,6 +890,8 @@ impl TransferExecutor for TransferLocal2OssExecuter {
                             &mut error_file,
                             offset_key.as_str(),
                         );
+                        self.err_occur
+                            .store(true, std::sync::atomic::Ordering::SeqCst);
                         log::error!("{:?}", e);
                         continue;
                     }
@@ -890,6 +934,8 @@ impl TransferExecutor for TransferLocal2OssExecuter {
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{:?}", e);
                 continue;
             }
@@ -977,6 +1023,8 @@ impl TransferLocal2OssExecuter {
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{:?}", e);
             }
 
@@ -1055,6 +1103,8 @@ impl TransferLocal2OssExecuter {
                             &mut error_file,
                             offset_key.as_str(),
                         );
+                        self.err_occur
+                            .store(true, std::sync::atomic::Ordering::SeqCst);
                         log::error!("{:?}", e);
                         continue;
                     }
@@ -1097,6 +1147,8 @@ impl TransferLocal2OssExecuter {
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{:?}", e);
                 continue;
             }

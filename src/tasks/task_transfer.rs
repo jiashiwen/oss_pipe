@@ -1,7 +1,6 @@
 use super::{
-    de_usize_from_str, gen_file_path, se_usize_to_str, task_delete, TaskDefaultParameters,
-    TaskStatusSaver, TransferStage, OFFSET_PREFIX, TRANSFER_CHECK_POINT_FILE,
-    TRANSFER_OBJECT_LIST_FILE_PREFIX,
+    de_usize_from_str, gen_file_path, se_usize_to_str, TaskDefaultParameters, TaskStatusSaver,
+    TransferStage, OFFSET_PREFIX, TRANSFER_CHECK_POINT_FILE, TRANSFER_OBJECT_LIST_FILE_PREFIX,
 };
 use super::{
     task_actions::TransferTaskActions, IncrementAssistant, TransferLocal2Local, TransferLocal2Oss,
@@ -22,7 +21,10 @@ use dashmap::DashMap;
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
+use tokio::time::sleep;
 
+use std::fs::OpenOptions;
+use std::time::Duration;
 use std::{
     fs::{self, File},
     io::{self, BufRead},
@@ -184,7 +186,6 @@ impl TransferTask {
                         target: path_t.to_string(),
                         attributes: self.attributes.clone(),
                     };
-                    // Box::new(t)
                     Arc::new(t)
                 }
                 ObjectStorage::OSS(oss_t) => {
@@ -195,7 +196,6 @@ impl TransferTask {
                         target: oss_t.clone(),
                         attributes: self.attributes.clone(),
                     };
-                    // Box::new(t)
                     Arc::new(t)
                 }
             },
@@ -206,7 +206,6 @@ impl TransferTask {
                         target: path_t.to_string(),
                         attributes: self.attributes.clone(),
                     };
-                    // Box::new(t)
                     Arc::new(t)
                 }
                 ObjectStorage::OSS(oss_t) => {
@@ -217,7 +216,6 @@ impl TransferTask {
                         target: oss_t.clone(),
                         attributes: self.attributes.clone(),
                     };
-                    // Box::new(t)
                     Arc::new(t)
                 }
             },
@@ -324,17 +322,22 @@ impl TransferTask {
                 || self.attributes.transfer_type.is_increment()
             {
                 let assistant = Arc::clone(&increment_assistant);
+                let s_m = stop_mark.clone();
                 let e_o = err_occur.clone();
-                task::spawn(async move {
-                    if let Err(e) = task_increment_prelude.increment_prelude(assistant).await {
+
+                // 启动increment_prelude 监听增量时的本地目录，或记录间戳
+                sys_set.spawn(async move {
+                    if let Err(e) = task_increment_prelude
+                        .increment_prelude(s_m, e_o, assistant)
+                        .await
+                    {
                         log::error!("{:?}", e);
-                        e_o.store(true, std::sync::atomic::Ordering::Relaxed);
                         return;
                     }
                 });
 
                 // 当源存储为本地时，获取notify文件
-                if let ObjectStorage::Local(_) = self.source {
+                if let ObjectStorage::Local(dir) = self.source.clone() {
                     while file_for_notify.is_none() {
                         let lock = increment_assistant.lock().await;
                         file_for_notify = match lock.get_notify_file_path() {
@@ -344,6 +347,27 @@ impl TransferTask {
                         drop(lock);
                         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                     }
+
+                    // 启动心跳，notify 需要有 event 输入才能有效结束任务
+                    let s_m = stop_mark.clone();
+                    let e_o = err_occur.clone();
+                    sys_set.spawn(async move {
+                        let tmp_file = gen_file_path(dir.as_str(), "oss_pipe_tmp", "");
+                        while !e_o.load(std::sync::atomic::Ordering::SeqCst)
+                            && !s_m.load(std::sync::atomic::Ordering::SeqCst)
+                        {
+                            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+                            task::yield_now().await;
+                        }
+                        let f = OpenOptions::new()
+                            .truncate(true)
+                            .create(true)
+                            .write(true)
+                            .open(tmp_file.as_str())
+                            .unwrap();
+                        drop(f);
+                        let _ = fs::remove_file(tmp_file);
+                    });
                 }
             }
 
@@ -415,10 +439,17 @@ impl TransferTask {
 
             // 配置停止 offset save 标识为 true
             stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
-            let lock = increment_assistant.lock().await;
-            let notify = lock.get_notify_file_path();
-            drop(lock);
 
+            while sys_set.len() > 0 {
+                task::yield_now().await;
+                sys_set.join_next().await;
+            }
+            log::info!("invoke");
+            if task_err_occur.load(std::sync::atomic::Ordering::Relaxed) {
+                return;
+            }
+
+            // 准备增量任务
             let mut checkpoint = match get_task_checkpoint(check_point_file.as_str()) {
                 Ok(c) => c,
                 Err(e) => {
@@ -426,20 +457,17 @@ impl TransferTask {
                     return;
                 }
             };
+
+            let lock = increment_assistant.lock().await;
+            let notify = lock.get_notify_file_path();
+            drop(lock);
+
             checkpoint.file_for_notify = notify;
+            checkpoint.executed_file_position = list_file_position;
 
             if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
                 log::error!("{:?}", e);
             };
-
-            while sys_set.len() > 0 {
-                task::yield_now().await;
-                sys_set.join_next().await;
-            }
-
-            if task_err_occur.load(std::sync::atomic::Ordering::Relaxed) {
-                return;
-            }
 
             if self.attributes.transfer_type.is_full()
                 || self.attributes.transfer_type.is_increment()
@@ -552,7 +580,7 @@ impl TransferTask {
                 // 重新生成object list file
                 let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
                 let _ = fs::remove_dir_all(self.attributes.meta_dir.as_str());
-                log::info!("invoke");
+
                 let executed_file = FileDescription {
                     path: gen_file_path(
                         self.attributes.meta_dir.as_str(),
@@ -677,10 +705,14 @@ impl TransferTask {
                     offset_map.clone(),
                     executing_file.path.to_string(),
                 );
-
+                let eo = err_occur.clone();
+                let sm = stop_mark.clone();
                 let et = executing_transfers.clone();
+
                 exec_set.spawn(async move {
                     if let Err(e) = record_executer.exec_listed_records(vk, et).await {
+                        eo.store(true, std::sync::atomic::Ordering::SeqCst);
+                        sm.store(true, std::sync::atomic::Ordering::SeqCst);
                         log::error!("{:?}", e);
                     };
                 });

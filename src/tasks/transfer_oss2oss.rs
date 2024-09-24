@@ -475,7 +475,12 @@ impl TransferTaskActions for TransferOss2Oss {
         Ok(file_desc)
     }
 
-    async fn increment_prelude(&self, assistant: Arc<Mutex<IncrementAssistant>>) -> Result<()> {
+    async fn increment_prelude(
+        &self,
+        stop_mark: Arc<AtomicBool>,
+        err_occur: Arc<AtomicBool>,
+        assistant: Arc<Mutex<IncrementAssistant>>,
+    ) -> Result<()> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let timestampe = TryInto::<i64>::try_into(now.as_secs())?;
         let mut lock = assistant.lock().await;
@@ -784,6 +789,8 @@ impl TransferExecutor for TransferOss2OssRecordsExecutor {
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{:?}", e);
             }
 
@@ -853,7 +860,6 @@ impl TransferExecutor for TransferOss2OssRecordsExecutor {
                 .record_description_handler(executing_transfers.clone(), &s_c, &t_c, &record)
                 .await
             {
-                log::error!("{:?}", e);
                 record.handle_error(
                     self.stop_mark.clone(),
                     &self.err_counter,
@@ -862,6 +868,9 @@ impl TransferExecutor for TransferOss2OssRecordsExecutor {
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                log::error!("{:?}", e);
             };
         }
         self.offset_map.remove(&offset_key);
@@ -938,6 +947,8 @@ impl TransferOss2OssRecordsExecutor {
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{:?}", e);
             }
 
@@ -1007,7 +1018,6 @@ impl TransferOss2OssRecordsExecutor {
                 .record_description_handler(executing_transfers.clone(), &s_c, &t_c, &record)
                 .await
             {
-                log::error!("{:?}", e);
                 record.handle_error(
                     self.stop_mark.clone(),
                     &self.err_counter,
@@ -1016,6 +1026,9 @@ impl TransferOss2OssRecordsExecutor {
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                log::error!("{:?}", e);
             };
         }
         self.offset_map.remove(&offset_key);

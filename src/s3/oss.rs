@@ -1,7 +1,9 @@
+use std::time::Duration;
+
 use super::{jd_s3::OssJdClient, oss_client::OssClient};
 use anyhow::{Ok, Result};
 use async_trait::async_trait;
-use aws_config::{BehaviorVersion, SdkConfig};
+use aws_config::{timeout::TimeoutConfig, BehaviorVersion, SdkConfig};
 use aws_credential_types::{provider::SharedCredentialsProvider, Credentials};
 use aws_sdk_s3::config::{Region, StalledStreamProtectionConfig};
 use bytes::Bytes;
@@ -193,6 +195,9 @@ impl OSSDescription {
     pub fn gen_oss_client(&self) -> Result<OssClient> {
         match self.provider {
             OssProvider::JD => {
+                let timeout_config = TimeoutConfig::builder()
+                    .connect_timeout(Duration::from_secs(2))
+                    .build();
                 let shared_config = SdkConfig::builder()
                     .credentials_provider(SharedCredentialsProvider::new(Credentials::new(
                         self.access_key_id.clone(),
@@ -204,6 +209,7 @@ impl OSSDescription {
                     .endpoint_url(self.endpoint.clone())
                     .region(Region::new(self.region.clone()))
                     .behavior_version(BehaviorVersion::latest())
+                    .timeout_config(timeout_config)
                     .stalled_stream_protection(StalledStreamProtectionConfig::disabled())
                     .build();
 

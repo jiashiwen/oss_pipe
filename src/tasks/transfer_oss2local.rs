@@ -399,7 +399,12 @@ impl TransferTaskActions for TransferOss2Local {
         });
     }
 
-    async fn increment_prelude(&self, assistant: Arc<Mutex<IncrementAssistant>>) -> Result<()> {
+    async fn increment_prelude(
+        &self,
+        stop_mark: Arc<AtomicBool>,
+        err_occur: Arc<AtomicBool>,
+        assistant: Arc<Mutex<IncrementAssistant>>,
+    ) -> Result<()> {
         // 记录当前时间戳
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let timestampe = TryInto::<i64>::try_into(now.as_secs())?;
@@ -691,6 +696,8 @@ impl TransferExecutor for TransferOss2LocalRecordsExecutor {
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{:?}", e);
             }
 
@@ -766,7 +773,6 @@ impl TransferExecutor for TransferOss2LocalRecordsExecutor {
                 .record_description_handler(&source_client, &record)
                 .await
             {
-                log::error!("{:?}", e);
                 record.handle_error(
                     self.stop_mark.clone(),
                     &self.err_counter,
@@ -775,6 +781,9 @@ impl TransferExecutor for TransferOss2LocalRecordsExecutor {
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                log::error!("{:?}", e);
             };
         }
         self.offset_map.remove(&offset_key);
@@ -845,6 +854,8 @@ impl TransferOss2LocalRecordsExecutor {
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{:?}", e);
             }
 
@@ -915,7 +926,6 @@ impl TransferOss2LocalRecordsExecutor {
                 .record_description_handler(&source_client, &record)
                 .await
             {
-                log::error!("{:?}", e);
                 record.handle_error(
                     self.stop_mark.clone(),
                     &self.err_counter,
@@ -924,6 +934,9 @@ impl TransferOss2LocalRecordsExecutor {
                     &mut error_file,
                     offset_key.as_str(),
                 );
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                log::error!("{:?}", e);
             };
         }
         self.offset_map.remove(&offset_key);

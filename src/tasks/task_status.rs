@@ -70,6 +70,7 @@ impl TaskStatusSaver {
             tokio::time::sleep(tokio::time::Duration::from_secs(self.interval)).await;
             yield_now().await;
         }
+        log::info!("status saver stopped");
     }
 }
 

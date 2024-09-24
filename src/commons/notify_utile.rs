@@ -1,14 +1,16 @@
 use super::struct_to_json_string;
+use crate::tasks::gen_file_path;
+use anyhow::Result;
 use notify::{
     event::CreateKind, Config, Error, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::File,
+    fs::{self, File, OpenOptions},
     io::{LineWriter, Write},
     path::Path,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc::Receiver,
         Arc,
     },
@@ -73,11 +75,25 @@ impl NotifyWatcher {
         })
     }
 
-    pub async fn watch_to_file(mut self, file: File, file_size: Arc<AtomicU64>) {
+    // Todo
+    // 分文件保存追加记录，消费完成删除，避免文件过大
+    pub async fn watch_to_file(
+        mut self,
+        stop_mark: Arc<AtomicBool>,
+        err_occur: Arc<AtomicBool>,
+        file: File,
+        file_size: Arc<AtomicU64>,
+    ) {
         let mut linewiter = LineWriter::new(&file);
 
         self.writing_file_status = true;
         for res in self.reciver {
+            if stop_mark.load(std::sync::atomic::Ordering::SeqCst)
+                || err_occur.load(std::sync::atomic::Ordering::SeqCst)
+            {
+                return;
+            }
+
             if !self.writing_file_status {
                 return;
             }
@@ -152,8 +168,17 @@ impl NotifyWatcher {
     }
 
     #[allow(dead_code)]
-    pub fn stop_write_file(&mut self) {
+    pub fn stop_write_file(&mut self) -> Result<()> {
         self.writing_file_status = false;
+        let tmp_file = gen_file_path(self.watched_dir.as_str(), "oss_pipe_tmp", "");
+        let f = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(tmp_file.as_str())?;
+        drop(f);
+        fs::remove_dir(tmp_file)?;
+        Ok(())
     }
 
     #[allow(dead_code)]
@@ -166,7 +191,10 @@ impl NotifyWatcher {
 mod test {
     use std::{
         fs::OpenOptions,
-        sync::{atomic::AtomicU64, Arc},
+        sync::{
+            atomic::{AtomicBool, AtomicU64},
+            Arc,
+        },
     };
 
     use tokio::{runtime, task::JoinSet};
@@ -192,7 +220,12 @@ mod test {
                     .unwrap();
                 let notify_watcher = NotifyWatcher::new("/tmp/files").unwrap();
                 notify_watcher
-                    .watch_to_file(file, Arc::clone(&file_size))
+                    .watch_to_file(
+                        Arc::new(AtomicBool::new(false)),
+                        Arc::new(AtomicBool::new(false)),
+                        file,
+                        Arc::clone(&file_size),
+                    )
                     .await;
             });
             let _rs_read = set.spawn(async move {

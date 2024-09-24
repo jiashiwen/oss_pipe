@@ -172,9 +172,6 @@ impl TaskDefaultParameters {
     pub fn filter_default() -> Option<Vec<String>> {
         None
     }
-    pub fn continuous_default() -> bool {
-        false
-    }
 
     pub fn transfer_type_default() -> TransferType {
         TransferType::Stock

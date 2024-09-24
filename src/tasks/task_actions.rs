@@ -72,7 +72,12 @@ pub trait TransferTaskActions {
     ) -> Result<FileDescription>;
 
     // 执行增量前置操作，例如启动notify线程，记录last modify 时间戳等
-    async fn increment_prelude(&self, assistant: Arc<Mutex<IncrementAssistant>>) -> Result<()>;
+    async fn increment_prelude(
+        &self,
+        stop_mark: Arc<AtomicBool>,
+        err_occur: Arc<AtomicBool>,
+        assistant: Arc<Mutex<IncrementAssistant>>,
+    ) -> Result<()>;
 
     // 执行增量任务
     async fn execute_increment(
