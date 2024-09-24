@@ -196,7 +196,7 @@ impl OSSDescription {
         match self.provider {
             OssProvider::JD => {
                 let timeout_config = TimeoutConfig::builder()
-                    .connect_timeout(Duration::from_secs(2))
+                    .connect_timeout(Duration::from_secs(10))
                     .build();
                 let shared_config = SdkConfig::builder()
                     .credentials_provider(SharedCredentialsProvider::new(Credentials::new(

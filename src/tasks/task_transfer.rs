@@ -20,11 +20,7 @@ use anyhow::{anyhow, Context, Result};
 use dashmap::DashMap;
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
-use tokio::time::sleep;
-
 use std::fs::OpenOptions;
-use std::time::Duration;
 use std::{
     fs::{self, File},
     io::{self, BufRead},
@@ -36,6 +32,7 @@ use std::{
 };
 use tabled::builder::Builder;
 use tabled::settings::Style;
+use tokio::sync::RwLock;
 use tokio::{
     runtime,
     sync::Mutex,
@@ -283,7 +280,8 @@ impl TransferTask {
         // 执行过程中错误数统计
         let err_counter = Arc::new(AtomicUsize::new(0));
         // 任务停止标准，用于通知所有协程任务结束
-        let stop_mark = Arc::new(AtomicBool::new(false));
+        let execute_stop_mark = Arc::new(AtomicBool::new(false));
+        let notify_stop_mark = Arc::new(AtomicBool::new(false));
         let task_err_occur = Arc::new(AtomicBool::new(false));
         let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
 
@@ -304,7 +302,10 @@ impl TransferTask {
                 executed_file,
                 mut list_file_position,
                 start_from_checkpoint_stage_is_increment,
-            ) = match self.generate_list_file(stop_mark.clone(), task).await {
+            ) = match self
+                .generate_list_file(execute_stop_mark.clone(), task)
+                .await
+            {
                 Ok(r) => r,
                 Err(e) => {
                     log::error!("{}", e);
@@ -322,13 +323,13 @@ impl TransferTask {
                 || self.attributes.transfer_type.is_increment()
             {
                 let assistant = Arc::clone(&increment_assistant);
-                let s_m = stop_mark.clone();
+                let n_s_m = notify_stop_mark.clone();
                 let e_o = err_occur.clone();
 
                 // 启动increment_prelude 监听增量时的本地目录，或记录间戳
                 sys_set.spawn(async move {
                     if let Err(e) = task_increment_prelude
-                        .increment_prelude(s_m, e_o, assistant)
+                        .increment_prelude(n_s_m, e_o, assistant)
                         .await
                     {
                         log::error!("{:?}", e);
@@ -349,14 +350,14 @@ impl TransferTask {
                     }
 
                     // 启动心跳，notify 需要有 event 输入才能有效结束任务
-                    let s_m = stop_mark.clone();
+                    let n_s_m = notify_stop_mark.clone();
                     let e_o = err_occur.clone();
                     sys_set.spawn(async move {
                         let tmp_file = gen_file_path(dir.as_str(), "oss_pipe_tmp", "");
                         while !e_o.load(std::sync::atomic::Ordering::SeqCst)
-                            && !s_m.load(std::sync::atomic::Ordering::SeqCst)
+                            && !n_s_m.load(std::sync::atomic::Ordering::SeqCst)
                         {
-                            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+                            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                             task::yield_now().await;
                         }
                         let f = OpenOptions::new()
@@ -375,7 +376,7 @@ impl TransferTask {
             match start_from_checkpoint_stage_is_increment {
                 true => {
                     self.exec_record_descriptions_file(
-                        stop_mark.clone(),
+                        execute_stop_mark.clone(),
                         err_occur.clone(),
                         err_counter.clone(),
                         &mut exec_set,
@@ -394,7 +395,7 @@ impl TransferTask {
                             let stock_status_saver = TaskStatusSaver {
                                 check_point_path: check_point_file.clone(),
                                 executed_file: executed_file.clone(),
-                                stop_mark: Arc::clone(&stop_mark),
+                                stop_mark: Arc::clone(&execute_stop_mark),
                                 list_file_positon_map: Arc::clone(&offset_map),
                                 file_for_notify,
                                 task_stage: TransferStage::Stock,
@@ -407,7 +408,7 @@ impl TransferTask {
 
                             // 启动进度条线程
                             let map = Arc::clone(&offset_map);
-                            let bar_stop_mark = Arc::clone(&stop_mark);
+                            let bar_stop_mark = Arc::clone(&execute_stop_mark);
                             let total = executed_file.total_lines;
                             let cp = check_point_file.clone();
                             sys_set.spawn(async move {
@@ -417,7 +418,7 @@ impl TransferTask {
                             });
 
                             self.exec_records_file(
-                                stop_mark.clone(),
+                                execute_stop_mark.clone(),
                                 err_occur.clone(),
                                 err_counter.clone(),
                                 &mut exec_set,
@@ -438,14 +439,11 @@ impl TransferTask {
             }
 
             // 配置停止 offset save 标识为 true
-            stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
-
-            while sys_set.len() > 0 {
-                task::yield_now().await;
-                sys_set.join_next().await;
-            }
+            execute_stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
 
             if task_err_occur.load(std::sync::atomic::Ordering::Relaxed) {
+                notify_stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
+                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
                 return;
             }
 
@@ -490,6 +488,10 @@ impl TransferTask {
                     .await;
                 // 配置停止 offset save 标识为 true
                 // stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            while sys_set.len() > 0 {
+                task::yield_now().await;
+                sys_set.join_next().await;
             }
         });
 
@@ -683,18 +685,6 @@ impl TransferTask {
                 );
 
                 let vk = vec_keys.clone();
-                // task_stock
-                //     .listed_records_transfor(
-                //         exec_set,
-                //         Arc::clone(&executing_transfers),
-                //         vk.clone(),
-                //         Arc::clone(&stop_mark),
-                //         err_occur.clone(),
-                //         Arc::clone(&err_counter),
-                //         Arc::clone(&offset_map),
-                //         executing_file.path.to_string(),
-                //     )
-                //     .await;
 
                 // Todo
                 // 验证gen_transfer_executor 使用exec_set.spawn
