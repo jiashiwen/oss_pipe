@@ -298,7 +298,7 @@ impl TransferTask {
         let mut assistant = IncrementAssistant::default();
         assistant.check_point_path = check_point_file.clone();
         let increment_assistant = Arc::new(Mutex::new(assistant));
-
+        let err_occur = task_err_occur.clone();
         rt.block_on(async {
             //获取 对象列表文件，列表文件描述，increame_start_from_checkpoint 标识
             let (
@@ -310,7 +310,7 @@ impl TransferTask {
                 Ok(r) => r,
                 Err(e) => {
                     log::error!("{}", e);
-                    task_err_occur.store(true, std::sync::atomic::Ordering::Relaxed);
+                    err_occur.store(true, std::sync::atomic::Ordering::Relaxed);
                     return;
                 }
             };
@@ -324,9 +324,12 @@ impl TransferTask {
                 || self.attributes.transfer_type.is_increment()
             {
                 let assistant = Arc::clone(&increment_assistant);
+                let e_o = err_occur.clone();
                 task::spawn(async move {
                     if let Err(e) = task_increment_prelude.increment_prelude(assistant).await {
                         log::error!("{:?}", e);
+                        e_o.store(true, std::sync::atomic::Ordering::Relaxed);
+                        return;
                     }
                 });
 
@@ -349,6 +352,7 @@ impl TransferTask {
                 true => {
                     self.exec_record_descriptions_file(
                         stop_mark.clone(),
+                        err_occur.clone(),
                         err_counter.clone(),
                         &mut exec_set,
                         offset_map.clone(),
@@ -390,7 +394,7 @@ impl TransferTask {
 
                             self.exec_records_file(
                                 stop_mark.clone(),
-                                task_err_occur.clone(),
+                                err_occur.clone(),
                                 err_counter.clone(),
                                 &mut exec_set,
                                 offset_map.clone(),
@@ -432,10 +436,11 @@ impl TransferTask {
                 task::yield_now().await;
                 sys_set.join_next().await;
             }
-            // });
 
-            // 增量逻辑
-            // rt.block_on(async {
+            if task_err_occur.load(std::sync::atomic::Ordering::Relaxed) {
+                return;
+            }
+
             if self.attributes.transfer_type.is_full()
                 || self.attributes.transfer_type.is_increment()
             {
@@ -447,6 +452,7 @@ impl TransferTask {
                 task_increment
                     .execute_increment(
                         Arc::clone(&stop_mark),
+                        err_occur.clone(),
                         Arc::clone(&err_counter),
                         &mut exec_set,
                         executing_transfers,
@@ -455,7 +461,7 @@ impl TransferTask {
                     )
                     .await;
                 // 配置停止 offset save 标识为 true
-                stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
+                // stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
             }
         });
 
@@ -546,6 +552,7 @@ impl TransferTask {
                 // 重新生成object list file
                 let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
                 let _ = fs::remove_dir_all(self.attributes.meta_dir.as_str());
+                log::info!("invoke");
                 let executed_file = FileDescription {
                     path: gen_file_path(
                         self.attributes.meta_dir.as_str(),
@@ -688,6 +695,7 @@ impl TransferTask {
     async fn exec_record_descriptions_file(
         &self,
         stop_mark: Arc<AtomicBool>,
+        err_occur: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         exec_set: &mut JoinSet<()>,
         offset_map: Arc<DashMap<String, FilePosition>>,
@@ -730,17 +738,32 @@ impl TransferTask {
                 }
 
                 let vk = vec_keys.clone();
-                task_modify
-                    .record_descriptions_transfor(
-                        exec_set,
-                        Arc::clone(&executing_transfers),
-                        vk,
-                        Arc::clone(&stop_mark),
-                        Arc::clone(&err_counter),
-                        Arc::clone(&offset_map),
-                        executing_file.path.clone(),
-                    )
-                    .await;
+                // task_modify
+                //     .record_descriptions_transfor(
+                //         exec_set,
+                //         Arc::clone(&executing_transfers),
+                //         vk,
+                //         Arc::clone(&stop_mark),
+                //         Arc::clone(&err_counter),
+                //         Arc::clone(&offset_map),
+                //         executing_file.path.clone(),
+                //     )
+                //     .await;
+
+                let record_executer = task_modify.gen_transfer_executor(
+                    stop_mark.clone(),
+                    err_occur.clone(),
+                    err_counter.clone(),
+                    offset_map.clone(),
+                    executing_file.path.to_string(),
+                );
+
+                let et = executing_transfers.clone();
+                exec_set.spawn(async move {
+                    if let Err(e) = record_executer.exec_record_descriptions(vk, et).await {
+                        log::error!("{:?}", e);
+                    };
+                });
 
                 // 清理临时key vec
                 vec_keys.clear();

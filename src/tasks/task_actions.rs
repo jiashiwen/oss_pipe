@@ -27,17 +27,17 @@ pub trait TransferTaskActions {
     ) -> Result<()>;
 
     // 记录列表执行器
-    async fn listed_records_transfor(
-        &self,
-        execute_set: &mut JoinSet<()>,
-        executing_transfers: Arc<RwLock<usize>>,
-        records: Vec<ListedRecord>,
-        stop_mark: Arc<AtomicBool>,
-        err_occur: Arc<AtomicBool>,
-        err_counter: Arc<AtomicUsize>,
-        offset_map: Arc<DashMap<String, FilePosition>>,
-        list_file: String,
-    );
+    // async fn listed_records_transfor(
+    //     &self,
+    //     execute_set: &mut JoinSet<()>,
+    //     executing_transfers: Arc<RwLock<usize>>,
+    //     records: Vec<ListedRecord>,
+    //     stop_mark: Arc<AtomicBool>,
+    //     err_occur: Arc<AtomicBool>,
+    //     err_counter: Arc<AtomicUsize>,
+    //     offset_map: Arc<DashMap<String, FilePosition>>,
+    //     list_file: String,
+    // );
 
     // 记录描述表执行器
     async fn record_descriptions_transfor(
@@ -78,6 +78,7 @@ pub trait TransferTaskActions {
     async fn execute_increment(
         &self,
         stop_mark: Arc<AtomicBool>,
+        err_occur: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         execute_set: &mut JoinSet<()>,
         executing_transfers: Arc<RwLock<usize>>,
@@ -110,7 +111,7 @@ pub trait TransferExecutor {
 
     async fn exec_record_descriptions(
         &self,
-        executing_transfers: Arc<RwLock<usize>>,
         records: Vec<RecordDescription>,
+        executing_transfers: Arc<RwLock<usize>>,
     ) -> Result<()>;
 }

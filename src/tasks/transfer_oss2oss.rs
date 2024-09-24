@@ -137,41 +137,41 @@ impl TransferTaskActions for TransferOss2Oss {
     }
 
     // 记录执行器
-    async fn listed_records_transfor(
-        &self,
-        execute_set: &mut JoinSet<()>,
-        executing_transfers: Arc<RwLock<usize>>,
-        records: Vec<ListedRecord>,
-        stop_mark: Arc<AtomicBool>,
-        err_occur: Arc<AtomicBool>,
-        err_counter: Arc<AtomicUsize>,
-        offset_map: Arc<DashMap<String, FilePosition>>,
-        list_file: String,
-    ) {
-        if stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
-            return;
-        }
-        let transfer = TransferOss2OssRecordsExecutor {
-            source: self.source.clone(),
-            target: self.target.clone(),
-            stop_mark: stop_mark.clone(),
-            err_occur,
-            err_counter,
-            offset_map,
-            attributes: self.attributes.clone(),
-            list_file_path: list_file,
-        };
+    // async fn listed_records_transfor(
+    //     &self,
+    //     execute_set: &mut JoinSet<()>,
+    //     executing_transfers: Arc<RwLock<usize>>,
+    //     records: Vec<ListedRecord>,
+    //     stop_mark: Arc<AtomicBool>,
+    //     err_occur: Arc<AtomicBool>,
+    //     err_counter: Arc<AtomicUsize>,
+    //     offset_map: Arc<DashMap<String, FilePosition>>,
+    //     list_file: String,
+    // ) {
+    //     if stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+    //         return;
+    //     }
+    //     let transfer = TransferOss2OssRecordsExecutor {
+    //         source: self.source.clone(),
+    //         target: self.target.clone(),
+    //         stop_mark: stop_mark.clone(),
+    //         err_occur,
+    //         err_counter,
+    //         offset_map,
+    //         attributes: self.attributes.clone(),
+    //         list_file_path: list_file,
+    //     };
 
-        execute_set.spawn(async move {
-            if let Err(e) = transfer
-                .exec_listed_records(records, executing_transfers)
-                .await
-            {
-                stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{:?}", e);
-            };
-        });
-    }
+    //     execute_set.spawn(async move {
+    //         if let Err(e) = transfer
+    //             .exec_listed_records(records, executing_transfers)
+    //             .await
+    //         {
+    //             stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+    //             log::error!("{:?}", e);
+    //         };
+    //     });
+    // }
 
     fn gen_transfer_executor(
         &self,
@@ -487,6 +487,7 @@ impl TransferTaskActions for TransferOss2Oss {
     async fn execute_increment(
         &self,
         stop_mark: Arc<AtomicBool>,
+        err_occur: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         mut execute_set: &mut JoinSet<()>,
         executing_transfers: Arc<RwLock<usize>>,
@@ -812,8 +813,8 @@ impl TransferExecutor for TransferOss2OssRecordsExecutor {
 
     async fn exec_record_descriptions(
         &self,
-        executing_transfers: Arc<RwLock<usize>>,
         records: Vec<RecordDescription>,
+        executing_transfers: Arc<RwLock<usize>>,
     ) -> Result<()> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let mut subffix = records[0].list_file_position.offset.to_string();
@@ -1079,6 +1080,7 @@ impl TransferOss2OssRecordsExecutor {
             None => return Err(anyhow!("content length is None")),
         };
         let content_len_usize: usize = content_len.try_into()?;
+
         let expr = match s_obj_output.expires() {
             Some(d) => Some(*d),
             None => None,
@@ -1095,24 +1097,7 @@ impl TransferOss2OssRecordsExecutor {
                     .await
             }
             false => {
-                // let s_c = Arc::new(source_oss.client.clone());
-                // let s_c = source_oss.clone();
                 let e_t = Arc::clone(&executing_transfers);
-                // target_oss
-                //     .multipart_upload_obj_paralle_by_range(
-                //         s_c,
-                //         &self.source.bucket,
-                //         record.key.as_str(),
-                //         &self.target.bucket,
-                //         target_key,
-                //         expr,
-                //         e_t,
-                //         self.attributes.multi_part_chunk_size,
-                //         self.attributes.multi_part_chunks_per_batch,
-                //         self.attributes.multi_part_parallelism,
-                //     )
-                //     .await
-
                 multipart_transfer_obj_paralle_by_range(
                     source_oss.clone(),
                     &self.source.bucket,

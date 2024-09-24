@@ -115,38 +115,38 @@ impl TransferTaskActions for TransferLocal2Local {
         Ok(())
     }
 
-    async fn listed_records_transfor(
-        &self,
-        execute_set: &mut JoinSet<()>,
-        _executing_transfers: Arc<RwLock<usize>>,
-        records: Vec<ListedRecord>,
-        stop_mark: Arc<AtomicBool>,
-        err_occur: Arc<AtomicBool>,
-        err_counter: Arc<AtomicUsize>,
-        offset_map: Arc<DashMap<String, FilePosition>>,
-        list_file: String,
-    ) {
-        if stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
-            return;
-        }
-        let local2local = TransferLocal2LocalExecutor {
-            source: self.source.clone(),
-            target: self.target.clone(),
-            stop_mark: stop_mark.clone(),
-            err_occur,
-            err_counter,
-            offset_map,
-            attributes: self.attributes.clone(),
-            list_file_path: list_file,
-        };
+    // async fn listed_records_transfor(
+    //     &self,
+    //     execute_set: &mut JoinSet<()>,
+    //     _executing_transfers: Arc<RwLock<usize>>,
+    //     records: Vec<ListedRecord>,
+    //     stop_mark: Arc<AtomicBool>,
+    //     err_occur: Arc<AtomicBool>,
+    //     err_counter: Arc<AtomicUsize>,
+    //     offset_map: Arc<DashMap<String, FilePosition>>,
+    //     list_file: String,
+    // ) {
+    //     if stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+    //         return;
+    //     }
+    //     let local2local = TransferLocal2LocalExecutor {
+    //         source: self.source.clone(),
+    //         target: self.target.clone(),
+    //         stop_mark: stop_mark.clone(),
+    //         err_occur,
+    //         err_counter,
+    //         offset_map,
+    //         attributes: self.attributes.clone(),
+    //         list_file_path: list_file,
+    //     };
 
-        execute_set.spawn(async move {
-            if let Err(e) = local2local.exec_listed_records(records).await {
-                stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{:?}", e);
-            };
-        });
-    }
+    //     execute_set.spawn(async move {
+    //         if let Err(e) = local2local.exec_listed_records(records).await {
+    //             stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+    //             log::error!("{:?}", e);
+    //         };
+    //     });
+    // }
 
     fn gen_transfer_executor(
         &self,
@@ -381,6 +381,7 @@ impl TransferTaskActions for TransferLocal2Local {
     async fn execute_increment(
         &self,
         stop_mark: Arc<AtomicBool>,
+        err_occur: Arc<AtomicBool>,
         err_counter: Arc<AtomicUsize>,
         _joinset: &mut JoinSet<()>,
         executing_transfers: Arc<RwLock<usize>>,
@@ -725,8 +726,8 @@ impl TransferExecutor for TransferLocal2LocalExecutor {
 
     async fn exec_record_descriptions(
         &self,
-        executing_transfers: Arc<RwLock<usize>>,
         records: Vec<RecordDescription>,
+        executing_transfers: Arc<RwLock<usize>>,
     ) -> Result<()> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let mut subffix = records[0].list_file_position.offset.to_string();
