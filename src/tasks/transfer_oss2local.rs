@@ -73,6 +73,7 @@ impl TransferTaskActions for TransferOss2Local {
             )
             .await
     }
+
     fn error_record_retry(
         &self,
         stop_mark: Arc<AtomicBool>,
@@ -117,6 +118,7 @@ impl TransferTaskActions for TransferOss2Local {
                             target: self.target.clone(),
                             source: self.source.clone(),
                             stop_mark: stop_mark.clone(),
+                            err_occur: Arc::new(AtomicBool::new(false)),
                             err_counter: Arc::new(AtomicUsize::new(0)),
                             offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
                             attributes: self.attributes.clone(),
@@ -329,6 +331,7 @@ impl TransferTaskActions for TransferOss2Local {
             target: self.target.clone(),
             source: self.source.clone(),
             stop_mark: stop_mark.clone(),
+            err_occur,
             err_counter,
             offset_map,
             attributes: self.attributes.clone(),
@@ -358,6 +361,7 @@ impl TransferTaskActions for TransferOss2Local {
             source: self.source.clone(),
             target: self.target.clone(),
             stop_mark,
+            err_occur,
             err_counter,
             offset_map,
             attributes: self.attributes.clone(),
@@ -380,6 +384,7 @@ impl TransferTaskActions for TransferOss2Local {
             target: self.target.clone(),
             source: self.source.clone(),
             stop_mark: stop_mark.clone(),
+            err_occur: Arc::new(AtomicBool::new(false)),
             err_counter,
             offset_map,
             attributes: self.attributes.clone(),
@@ -599,9 +604,10 @@ impl TransferOss2Local {
         list_file: String,
     ) {
         let download = TransferOss2LocalRecordsExecutor {
-            target: self.target.clone(),
             source: self.source.clone(),
+            target: self.target.clone(),
             stop_mark,
+            err_occur: Arc::new(AtomicBool::new(false)),
             err_counter,
             offset_map,
             attributes: self.attributes.clone(),
@@ -624,7 +630,7 @@ pub struct TransferOss2LocalRecordsExecutor {
     pub source: OSSDescription,
     pub target: String,
     pub stop_mark: Arc<AtomicBool>,
-    // pub err_occur: Arc<AtomicBool>,
+    pub err_occur: Arc<AtomicBool>,
     pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
     pub attributes: TransferTaskAttributes,

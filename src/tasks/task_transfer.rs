@@ -648,30 +648,35 @@ impl TransferTask {
                 );
 
                 let vk = vec_keys.clone();
-                task_stock
-                    .listed_records_transfor(
-                        exec_set,
-                        Arc::clone(&executing_transfers),
-                        vk.clone(),
-                        Arc::clone(&stop_mark),
-                        err_occur.clone(),
-                        Arc::clone(&err_counter),
-                        Arc::clone(&offset_map),
-                        executing_file.path.to_string(),
-                    )
-                    .await;
+                // task_stock
+                //     .listed_records_transfor(
+                //         exec_set,
+                //         Arc::clone(&executing_transfers),
+                //         vk.clone(),
+                //         Arc::clone(&stop_mark),
+                //         err_occur.clone(),
+                //         Arc::clone(&err_counter),
+                //         Arc::clone(&offset_map),
+                //         executing_file.path.to_string(),
+                //     )
+                //     .await;
 
-                // let record_executer = task_stock.gen_transfer_executor(
-                //     stop_mark.clone(),
-                //     err_counter.clone(),
-                //     offset_map.clone(),
-                //     executing_file.path.to_string(),
-                // );
+                // Todo
+                // 验证gen_transfer_executor 使用exec_set.spawn
+                let record_executer = task_stock.gen_transfer_executor(
+                    stop_mark.clone(),
+                    err_occur.clone(),
+                    err_counter.clone(),
+                    offset_map.clone(),
+                    executing_file.path.to_string(),
+                );
 
-                // let et = executing_transfers.clone();
-                // exec_set.spawn(async move {
-                //     let _ = record_executer.exec_listed_records(vk, et).await;
-                // });
+                let et = executing_transfers.clone();
+                exec_set.spawn(async move {
+                    if let Err(e) = record_executer.exec_listed_records(vk, et).await {
+                        log::error!("{:?}", e);
+                    };
+                });
 
                 // 清理临时key vec
                 vec_keys.clear();
