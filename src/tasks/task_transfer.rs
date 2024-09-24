@@ -302,7 +302,7 @@ impl TransferTask {
             let (
                 object_list_file,
                 executed_file,
-                list_file_position,
+                mut list_file_position,
                 start_from_checkpoint_stage_is_increment,
             ) = match self.generate_list_file(stop_mark.clone(), task).await {
                 Ok(r) => r,
@@ -422,7 +422,7 @@ impl TransferTask {
                                 err_counter.clone(),
                                 &mut exec_set,
                                 offset_map.clone(),
-                                list_file_position,
+                                &mut list_file_position,
                                 object_list_file,
                                 executed_file,
                             )
@@ -444,7 +444,7 @@ impl TransferTask {
                 task::yield_now().await;
                 sys_set.join_next().await;
             }
-            log::info!("invoke");
+
             if task_err_occur.load(std::sync::atomic::Ordering::Relaxed) {
                 return;
             }
@@ -620,7 +620,7 @@ impl TransferTask {
         err_counter: Arc<AtomicUsize>,
         exec_set: &mut JoinSet<()>,
         offset_map: Arc<DashMap<String, FilePosition>>,
-        mut file_position: FilePosition,
+        file_position: &mut FilePosition,
         records_file: File,
         executing_file: FileDescription,
     ) {
