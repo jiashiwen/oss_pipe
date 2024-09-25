@@ -26,6 +26,7 @@ use async_trait::async_trait;
 // use aws_sdk_s3::model::Object;
 use aws_sdk_s3::types::Object;
 use dashmap::DashMap;
+use futures::executor;
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
 use std::io::{BufRead, Seek, SeekFrom};
@@ -79,11 +80,10 @@ impl TransferTaskActions for TransferLocal2Oss {
         )
     }
     // 错误记录重试
-    fn error_record_retry(
+    async fn error_record_retry(
         &self,
         stop_mark: Arc<AtomicBool>,
         semaphore: Arc<Semaphore>,
-        _executing_transfers: Arc<RwLock<usize>>,
     ) -> Result<()> {
         // 遍历错误记录
         for entry in WalkDir::new(self.attributes.meta_dir.as_str())
@@ -119,18 +119,16 @@ impl TransferTaskActions for TransferLocal2Oss {
                     }
 
                     if record_vec.len() > 0 {
-                        let upload = TransferLocal2OssExecuter {
-                            source: self.source.clone(),
-                            target: self.target.clone(),
-                            stop_mark: stop_mark.clone(),
-                            err_occur: Arc::new(AtomicBool::new(false)),
-                            semaphore: semaphore.clone(),
-                            err_counter: Arc::new(AtomicUsize::new(0)),
-                            offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
-                            attributes: self.attributes.clone(),
-                            list_file_path: p.to_string(),
-                        };
-                        let _ = upload.exec_record_descriptions(record_vec);
+                        let executor = self.gen_transfer_executor(
+                            stop_mark.clone(),
+                            Arc::new(AtomicBool::new(false)),
+                            semaphore.clone(),
+                            Arc::new(AtomicUsize::new(0)),
+                            Arc::new(DashMap::<String, FilePosition>::new()),
+                            p.to_string(),
+                        );
+
+                        executor.exec_record_descriptions(record_vec).await?;
                     }
                 }
                 let _ = fs::remove_file(p);
@@ -139,43 +137,6 @@ impl TransferTaskActions for TransferLocal2Oss {
 
         Ok(())
     }
-
-    // 记录执行器
-    // async fn listed_records_transfor(
-    //     &self,
-    //     execute_set: &mut JoinSet<()>,
-    //     executing_transfers: Arc<RwLock<usize>>,
-    //     records: Vec<ListedRecord>,
-    //     stop_mark: Arc<AtomicBool>,
-    //     err_occur: Arc<AtomicBool>,
-    //     err_counter: Arc<AtomicUsize>,
-    //     offset_map: Arc<DashMap<std::string::String, FilePosition>>,
-    //     list_file: String,
-    // ) {
-    //     if stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
-    //         return;
-    //     }
-    //     let local2oss = TransferLocal2OssExecuter {
-    //         source: self.source.clone(),
-    //         target: self.target.clone(),
-    //         stop_mark: stop_mark.clone(),
-    //         err_occur,
-    //         err_counter,
-    //         offset_map,
-    //         attributes: self.attributes.clone(),
-    //         list_file_path: list_file,
-    //     };
-
-    //     execute_set.spawn(async move {
-    //         if let Err(e) = local2oss
-    //             .exec_listed_records(records, executing_transfers)
-    //             .await
-    //         {
-    //             stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-    //             log::error!("{:?}", e);
-    //         };
-    //     });
-    // }
 
     fn gen_transfer_executor(
         &self,
@@ -200,41 +161,8 @@ impl TransferTaskActions for TransferLocal2Oss {
         Arc::new(executor)
     }
 
-    // async fn record_descriptions_transfor(
-    //     &self,
-    //     joinset: &mut JoinSet<()>,
-    //     executing_transfers: Arc<RwLock<usize>>,
-    //     records: Vec<RecordDescription>,
-    //     stop_mark: Arc<AtomicBool>,
-    //     err_counter: Arc<AtomicUsize>,
-    //     offset_map: Arc<DashMap<std::string::String, FilePosition>>,
-    //     list_file: String,
-    // ) {
-    //     let local2oss = TransferLocal2OssExecuter {
-    //         source: self.source.clone(),
-    //         target: self.target.clone(),
-    //         stop_mark: stop_mark.clone(),
-    //         err_occur: Arc::new(AtomicBool::new(false)),
-    //         err_counter,
-    //         offset_map,
-    //         attributes: self.attributes.clone(),
-    //         list_file_path: list_file,
-    //     };
-
-    //     joinset.spawn(async move {
-    //         if let Err(e) = local2oss.exec_record_descriptions(records).await {
-    //             stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-    //             log::error!("{:?}", e);
-    //         };
-    //     });
-    // }
-
     // 生成对象列表
-    async fn gen_source_object_list_file(
-        &self,
-        // last_modify_filter: Option<LastModifyFilter>,
-        object_list_file: &str,
-    ) -> Result<FileDescription> {
+    async fn gen_source_object_list_file(&self, object_list_file: &str) -> Result<FileDescription> {
         let regex_filter =
             RegexFilter::from_vec_option(&self.attributes.exclude, &self.attributes.include)?;
         scan_folder_files_to_file(
@@ -372,7 +300,7 @@ impl TransferTaskActions for TransferLocal2Oss {
                     .modified()?
                     .duration_since(UNIX_EPOCH)?
                     .as_secs();
-                // if last_modify_filter.filter(i128::from(modified_time)) {
+
                 if last_modify_filter.filter(usize::try_from(modified_time).unwrap()) {
                     let record = RecordDescription {
                         source_key: p.to_string(),
@@ -465,7 +393,6 @@ impl TransferTaskActions for TransferLocal2Oss {
         semaphore: Arc<Semaphore>,
         err_counter: Arc<AtomicUsize>,
         _joinset: &mut JoinSet<()>,
-        executing_transfers: Arc<RwLock<usize>>,
         assistant: Arc<Mutex<IncrementAssistant>>,
         offset_map: Arc<DashMap<String, FilePosition>>,
     ) {
@@ -607,20 +534,17 @@ impl TransferTaskActions for TransferLocal2Oss {
                 }
             }
 
-            let local_2_oss = TransferLocal2OssExecuter {
-                source: self.source.clone(),
-                target: self.target.clone(),
-                stop_mark: stop_mark.clone(),
-                err_occur: Arc::new(AtomicBool::new(false)),
-                semaphore: semaphore.clone(),
-                err_counter: Arc::clone(&err_counter),
-                offset_map: Arc::clone(&offset_map),
-                attributes: self.attributes.clone(),
-                list_file_path: local_notify.notify_file_path.clone(),
-            };
+            let executor = self.gen_transfer_executor(
+                stop_mark.clone(),
+                Arc::new(AtomicBool::new(false)),
+                semaphore.clone(),
+                Arc::clone(&err_counter),
+                offset_map.clone(),
+                local_notify.notify_file_path.clone(),
+            );
 
             if records.len() > 0 {
-                let _ = local_2_oss.exec_record_descriptions(records).await;
+                let _ = executor.exec_record_descriptions(records).await;
             }
 
             let _ = error_file.flush();
@@ -720,11 +644,7 @@ pub struct TransferLocal2OssExecuter {
 
 #[async_trait]
 impl TransferExecutor for TransferLocal2OssExecuter {
-    async fn exec_listed_records(
-        &self,
-        records: Vec<ListedRecord>,
-        executing_transfers: Arc<RwLock<usize>>,
-    ) -> Result<()> {
+    async fn exec_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
         let mut offset_key = OFFSET_PREFIX.to_string();
         let subffix = records[0].offset.to_string();
         offset_key.push_str(&subffix);
@@ -776,20 +696,8 @@ impl TransferExecutor for TransferLocal2OssExecuter {
             if let Some(s) = self.target.prefix.clone() {
                 target_key.push_str(&s);
             };
-            target_key.push_str(&record.key);
 
-            // let e_u = Arc::clone(&executing_transfers);
-            // if let Err(e) = self
-            //     .listed_record_handler(e_u, &source_file_path, &target_oss_client, &target_key)
-            //     .await
-            // {
-            //     self.err_occur
-            //         .store(true, std::sync::atomic::Ordering::SeqCst);
-            //     self.stop_mark
-            //         .store(true, std::sync::atomic::Ordering::SeqCst);
-            //     log::error!("{:?}", e);
-            //     break;
-            // };
+            target_key.push_str(&record.key);
 
             if let Err(e) = self
                 .listed_record_handler(&source_file_path, &target_oss_client, &target_key)
@@ -842,224 +750,7 @@ impl TransferExecutor for TransferLocal2OssExecuter {
         Ok(())
     }
 
-    async fn exec_record_descriptions(
-        &self,
-        records: Vec<RecordDescription>,
-        executing_transfers: Arc<RwLock<usize>>,
-    ) -> Result<()> {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
-        let mut subffix = records[0].list_file_position.offset.to_string();
-        let mut offset_key = OFFSET_PREFIX.to_string();
-        offset_key.push_str(&subffix);
-
-        subffix.push_str("_");
-        subffix.push_str(now.as_secs().to_string().as_str());
-
-        let error_file_name = gen_file_path(
-            &self.attributes.meta_dir,
-            TRANSFER_ERROR_RECORD_PREFIX,
-            &subffix,
-        );
-
-        let mut error_file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(error_file_name.as_str())?;
-
-        let c_t = self.target.gen_oss_client()?;
-
-        // Todo
-        // 增加去重逻辑，当两条记录相邻为 create和modif时只put一次
-        // 增加目录删除逻辑，对应oss删除指定prefix下的所有文件，文件系统删除目录
-        for record in records {
-            // 记录执行文件位置
-            self.offset_map
-                .insert(offset_key.clone(), record.list_file_position.clone());
-
-            // 目标object存在则不推送
-            if self.attributes.target_exists_skip {
-                match c_t
-                    .object_exists(self.target.bucket.as_str(), &record.target_key)
-                    .await
-                {
-                    Ok(b) => {
-                        if b {
-                            continue;
-                        }
-                    }
-                    Err(e) => {
-                        record.handle_error(
-                            self.stop_mark.clone(),
-                            &self.err_counter,
-                            self.attributes.max_errors,
-                            &self.offset_map,
-                            &mut error_file,
-                            offset_key.as_str(),
-                        );
-                        self.err_occur
-                            .store(true, std::sync::atomic::Ordering::SeqCst);
-                        log::error!("{:?}", e);
-                        continue;
-                    }
-                }
-            }
-
-            if let Err(e) = match record.option {
-                Opt::PUT => {
-                    // 判断源文件是否存在
-                    let s_path = Path::new(&record.source_key);
-                    if !s_path.exists() {
-                        continue;
-                    }
-
-                    c_t.upload_local_file(
-                        self.target.bucket.as_str(),
-                        &record.target_key,
-                        &record.source_key,
-                        self.attributes.large_file_size,
-                        self.attributes.multi_part_chunk_size,
-                    )
-                    .await
-                }
-                Opt::REMOVE => {
-                    match c_t
-                        .remove_object(self.target.bucket.as_str(), &record.target_key)
-                        .await
-                    {
-                        Ok(_) => Ok(()),
-                        Err(e) => Err(anyhow!("{}", e)),
-                    }
-                }
-                _ => Err(anyhow!("option unkown")),
-            } {
-                record.handle_error(
-                    self.stop_mark.clone(),
-                    &self.err_counter,
-                    self.attributes.max_errors,
-                    &self.offset_map,
-                    &mut error_file,
-                    offset_key.as_str(),
-                );
-                self.err_occur
-                    .store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{:?}", e);
-                continue;
-            }
-        }
-        self.offset_map.remove(&offset_key);
-        let _ = error_file.flush();
-        match error_file.metadata() {
-            Ok(meta) => {
-                if meta.len() == 0 {
-                    let _ = fs::remove_file(error_file_name.as_str());
-                }
-            }
-            Err(_) => {}
-        };
-
-        Ok(())
-    }
-}
-
-impl TransferLocal2OssExecuter {
-    pub async fn exec_listed_records(
-        &self,
-        records: Vec<ListedRecord>,
-        executing_transfers: Arc<RwLock<usize>>,
-    ) -> Result<()> {
-        let mut offset_key = OFFSET_PREFIX.to_string();
-        let subffix = records[0].offset.to_string();
-        offset_key.push_str(&subffix);
-
-        // Todo
-        // 若第一行出错则整组record写入错误记录，若错误记录文件打开报错则停止任务
-        let error_file_name = gen_file_path(
-            &self.attributes.meta_dir,
-            TRANSFER_ERROR_RECORD_PREFIX,
-            &records[0].offset.to_string(),
-        );
-
-        let mut error_file = match OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(error_file_name.as_str())
-        {
-            Ok(ef) => ef,
-            Err(e) => {
-                log::error!("{:?}", e);
-                return Err(anyhow!(e));
-            }
-        };
-
-        let target_oss_client = self.target.gen_oss_client()?;
-
-        for record in records {
-            if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
-                return Ok(());
-            }
-
-            let source_file_path = gen_file_path(self.source.as_str(), &record.key.as_str(), "");
-            let mut target_key = "".to_string();
-            if let Some(s) = self.target.prefix.clone() {
-                target_key.push_str(&s);
-            };
-            target_key.push_str(&record.key);
-
-            // let e_u = Arc::clone(&executing_transfers);
-            if let Err(e) = self
-                .listed_record_handler(&source_file_path, &target_oss_client, &target_key)
-                .await
-            {
-                let record_desc = RecordDescription {
-                    source_key: source_file_path.clone(),
-                    target_key: target_key.clone(),
-                    list_file_path: self.list_file_path.clone(),
-                    list_file_position: FilePosition {
-                        offset: record.offset,
-                        line_num: record.line_num,
-                    },
-                    option: Opt::PUT,
-                };
-                record_desc.handle_error(
-                    self.stop_mark.clone(),
-                    &self.err_counter,
-                    self.attributes.max_errors,
-                    &self.offset_map,
-                    &mut error_file,
-                    offset_key.as_str(),
-                );
-                self.err_occur
-                    .store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{:?}", e);
-            }
-
-            // 文件位置记录后置，避免中断时已记录而传输未完成，续传时丢记录
-            self.offset_map.insert(
-                offset_key.clone(),
-                FilePosition {
-                    offset: record.offset,
-                    line_num: record.line_num,
-                },
-            );
-        }
-
-        self.offset_map.remove(&offset_key);
-        let _ = error_file.flush();
-        match error_file.metadata() {
-            Ok(meta) => {
-                if 0.eq(&meta.len()) {
-                    let _ = fs::remove_file(error_file_name.as_str());
-                }
-            }
-            Err(_) => {}
-        };
-
-        Ok(())
-    }
-
-    pub async fn exec_record_descriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
+    async fn exec_record_descriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let mut subffix = records[0].list_file_position.offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
@@ -1178,7 +869,6 @@ impl TransferLocal2OssExecuter {
 impl TransferLocal2OssExecuter {
     async fn listed_record_handler(
         &self,
-        // executing_transfers: Arc<RwLock<usize>>,
         source_file: &str,
         target_oss: &OssClient,
         target_key: &str,
@@ -1209,7 +899,6 @@ impl TransferLocal2OssExecuter {
                 target_key,
                 self.attributes.large_file_size,
                 self.semaphore.clone(),
-                // Arc::clone(&executing_transfers),
                 self.attributes.multi_part_chunk_size,
                 self.attributes.multi_part_chunks_per_batch,
                 self.attributes.multi_part_parallelism,

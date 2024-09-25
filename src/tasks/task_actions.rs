@@ -20,37 +20,11 @@ use tokio::{
 pub trait TransferTaskActions {
     async fn analyze_source(&self) -> Result<DashMap<String, i128>>;
     // 错误记录重试
-    fn error_record_retry(
+    async fn error_record_retry(
         &self,
         stop_mark: Arc<AtomicBool>,
         semaphore: Arc<Semaphore>,
-        executing_transfers: Arc<RwLock<usize>>,
     ) -> Result<()>;
-
-    // 记录列表执行器
-    // async fn listed_records_transfor(
-    //     &self,
-    //     execute_set: &mut JoinSet<()>,
-    //     executing_transfers: Arc<RwLock<usize>>,
-    //     records: Vec<ListedRecord>,
-    //     stop_mark: Arc<AtomicBool>,
-    //     err_occur: Arc<AtomicBool>,
-    //     err_counter: Arc<AtomicUsize>,
-    //     offset_map: Arc<DashMap<String, FilePosition>>,
-    //     list_file: String,
-    // );
-
-    // 记录描述表执行器
-    // async fn record_descriptions_transfor(
-    //     &self,
-    //     execute_set: &mut JoinSet<()>,
-    //     executing_transfers: Arc<RwLock<usize>>,
-    //     records: Vec<RecordDescription>,
-    //     stop_mark: Arc<AtomicBool>,
-    //     err_counter: Arc<AtomicUsize>,
-    //     offset_map: Arc<DashMap<String, FilePosition>>,
-    //     list_file: String,
-    // );
 
     fn gen_transfer_executor(
         &self,
@@ -89,7 +63,6 @@ pub trait TransferTaskActions {
         semaphore: Arc<Semaphore>,
         err_counter: Arc<AtomicUsize>,
         execute_set: &mut JoinSet<()>,
-        executing_transfers: Arc<RwLock<usize>>,
         assistant: Arc<Mutex<IncrementAssistant>>,
         offset_map: Arc<DashMap<String, FilePosition>>,
     );
@@ -111,15 +84,7 @@ pub trait CompareTaskActions {
 #[async_trait]
 pub trait TransferExecutor {
     // fn gen_task_action(&self) -> Arc<dyn TransferTaskActions + Send + Sync>;
-    async fn exec_listed_records(
-        &self,
-        records: Vec<ListedRecord>,
-        executing_transfers: Arc<RwLock<usize>>,
-    ) -> Result<()>;
+    async fn exec_listed_records(&self, records: Vec<ListedRecord>) -> Result<()>;
 
-    async fn exec_record_descriptions(
-        &self,
-        records: Vec<RecordDescription>,
-        executing_transfers: Arc<RwLock<usize>>,
-    ) -> Result<()>;
+    async fn exec_record_descriptions(&self, records: Vec<RecordDescription>) -> Result<()>;
 }

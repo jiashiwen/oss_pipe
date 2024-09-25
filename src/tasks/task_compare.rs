@@ -439,9 +439,6 @@ impl CompareTask {
                 }
                 if let Result::Ok(key) = line {
                     let len = key.bytes().len() + "\n".bytes().len();
-                    source_list_file_position.offset += len;
-                    source_list_file_position.line_num += 1;
-
                     if !key.ends_with("/") {
                         let record = ListedRecord {
                             key,
@@ -453,6 +450,8 @@ impl CompareTask {
                             vec_keys.push(record);
                         }
                     }
+                    source_list_file_position.offset += len;
+                    source_list_file_position.line_num += 1;
                 };
 
                 if vec_keys
@@ -469,9 +468,7 @@ impl CompareTask {
                             &mut execut_set,
                             vk,
                             Arc::clone(&snapshot_stop_mark),
-                            // Arc::clone(&err_counter),
                             Arc::clone(&offset_map),
-                            // compare_source_list.path.clone(),
                         )
                         .await;
 

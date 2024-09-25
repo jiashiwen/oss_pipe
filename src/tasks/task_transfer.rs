@@ -472,18 +472,33 @@ impl TransferTask {
             drop(lock);
 
             checkpoint.file_for_notify = notify;
+            // 设置存量文件executed_file_position为文件执行完成的位置
             checkpoint.executed_file_position = list_file_position;
 
             if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
                 log::error!("{:?}", e);
             };
 
+            // 执行增量逻辑
             if self.attributes.transfer_type.is_full()
                 || self.attributes.transfer_type.is_increment()
             {
+                //更新checkpoint 更改stage
+                let mut checkpoint = match get_task_checkpoint(check_point_file.as_str()) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        log::error!("{:?}", e);
+                        return;
+                    }
+                };
+
+                checkpoint.task_stage = TransferStage::Increment;
+                if let Err(e) = checkpoint.save_to(check_point_file.as_str()) {
+                    log::error!("{:?}", e);
+                };
+
                 let stop_mark = Arc::new(AtomicBool::new(false));
                 let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
-                let executing_transfers = Arc::new(RwLock::new(0));
                 let task_increment = self.gen_transfer_actions();
 
                 task_increment
@@ -493,7 +508,6 @@ impl TransferTask {
                         multi_part_semaphore.clone(),
                         Arc::clone(&err_counter),
                         &mut exec_set,
-                        executing_transfers,
                         Arc::clone(&increment_assistant),
                         Arc::clone(&offset_map),
                     )
@@ -531,14 +545,13 @@ impl TransferTask {
         let mut start_from_checkpoint_stage_is_increment = false;
         return match self.attributes.start_from_checkpoint {
             true => {
-                // 正在执行的任务数量，用于控制分片上传并行度
-                let executing_transfers = Arc::new(RwLock::new(0));
                 // 变更object_list_file_name文件名
                 let checkpoint = get_task_checkpoint(check_point_file.as_str())
                     .context(format!("{}:{}", file!(), line!()))?;
 
                 // 执行error retry
-                task.error_record_retry(stop_mark.clone(), semaphore.clone(), executing_transfers)
+                task.error_record_retry(stop_mark.clone(), semaphore.clone())
+                    .await
                     .context(format!("{}:{}", file!(), line!()))?;
 
                 // 清理notify file
@@ -640,7 +653,6 @@ impl TransferTask {
         records_file: File,
         executing_file: FileDescription,
     ) {
-        let executing_transfers = Arc::new(RwLock::new(0));
         let task_stock = self.gen_transfer_actions();
         let mut vec_keys: Vec<ListedRecord> = vec![];
         let lines: io::Lines<io::BufReader<File>> = io::BufReader::new(records_file).lines();
@@ -712,10 +724,9 @@ impl TransferTask {
                 );
                 let eo = err_occur.clone();
                 let sm = stop_mark.clone();
-                let et = executing_transfers.clone();
 
                 exec_set.spawn(async move {
-                    if let Err(e) = record_executer.exec_listed_records(vk, et).await {
+                    if let Err(e) = record_executer.exec_listed_records(vk).await {
                         eo.store(true, std::sync::atomic::Ordering::SeqCst);
                         sm.store(true, std::sync::atomic::Ordering::SeqCst);
                         log::error!("{:?}", e);
@@ -740,11 +751,10 @@ impl TransferTask {
         records_desc_file: File,
         executing_file: FileDescription,
     ) {
-        let executing_transfers = Arc::new(RwLock::new(0));
         let task_modify = self.gen_transfer_actions();
         let mut vec_keys: Vec<RecordDescription> = vec![];
+
         // 按列表传输object from source to target
-        // let desc_file = File::open(&executing_file.path).unwrap();
         let total_lines = executing_file.total_lines;
         let lines: io::Lines<io::BufReader<File>> = io::BufReader::new(records_desc_file).lines();
 
@@ -776,18 +786,6 @@ impl TransferTask {
                 }
 
                 let vk = vec_keys.clone();
-                // task_modify
-                //     .record_descriptions_transfor(
-                //         exec_set,
-                //         Arc::clone(&executing_transfers),
-                //         vk,
-                //         Arc::clone(&stop_mark),
-                //         Arc::clone(&err_counter),
-                //         Arc::clone(&offset_map),
-                //         executing_file.path.clone(),
-                //     )
-                //     .await;
-
                 let record_executer = task_modify.gen_transfer_executor(
                     stop_mark.clone(),
                     err_occur.clone(),
@@ -797,9 +795,8 @@ impl TransferTask {
                     executing_file.path.to_string(),
                 );
 
-                let et = executing_transfers.clone();
                 exec_set.spawn(async move {
-                    if let Err(e) = record_executer.exec_record_descriptions(vk, et).await {
+                    if let Err(e) = record_executer.exec_record_descriptions(vk).await {
                         log::error!("{:?}", e);
                     };
                 });
