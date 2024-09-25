@@ -32,7 +32,7 @@ use std::{
 };
 use tabled::builder::Builder;
 use tabled::settings::Style;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Semaphore};
 use tokio::{
     runtime,
     sync::Mutex,
@@ -286,6 +286,8 @@ impl TransferTask {
         let execute_stop_mark = Arc::new(AtomicBool::new(false));
         let notify_stop_mark = Arc::new(AtomicBool::new(false));
         let task_err_occur = Arc::new(AtomicBool::new(false));
+        let multi_part_semaphore =
+            Arc::new(Semaphore::new(self.attributes.multi_part_max_parallelism));
         let offset_map = Arc::new(DashMap::<String, FilePosition>::new());
 
         let check_point_file = gen_file_path(
@@ -306,7 +308,11 @@ impl TransferTask {
                 mut list_file_position,
                 start_from_checkpoint_stage_is_increment,
             ) = match self
-                .generate_list_file(execute_stop_mark.clone(), task)
+                .generate_list_file(
+                    execute_stop_mark.clone(),
+                    multi_part_semaphore.clone(),
+                    task,
+                )
                 .await
             {
                 Ok(r) => r,
@@ -381,6 +387,7 @@ impl TransferTask {
                     self.exec_record_descriptions_file(
                         execute_stop_mark.clone(),
                         err_occur.clone(),
+                        multi_part_semaphore.clone(),
                         err_counter.clone(),
                         &mut exec_set,
                         offset_map.clone(),
@@ -423,6 +430,7 @@ impl TransferTask {
                             self.exec_records_file(
                                 execute_stop_mark.clone(),
                                 err_occur.clone(),
+                                multi_part_semaphore.clone(),
                                 err_counter.clone(),
                                 &mut exec_set,
                                 offset_map.clone(),
@@ -482,6 +490,7 @@ impl TransferTask {
                     .execute_increment(
                         Arc::clone(&stop_mark),
                         err_occur.clone(),
+                        multi_part_semaphore.clone(),
                         Arc::clone(&err_counter),
                         &mut exec_set,
                         executing_transfers,
@@ -510,6 +519,7 @@ impl TransferTask {
     async fn generate_list_file(
         &self,
         stop_mark: Arc<AtomicBool>,
+        semaphore: Arc<Semaphore>,
         task: Arc<dyn TransferTaskActions + Send + Sync>,
     ) -> Result<(File, FileDescription, FilePosition, bool)> {
         let check_point_file = gen_file_path(
@@ -528,7 +538,7 @@ impl TransferTask {
                     .context(format!("{}:{}", file!(), line!()))?;
 
                 // 执行error retry
-                task.error_record_retry(stop_mark.clone(), executing_transfers)
+                task.error_record_retry(stop_mark.clone(), semaphore.clone(), executing_transfers)
                     .context(format!("{}:{}", file!(), line!()))?;
 
                 // 清理notify file
@@ -622,6 +632,7 @@ impl TransferTask {
         &self,
         stop_mark: Arc<AtomicBool>,
         err_occur: Arc<AtomicBool>,
+        semaphore: Arc<Semaphore>,
         err_counter: Arc<AtomicUsize>,
         exec_set: &mut JoinSet<()>,
         offset_map: Arc<DashMap<String, FilePosition>>,
@@ -694,6 +705,7 @@ impl TransferTask {
                 let record_executer = task_stock.gen_transfer_executor(
                     stop_mark.clone(),
                     err_occur.clone(),
+                    semaphore.clone(),
                     err_counter.clone(),
                     offset_map.clone(),
                     executing_file.path.to_string(),
@@ -721,6 +733,7 @@ impl TransferTask {
         &self,
         stop_mark: Arc<AtomicBool>,
         err_occur: Arc<AtomicBool>,
+        semaphore: Arc<Semaphore>,
         err_counter: Arc<AtomicUsize>,
         exec_set: &mut JoinSet<()>,
         offset_map: Arc<DashMap<String, FilePosition>>,
@@ -778,6 +791,7 @@ impl TransferTask {
                 let record_executer = task_modify.gen_transfer_executor(
                     stop_mark.clone(),
                     err_occur.clone(),
+                    semaphore.clone(),
                     err_counter.clone(),
                     offset_map.clone(),
                     executing_file.path.to_string(),

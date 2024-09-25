@@ -8,7 +8,7 @@ use std::sync::{
     Arc,
 };
 use tokio::{
-    sync::{Mutex, RwLock},
+    sync::{Mutex, RwLock, Semaphore},
     task::JoinSet,
 };
 
@@ -23,6 +23,7 @@ pub trait TransferTaskActions {
     fn error_record_retry(
         &self,
         stop_mark: Arc<AtomicBool>,
+        semaphore: Arc<Semaphore>,
         executing_transfers: Arc<RwLock<usize>>,
     ) -> Result<()>;
 
@@ -40,21 +41,22 @@ pub trait TransferTaskActions {
     // );
 
     // 记录描述表执行器
-    async fn record_descriptions_transfor(
-        &self,
-        execute_set: &mut JoinSet<()>,
-        executing_transfers: Arc<RwLock<usize>>,
-        records: Vec<RecordDescription>,
-        stop_mark: Arc<AtomicBool>,
-        err_counter: Arc<AtomicUsize>,
-        offset_map: Arc<DashMap<String, FilePosition>>,
-        list_file: String,
-    );
+    // async fn record_descriptions_transfor(
+    //     &self,
+    //     execute_set: &mut JoinSet<()>,
+    //     executing_transfers: Arc<RwLock<usize>>,
+    //     records: Vec<RecordDescription>,
+    //     stop_mark: Arc<AtomicBool>,
+    //     err_counter: Arc<AtomicUsize>,
+    //     offset_map: Arc<DashMap<String, FilePosition>>,
+    //     list_file: String,
+    // );
 
     fn gen_transfer_executor(
         &self,
         stop_mark: Arc<AtomicBool>,
         err_occur: Arc<AtomicBool>,
+        semaphore: Arc<Semaphore>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file_path: String,
@@ -84,6 +86,7 @@ pub trait TransferTaskActions {
         &self,
         stop_mark: Arc<AtomicBool>,
         err_occur: Arc<AtomicBool>,
+        semaphore: Arc<Semaphore>,
         err_counter: Arc<AtomicUsize>,
         execute_set: &mut JoinSet<()>,
         executing_transfers: Arc<RwLock<usize>>,

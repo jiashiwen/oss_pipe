@@ -31,7 +31,7 @@ use std::{
 };
 use tokio::{
     io::AsyncReadExt,
-    sync::{Mutex, RwLock},
+    sync::{Mutex, RwLock, Semaphore},
     task::{self, JoinSet},
 };
 
@@ -320,7 +320,8 @@ impl OssClient {
         bucket: &str,
         key: &str,
         splited_file_size: usize,
-        executing_transfers: Arc<RwLock<usize>>,
+        semaphore: Arc<Semaphore>,
+        // executing_transfers: Arc<RwLock<usize>>,
         multi_part_chunk_size: usize,
         multi_part_chunk_per_batch: usize,
         multi_part_parallelism: usize,
@@ -353,7 +354,8 @@ impl OssClient {
             local_file,
             bucket,
             key,
-            executing_transfers.clone(),
+            semaphore,
+            // executing_transfers.clone(),
             multi_part_chunk_size,
             multi_part_chunk_per_batch,
             multi_part_parallelism,
@@ -703,7 +705,8 @@ impl OssClient {
         file_path: &str,
         bucket: &str,
         key: &str,
-        executing_transfers: Arc<RwLock<usize>>,
+        semaphore: Arc<Semaphore>,
+        // executing_transfers: Arc<RwLock<usize>>,
         multi_part_chunk_size: usize,
         multi_part_chunk_per_batch: usize,
         multi_part_parallelism: usize,
@@ -725,7 +728,8 @@ impl OssClient {
                 bucket,
                 key,
                 upload_id,
-                Arc::clone(&executing_transfers),
+                semaphore,
+                // Arc::clone(&executing_transfers),
                 multi_part_chunk_size,
                 multi_part_chunk_per_batch,
                 multi_part_parallelism,
@@ -980,7 +984,8 @@ impl OssClient {
         bucket: &str,
         key: &str,
         upload_id: &str,
-        executing_transfers: Arc<RwLock<usize>>,
+        semaphore: Arc<Semaphore>,
+        // executing_transfers: Arc<RwLock<usize>>,
         multi_part_chunk_size: usize,
         multi_part_chunk_per_batch: usize,
         multi_part_parallelism: usize,
@@ -1007,8 +1012,9 @@ impl OssClient {
             parts_vec.push(f_p);
 
             if (parts_vec.len() % batch).eq(&0) || part_num_usize.eq(&file_parts_len) {
-                // let e_t = Arc::clone(&executing_transfers);
-                let e_t = executing_transfers.clone();
+                let _permit = semaphore.acquire().await?;
+
+                // let e_t = executing_transfers.clone();
                 let c = Arc::clone(&arc_client);
                 let err_mark = Arc::clone(&err_mark);
                 let f = file_name.to_string();
@@ -1018,15 +1024,18 @@ impl OssClient {
                 let p_v = parts_vec.clone();
                 let c_b_tree = Arc::clone(&completed_parts_btree);
 
-                while e_t.read().await.ge(&multi_part_parallelism) {
-                    task::yield_now().await;
+                // while e_t.read().await.ge(&multi_part_parallelism) {
+                //     task::yield_now().await;
+                // }
+                while joinset.len() >= multi_part_parallelism {
+                    joinset.join_next().await;
                 }
 
                 joinset.spawn(async move {
-                    {
-                        let mut num = e_t.write().await;
-                        *num += 1;
-                    }
+                    // {
+                    //     let mut num = e_t.write().await;
+                    //     *num += 1;
+                    // }
 
                     if let Err(e) = upload_file_parts_batch(
                         c,
@@ -1044,8 +1053,8 @@ impl OssClient {
                         err_mark.store(true, std::sync::atomic::Ordering::SeqCst);
                     };
 
-                    let mut num = e_t.write().await;
-                    *num -= 1;
+                    // let mut num = e_t.write().await;
+                    // *num -= 1;
                 });
 
                 parts_vec.clear();
@@ -1053,9 +1062,9 @@ impl OssClient {
         }
 
         while joinset.len() > 0 {
-            if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
-                return Err(anyhow!("upload error"));
-            }
+            // if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
+            //     return Err(anyhow!("upload error"));
+            // }
             joinset.join_next().await;
         }
 
@@ -1238,7 +1247,8 @@ pub async fn multipart_transfer_obj_paralle_by_range(
     t_bucket: &str,
     t_key: &str,
     expires: Option<aws_smithy_types::DateTime>,
-    executing_transfers: Arc<RwLock<usize>>,
+    semaphore: Arc<Semaphore>,
+    // executing_transfers: Arc<RwLock<usize>>,
     multi_part_chunk_size: usize,
     multi_part_chunks_per_batch: usize,
     multi_part_parallelism: usize,
@@ -1254,9 +1264,9 @@ pub async fn multipart_transfer_obj_paralle_by_range(
         }
     };
 
-    while executing_transfers.read().await.ge(&multi_part_parallelism) {
-        task::yield_now().await;
-    }
+    // while executing_transfers.read().await.ge(&multi_part_parallelism) {
+    //     task::yield_now().await;
+    // }
 
     let completed_parts = transfer_object_parts_by_range(
         s_client,
@@ -1266,7 +1276,8 @@ pub async fn multipart_transfer_obj_paralle_by_range(
         t_bucket,
         t_key,
         upload_id,
-        Arc::clone(&executing_transfers),
+        semaphore,
+        // Arc::clone(&executing_transfers),
         multi_part_chunk_size,
         multi_part_chunks_per_batch,
         multi_part_parallelism,
@@ -1288,7 +1299,8 @@ pub async fn transfer_object_parts_by_range(
     t_bucket: &str,
     t_key: &str,
     upload_id: &str,
-    executing_transfers: Arc<RwLock<usize>>,
+    semaphore: Arc<Semaphore>,
+    // executing_transfers: Arc<RwLock<usize>>,
     multi_part_chunk_size: usize,
     multi_part_chunks_per_batch: usize,
     multi_part_parallelism: usize,
@@ -1316,11 +1328,11 @@ pub async fn transfer_object_parts_by_range(
         if vec_obj_range_tmp.len().eq(&multi_part_chunks_per_batch)
             || vec_obj_range_len.eq(&TryInto::<usize>::try_into(part_num)?)
         {
-            while executing_transfers.read().await.ge(&multi_part_parallelism) {
-                task::yield_now().await;
-            }
-
-            let e_t = Arc::clone(&executing_transfers);
+            // while executing_transfers.read().await.ge(&multi_part_parallelism) {
+            //     task::yield_now().await;
+            // }
+            let semaphore = semaphore.clone();
+            // let e_t = Arc::clone(&executing_transfers);
             let s_c = Arc::clone(&s_client);
             let t_c = t_client.clone();
             let s_b = s_bucket.to_string();
@@ -1331,37 +1343,48 @@ pub async fn transfer_object_parts_by_range(
             let v_o_r = vec_obj_range_tmp.clone();
             let c_b_t = Arc::clone(&completed_parts_btree);
             let e_m = Arc::clone(&err_mark);
+            while joinset.len() >= multi_part_parallelism {
+                joinset.join_next().await;
+            }
 
             joinset.spawn(async move {
-                {
-                    let mut num = e_t.write().await;
-                    *num += 1;
-                }
+                let _permit = match semaphore.acquire().await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        e_m.store(true, std::sync::atomic::Ordering::SeqCst);
+                        log::info!("{:?}", e);
+                    }
+                };
+
+                // {
+                //     let mut num = e_t.write().await;
+                //     *num += 1;
+                // }
                 if let Err(e) = transfer_parts_batch_by_range(
                     s_c, t_c, &s_b, &t_b, &s_k, &t_k, &up_id, v_o_r, c_b_t,
                 )
                 .await
                 {
-                    log::error!("{:?}", e);
                     e_m.store(true, std::sync::atomic::Ordering::SeqCst);
+                    log::error!("{:?}", e);
                 };
 
-                let mut num = e_t.write().await;
-                *num -= 1;
+                // let mut num = e_t.write().await;
+                // *num -= 1;
             });
             vec_obj_range_tmp.clear();
         }
     }
 
     while joinset.len() > 0 {
-        if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
-            return Err(anyhow!("upload error"));
-        }
+        // if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
+        //     return Err(anyhow!("upload error"));
+        // }
         joinset.join_next().await;
     }
 
     if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
-        return Err(anyhow!("upload error"));
+        return Err(anyhow!("upload parts error"));
     }
 
     let completed_parts = completed_parts_btree

@@ -28,7 +28,7 @@ use std::{
     path::Path,
     sync::{atomic::AtomicUsize, Arc},
 };
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, Semaphore};
 use tokio::task::{self, JoinSet};
 use walkdir::WalkDir;
 
@@ -59,6 +59,7 @@ impl TransferTaskActions for TransferLocal2Local {
     fn error_record_retry(
         &self,
         stop_mark: Arc<AtomicBool>,
+        semaphore: Arc<Semaphore>,
         executing_transfers: Arc<RwLock<usize>>,
     ) -> Result<()> {
         // 遍历meta dir 执行所有err开头文件
@@ -152,6 +153,7 @@ impl TransferTaskActions for TransferLocal2Local {
         &self,
         stop_mark: Arc<AtomicBool>,
         err_occur: Arc<AtomicBool>,
+        semaphore: Arc<Semaphore>,
         err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file_path: String,
@@ -169,34 +171,34 @@ impl TransferTaskActions for TransferLocal2Local {
         Arc::new(executor)
     }
 
-    async fn record_descriptions_transfor(
-        &self,
-        joinset: &mut JoinSet<()>,
-        _executing_transfers: Arc<RwLock<usize>>,
-        records: Vec<RecordDescription>,
-        stop_mark: Arc<AtomicBool>,
-        err_counter: Arc<AtomicUsize>,
-        offset_map: Arc<DashMap<String, FilePosition>>,
-        list_file: String,
-    ) {
-        let local2local = TransferLocal2LocalExecutor {
-            source: self.source.clone(),
-            target: self.target.clone(),
-            stop_mark: stop_mark.clone(),
-            err_occur: Arc::new(AtomicBool::new(false)),
-            err_counter,
-            offset_map,
-            attributes: self.attributes.clone(),
-            list_file_path: list_file,
-        };
+    // async fn record_descriptions_transfor(
+    //     &self,
+    //     joinset: &mut JoinSet<()>,
+    //     _executing_transfers: Arc<RwLock<usize>>,
+    //     records: Vec<RecordDescription>,
+    //     stop_mark: Arc<AtomicBool>,
+    //     err_counter: Arc<AtomicUsize>,
+    //     offset_map: Arc<DashMap<String, FilePosition>>,
+    //     list_file: String,
+    // ) {
+    //     let local2local = TransferLocal2LocalExecutor {
+    //         source: self.source.clone(),
+    //         target: self.target.clone(),
+    //         stop_mark: stop_mark.clone(),
+    //         err_occur: Arc::new(AtomicBool::new(false)),
+    //         err_counter,
+    //         offset_map,
+    //         attributes: self.attributes.clone(),
+    //         list_file_path: list_file,
+    //     };
 
-        joinset.spawn(async move {
-            if let Err(e) = local2local.exec_record_descriptions(records).await {
-                stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{:?}", e);
-            };
-        });
-    }
+    //     joinset.spawn(async move {
+    //         if let Err(e) = local2local.exec_record_descriptions(records).await {
+    //             stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+    //             log::error!("{:?}", e);
+    //         };
+    //     });
+    // }
 
     async fn gen_source_object_list_file(
         &self,
@@ -391,6 +393,7 @@ impl TransferTaskActions for TransferLocal2Local {
         &self,
         stop_mark: Arc<AtomicBool>,
         err_occur: Arc<AtomicBool>,
+        semaphore: Arc<Semaphore>,
         err_counter: Arc<AtomicUsize>,
         _joinset: &mut JoinSet<()>,
         executing_transfers: Arc<RwLock<usize>>,
