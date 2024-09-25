@@ -161,7 +161,12 @@ impl TaskDefaultParameters {
     pub fn multi_part_chunks_per_batch_default() -> usize {
         10
     }
+
     pub fn multi_part_parallelism_default() -> usize {
+        num_cpus::get()
+    }
+
+    pub fn multi_part_max_parallelism_default() -> usize {
         num_cpus::get() * 2
     }
 

@@ -107,6 +107,9 @@ path = "examples/file_append.rs"
 name = "x"
 path = "examples/xingneng.rs"
 
+[[example]]
+name = "sem"
+path = "examples/semaphore_sample.rs"
 
 [profile.release]
 lto = true

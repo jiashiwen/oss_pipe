@@ -114,6 +114,8 @@ pub struct TransferTaskAttributes {
     pub multi_part_chunks_per_batch: usize,
     #[serde(default = "TaskDefaultParameters::multi_part_parallelism_default")]
     pub multi_part_parallelism: usize,
+    #[serde(default = "TaskDefaultParameters::multi_part_max_parallelism_default")]
+    pub multi_part_max_parallelism: usize,
     #[serde(default = "TaskDefaultParameters::filter_default")]
     pub exclude: Option<Vec<String>>,
     #[serde(default = "TaskDefaultParameters::filter_default")]
@@ -138,6 +140,7 @@ impl Default for TransferTaskAttributes {
             multi_part_chunks_per_batch: TaskDefaultParameters::multi_part_chunks_per_batch_default(
             ),
             multi_part_parallelism: TaskDefaultParameters::multi_part_parallelism_default(),
+            multi_part_max_parallelism: TaskDefaultParameters::multi_part_max_parallelism_default(),
             exclude: TaskDefaultParameters::filter_default(),
             include: TaskDefaultParameters::filter_default(),
             transfer_type: TaskDefaultParameters::transfer_type_default(),

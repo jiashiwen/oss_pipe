@@ -771,45 +771,44 @@ impl TransferExecutor for TransferLocal2OssExecuter {
             target_key.push_str(&record.key);
 
             let e_u = Arc::clone(&executing_transfers);
-            if let Err(e) = self
-                .listed_record_handler(e_u, &source_file_path, &target_oss_client, &target_key)
-                .await
-            {
-                self.err_occur
-                    .store(true, std::sync::atomic::Ordering::SeqCst);
-                self.stop_mark
-                    .store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{:?}", e);
-                break;
-            };
-            // .context(format!("{}:{}", file!(), line!()))?;
-
             // if let Err(e) = self
             //     .listed_record_handler(e_u, &source_file_path, &target_oss_client, &target_key)
             //     .await
             // {
-            //     let record_desc = RecordDescription {
-            //         source_key: source_file_path.clone(),
-            //         target_key: target_key.clone(),
-            //         list_file_path: self.list_file_path.clone(),
-            //         list_file_position: FilePosition {
-            //             offset: record.offset,
-            //             line_num: record.line_num,
-            //         },
-            //         option: Opt::PUT,
-            //     };
-            //     record_desc.handle_error(
-            //         self.stop_mark.clone(),
-            //         &self.err_counter,
-            //         self.attributes.max_errors,
-            //         &self.offset_map,
-            //         &mut error_file,
-            //         offset_key.as_str(),
-            //     );
             //     self.err_occur
             //         .store(true, std::sync::atomic::Ordering::SeqCst);
+            //     self.stop_mark
+            //         .store(true, std::sync::atomic::Ordering::SeqCst);
             //     log::error!("{:?}", e);
-            // }
+            //     break;
+            // };
+
+            if let Err(e) = self
+                .listed_record_handler(e_u, &source_file_path, &target_oss_client, &target_key)
+                .await
+            {
+                let record_desc = RecordDescription {
+                    source_key: source_file_path.clone(),
+                    target_key: target_key.clone(),
+                    list_file_path: self.list_file_path.clone(),
+                    list_file_position: FilePosition {
+                        offset: record.offset,
+                        line_num: record.line_num,
+                    },
+                    option: Opt::PUT,
+                };
+                record_desc.handle_error(
+                    self.stop_mark.clone(),
+                    &self.err_counter,
+                    self.attributes.max_errors,
+                    &self.offset_map,
+                    &mut error_file,
+                    offset_key.as_str(),
+                );
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                log::error!("{:?}", e);
+            }
 
             // 文件位置记录后置，避免中断时已记录而传输未完成，续传时丢记录
             self.offset_map.insert(
