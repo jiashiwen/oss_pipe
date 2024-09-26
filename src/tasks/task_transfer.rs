@@ -32,7 +32,7 @@ use std::{
 };
 use tabled::builder::Builder;
 use tabled::settings::Style;
-use tokio::sync::{RwLock, Semaphore};
+use tokio::sync::Semaphore;
 use tokio::{
     runtime,
     sync::Mutex,
@@ -317,7 +317,7 @@ impl TransferTask {
             {
                 Ok(r) => r,
                 Err(e) => {
-                    log::error!("{}", e);
+                    log::error!("{:?}", e);
                     err_occur.store(true, std::sync::atomic::Ordering::Relaxed);
                     return;
                 }
@@ -606,7 +606,9 @@ impl TransferTask {
                 let pd = prompt_processbar("Generating object list ...");
                 // 清理 meta 目录
                 // 重新生成object list file
-                let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .context(format!("{}:{}", file!(), line!()))?;
                 let _ = fs::remove_dir_all(self.attributes.meta_dir.as_str());
 
                 let executed_file = FileDescription {
@@ -626,7 +628,8 @@ impl TransferTask {
                         }
                     };
 
-                let list_file = File::open(&list_file_desc.path)?;
+                let list_file =
+                    File::open(&list_file_desc.path).context(format!("{}:{}", file!(), line!()))?;
                 let list_file_position = FilePosition::default();
 
                 pd.finish_with_message("object list generated");

@@ -391,7 +391,7 @@ impl OssClient {
 
         let mut obj_range_batch = vec![];
         let vec_obj_range_len = vec_obj_range.len();
-        let err_mark = Arc::new(AtomicBool::new(false));
+        let err_occur = Arc::new(AtomicBool::new(false));
         let mut joinset = JoinSet::new();
 
         for range in vec_obj_range {
@@ -406,7 +406,7 @@ impl OssClient {
                 let s_k = s_key.to_string();
                 let f_n = filling_file.to_string();
                 let v_o_r = obj_range_batch.clone();
-                let e_m = Arc::clone(&err_mark);
+                let e_m = Arc::clone(&err_occur);
                 while joinset.len() >= multi_part_parallelism {
                     joinset.join_next().await;
                 }
@@ -431,13 +431,13 @@ impl OssClient {
         }
 
         while joinset.len() > 0 {
-            if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
+            if err_occur.load(std::sync::atomic::Ordering::SeqCst) {
                 return Err(anyhow!("upload error"));
             }
             joinset.join_next().await;
         }
 
-        if err_mark.load(std::sync::atomic::Ordering::SeqCst) {
+        if err_occur.load(std::sync::atomic::Ordering::SeqCst) {
             return Err(anyhow!("upload error"));
         }
         fs::rename(filling_file, file_path)?;

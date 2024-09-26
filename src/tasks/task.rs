@@ -127,11 +127,11 @@ impl TaskDefaultParameters {
     }
 
     pub fn objects_per_batch_default() -> i32 {
-        100
+        64
     }
 
     pub fn task_parallelism_default() -> usize {
-        num_cpus::get()
+        num_cpus::get() * 3
     }
 
     pub fn max_errors_default() -> usize {
@@ -150,12 +150,12 @@ impl TaskDefaultParameters {
         false
     }
     pub fn large_file_size_default() -> usize {
-        // 50M
-        10485760 * 5
+        // 64M
+        10485760 * 64
     }
     pub fn multi_part_chunk_size_default() -> usize {
-        // 10M
-        10485760
+        // 8M
+        1048576 * 8
     }
 
     pub fn multi_part_chunks_per_batch_default() -> usize {
@@ -163,11 +163,11 @@ impl TaskDefaultParameters {
     }
 
     pub fn multi_part_parallelism_default() -> usize {
-        num_cpus::get()
+        num_cpus::get() * 2
     }
 
     pub fn multi_part_max_parallelism_default() -> usize {
-        num_cpus::get() * 2
+        num_cpus::get() * 3
     }
 
     pub fn meta_dir_default() -> String {

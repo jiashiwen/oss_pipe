@@ -145,11 +145,7 @@ impl TransferTaskActions for TransferOss2Local {
         Ok(())
     }
 
-    async fn gen_source_object_list_file(
-        &self,
-        // last_modify_filter: Option<LastModifyFilter>,
-        object_list_file: &str,
-    ) -> Result<FileDescription> {
+    async fn gen_source_object_list_file(&self, object_list_file: &str) -> Result<FileDescription> {
         let client_source = self.source.gen_oss_client()?;
         // 若为持续同步模式，且 last_modify_timestamp 大于 0，则将 last_modify 属性大于last_modify_timestamp变量的对象加入执行列表
         let regex_filter =
@@ -256,8 +252,7 @@ impl TransferTaskActions for TransferOss2Local {
             for obj in objects {
                 if let Some(source_key) = obj.key() {
                     if let Some(d) = obj.last_modified() {
-                        // if last_modify_filter.filter(i128::from(d.secs())) {
-                        if last_modify_filter.filter(usize::try_from(d.secs()).unwrap()) {
+                        if last_modify_filter.filter(usize::try_from(d.secs())?) {
                             let target_key_str = gen_file_path(&self.target, source_key, "");
                             let record = RecordOption {
                                 source_key: source_key.to_string(),
@@ -560,39 +555,6 @@ impl TransferTaskActions for TransferOss2Local {
         }
     }
 }
-
-// impl TransferOss2Local {
-//     async fn record_discriptions_excutor(
-//         &self,
-//         joinset: &mut JoinSet<()>,
-//         records: Vec<RecordDescription>,
-//         stop_mark: Arc<AtomicBool>,
-//         err_counter: Arc<AtomicUsize>,
-//         offset_map: Arc<DashMap<String, FilePosition>>,
-//         list_file: String,
-//     ) {
-//         let download = TransferOss2LocalRecordsExecutor {
-//             source: self.source.clone(),
-//             target: self.target.clone(),
-//             stop_mark,
-//             err_occur: Arc::new(AtomicBool::new(false)),
-
-//             err_counter,
-//             offset_map,
-//             attributes: self.attributes.clone(),
-//             list_file_path: list_file,
-//         };
-
-//         joinset.spawn(async move {
-//             if let Err(e) = download.exec_record_descriptions(records).await {
-//                 download
-//                     .err_counter
-//                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-//                 log::error!("{:?}", e);
-//             };
-//         });
-//     }
-// }
 
 #[derive(Debug, Clone)]
 pub struct TransferOss2LocalRecordsExecutor {
