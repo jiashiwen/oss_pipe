@@ -1,5 +1,5 @@
 use super::IncrementAssistant;
-use crate::checkpoint::{FileDescription, FilePosition, ListedRecord, RecordDescription};
+use crate::checkpoint::{FileDescription, FilePosition, ListedRecord, RecordOption};
 use anyhow::Result;
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -8,7 +8,7 @@ use std::sync::{
     Arc,
 };
 use tokio::{
-    sync::{Mutex, RwLock, Semaphore},
+    sync::{Mutex, Semaphore},
     task::JoinSet,
 };
 
@@ -69,22 +69,34 @@ pub trait TransferTaskActions {
 }
 
 #[async_trait]
-pub trait CompareTaskActions {
-    async fn gen_list_file(&self, object_list_file: &str) -> Result<FileDescription>;
-
-    async fn listed_records_comparator(
-        &self,
-        joinset: &mut JoinSet<()>,
-        records: Vec<ListedRecord>,
-        stop_mark: Arc<AtomicBool>,
-        offset_map: Arc<DashMap<String, FilePosition>>,
-    );
+pub trait TransferExecutor {
+    async fn transfer_listed_records(&self, records: Vec<ListedRecord>) -> Result<()>;
+    async fn transfer_record_options(&self, records: Vec<RecordOption>) -> Result<()>;
 }
 
 #[async_trait]
-pub trait TransferExecutor {
-    // fn gen_task_action(&self) -> Arc<dyn TransferTaskActions + Send + Sync>;
-    async fn exec_listed_records(&self, records: Vec<ListedRecord>) -> Result<()>;
+pub trait CompareTaskActions {
+    async fn gen_list_file(&self, object_list_file: &str) -> Result<FileDescription>;
 
-    async fn exec_record_descriptions(&self, records: Vec<RecordDescription>) -> Result<()>;
+    fn gen_compare_executor(
+        &self,
+        stop_mark: Arc<AtomicBool>,
+        err_occur: Arc<AtomicBool>,
+        semaphore: Arc<Semaphore>,
+        offset_map: Arc<DashMap<String, FilePosition>>,
+    ) -> Arc<dyn CompareExecutor + Send + Sync>;
+
+    // async fn listed_records_comparator(
+    //     &self,
+    //     joinset: &mut JoinSet<()>,
+    //     records: Vec<ListedRecord>,
+    //     stop_mark: Arc<AtomicBool>,
+    //     offset_map: Arc<DashMap<String, FilePosition>>,
+    // );
+}
+
+#[async_trait]
+pub trait CompareExecutor {
+    async fn compare_listed_records(&self, records: Vec<ListedRecord>) -> Result<()>;
+    fn error_occur(&self);
 }

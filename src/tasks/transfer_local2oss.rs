@@ -10,7 +10,7 @@ use super::NOTIFY_FILE_PREFIX;
 use super::OFFSET_PREFIX;
 use super::REMOVED_PREFIX;
 use super::{gen_file_path, TRANSFER_ERROR_RECORD_PREFIX};
-use crate::checkpoint::{FileDescription, FilePosition, Opt, RecordDescription};
+use crate::checkpoint::{FileDescription, FilePosition, Opt, RecordOption};
 use crate::commons::merge_file;
 use crate::commons::struct_to_json_string;
 use crate::commons::{
@@ -108,7 +108,7 @@ impl TransferTaskActions for TransferLocal2Oss {
                     for line in lines {
                         match line {
                             Ok(content) => {
-                                let record = json_to_struct::<RecordDescription>(content.as_str())?;
+                                let record = json_to_struct::<RecordOption>(content.as_str())?;
                                 record_vec.push(record);
                             }
                             Err(e) => {
@@ -128,7 +128,7 @@ impl TransferTaskActions for TransferLocal2Oss {
                             p.to_string(),
                         );
 
-                        executor.exec_record_descriptions(record_vec).await?;
+                        executor.transfer_record_options(record_vec).await?;
                     }
                 }
                 let _ = fs::remove_file(p);
@@ -223,7 +223,7 @@ impl TransferTaskActions for TransferLocal2Oss {
                     let source_key_str = gen_file_path(&self.source, source_key, "");
                     let source_path = Path::new(&source_key_str);
                     if !source_path.exists() {
-                        let record = RecordDescription {
+                        let record = RecordOption {
                             source_key: source_key_str,
                             target_key: target_key.to_string(),
                             list_file_path: "".to_string(),
@@ -302,7 +302,7 @@ impl TransferTaskActions for TransferLocal2Oss {
                     .as_secs();
 
                 if last_modify_filter.filter(usize::try_from(modified_time).unwrap()) {
-                    let record = RecordDescription {
+                    let record = RecordOption {
                         source_key: p.to_string(),
                         target_key: target_key.to_string(),
                         list_file_path: "".to_string(),
@@ -509,7 +509,7 @@ impl TransferTaskActions for TransferLocal2Oss {
                             }
                         }
                         Err(e) => {
-                            let r = RecordDescription {
+                            let r = RecordOption {
                                 source_key: "".to_string(),
                                 target_key: "".to_string(),
                                 list_file_path: local_notify.notify_file_path.clone(),
@@ -544,7 +544,7 @@ impl TransferTaskActions for TransferLocal2Oss {
             );
 
             if records.len() > 0 {
-                let _ = executor.exec_record_descriptions(records).await;
+                let _ = executor.transfer_record_options(records).await;
             }
 
             let _ = error_file.flush();
@@ -578,7 +578,7 @@ impl TransferLocal2Oss {
         list_file_path: &str,
         offset: usize,
         line_num: u64,
-    ) -> Result<RecordDescription> {
+    ) -> Result<RecordOption> {
         let modified = from_str::<Modified>(modified_str)?;
         let mut target_path = modified.path.clone();
 
@@ -602,7 +602,7 @@ impl TransferLocal2Oss {
         if PathType::File.eq(&modified.path_type) {
             match modified.modify_type {
                 ModifyType::Create | ModifyType::Modify => {
-                    let record = RecordDescription {
+                    let record = RecordOption {
                         source_key: modified.path.clone(),
                         target_key: target_path,
                         list_file_path: list_file_path.to_string(),
@@ -612,7 +612,7 @@ impl TransferLocal2Oss {
                     return Ok(record);
                 }
                 ModifyType::Delete => {
-                    let record = RecordDescription {
+                    let record = RecordOption {
                         source_key: modified.path.clone(),
                         target_key: target_path,
                         list_file_path: list_file_path.to_string(),
@@ -644,7 +644,7 @@ pub struct TransferLocal2OssExecuter {
 
 #[async_trait]
 impl TransferExecutor for TransferLocal2OssExecuter {
-    async fn exec_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
+    async fn transfer_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
         let mut offset_key = OFFSET_PREFIX.to_string();
         let subffix = records[0].offset.to_string();
         offset_key.push_str(&subffix);
@@ -703,7 +703,7 @@ impl TransferExecutor for TransferLocal2OssExecuter {
                 .listed_record_handler(&source_file_path, &target_oss_client, &target_key)
                 .await
             {
-                let record_desc = RecordDescription {
+                let record_desc = RecordOption {
                     source_key: source_file_path.clone(),
                     target_key: target_key.clone(),
                     list_file_path: self.list_file_path.clone(),
@@ -750,7 +750,7 @@ impl TransferExecutor for TransferLocal2OssExecuter {
         Ok(())
     }
 
-    async fn exec_record_descriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
+    async fn transfer_record_options(&self, records: Vec<RecordOption>) -> Result<()> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let mut subffix = records[0].list_file_position.offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();

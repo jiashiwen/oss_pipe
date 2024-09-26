@@ -191,8 +191,9 @@ pub fn scan_folder_files_to_file(
             let _ = line_writer.write_all("\n".as_bytes());
             total_lines += 1;
         };
-        line_writer.flush()?;
     }
+
+    line_writer.flush()?;
     let size = file.metadata()?.len();
     let executed_file = FileDescription {
         path: file_name.to_string(),

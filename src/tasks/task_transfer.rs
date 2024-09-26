@@ -6,7 +6,7 @@ use super::{
     task_actions::TransferTaskActions, IncrementAssistant, TransferLocal2Local, TransferLocal2Oss,
     TransferOss2Local, TransferOss2Oss,
 };
-use crate::checkpoint::RecordDescription;
+use crate::checkpoint::RecordOption;
 use crate::commons::{json_to_struct, LastModifyFilter};
 use crate::{
     checkpoint::FileDescription, commons::prompt_processbar, s3::OSSDescription,
@@ -726,7 +726,7 @@ impl TransferTask {
                 let sm = stop_mark.clone();
 
                 exec_set.spawn(async move {
-                    if let Err(e) = record_executer.exec_listed_records(vk).await {
+                    if let Err(e) = record_executer.transfer_listed_records(vk).await {
                         eo.store(true, std::sync::atomic::Ordering::SeqCst);
                         sm.store(true, std::sync::atomic::Ordering::SeqCst);
                         log::error!("{:?}", e);
@@ -752,7 +752,7 @@ impl TransferTask {
         executing_file: FileDescription,
     ) {
         let task_modify = self.gen_transfer_actions();
-        let mut vec_keys: Vec<RecordDescription> = vec![];
+        let mut vec_keys: Vec<RecordOption> = vec![];
 
         // 按列表传输object from source to target
         let total_lines = executing_file.total_lines;
@@ -764,7 +764,7 @@ impl TransferTask {
                 break;
             }
             if let Result::Ok(l) = line {
-                let record = match json_to_struct::<RecordDescription>(&l) {
+                let record = match json_to_struct::<RecordOption>(&l) {
                     Ok(r) => r,
                     Err(e) => {
                         log::error!("{:?}", e);
@@ -796,7 +796,7 @@ impl TransferTask {
                 );
 
                 exec_set.spawn(async move {
-                    if let Err(e) = record_executer.exec_record_descriptions(vk).await {
+                    if let Err(e) = record_executer.transfer_record_options(vk).await {
                         log::error!("{:?}", e);
                     };
                 });

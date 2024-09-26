@@ -5,7 +5,7 @@ use super::{
     TRANSFER_ERROR_RECORD_PREFIX,
 };
 use crate::checkpoint::{FileDescription, ListedRecord};
-use crate::checkpoint::{FilePosition, Opt, RecordDescription};
+use crate::checkpoint::{FilePosition, Opt, RecordOption};
 use crate::commons::{
     analyze_folder_files_size, copy_file, json_to_struct, merge_file, read_lines,
     scan_folder_files_to_file, struct_to_json_string, LastModifyFilter, Modified, ModifyType,
@@ -84,7 +84,7 @@ impl TransferTaskActions for TransferLocal2Local {
                     for line in lines {
                         match line {
                             Ok(content) => {
-                                let record = json_to_struct::<RecordDescription>(content.as_str())?;
+                                let record = json_to_struct::<RecordOption>(content.as_str())?;
                                 record_vec.push(record);
                             }
                             Err(e) => {
@@ -105,7 +105,7 @@ impl TransferTaskActions for TransferLocal2Local {
                             attributes: self.attributes.clone(),
                             list_file_path: p.to_string(),
                         };
-                        let _ = local2local.exec_record_descriptions(record_vec);
+                        let _ = local2local.transfer_record_options(record_vec);
                     }
                 }
                 let _ = fs::remove_file(p);
@@ -207,7 +207,7 @@ impl TransferTaskActions for TransferLocal2Local {
                 let source_key_str = gen_file_path(&self.source, key, "");
                 let source_path = Path::new(&source_key_str);
                 if !source_path.exists() {
-                    let record = RecordDescription {
+                    let record = RecordOption {
                         source_key: source_key_str,
                         target_key: p.to_string(),
                         list_file_path: "".to_string(),
@@ -246,7 +246,7 @@ impl TransferTaskActions for TransferLocal2Local {
                     .as_secs();
                 // if last_modify_filter.filter(i128::from(modified_time)) {
                 if last_modify_filter.filter(usize::try_from(modified_time).unwrap()) {
-                    let record = RecordDescription {
+                    let record = RecordOption {
                         source_key: p.to_string(),
                         target_key: target_key_str,
                         list_file_path: "".to_string(),
@@ -458,7 +458,7 @@ impl TransferTaskActions for TransferLocal2Local {
                             }
                         }
                         Err(e) => {
-                            let r = RecordDescription {
+                            let r = RecordOption {
                                 source_key: "".to_string(),
                                 target_key: "".to_string(),
                                 list_file_path: local_notify.notify_file_path.clone(),
@@ -494,7 +494,7 @@ impl TransferTaskActions for TransferLocal2Local {
                     attributes: self.attributes.clone(),
                     list_file_path: local_notify.notify_file_path.clone(),
                 };
-                let _ = copy.exec_record_descriptions(records).await;
+                let _ = copy.transfer_record_options(records).await;
             }
 
             let _ = error_file.flush();
@@ -528,7 +528,7 @@ impl TransferLocal2Local {
         list_file_path: &str,
         offset: usize,
         line_num: u64,
-    ) -> Result<RecordDescription> {
+    ) -> Result<RecordOption> {
         let modified = from_str::<Modified>(modified_str)?;
         let mut target_path = modified.path.clone();
 
@@ -550,7 +550,7 @@ impl TransferLocal2Local {
         if PathType::File.eq(&modified.path_type) {
             match modified.modify_type {
                 ModifyType::Create | ModifyType::Modify => {
-                    let record = RecordDescription {
+                    let record = RecordOption {
                         source_key: modified.path.clone(),
                         target_key: target_path,
                         list_file_path: list_file_path.to_string(),
@@ -560,7 +560,7 @@ impl TransferLocal2Local {
                     return Ok(record);
                 }
                 ModifyType::Delete => {
-                    let record = RecordDescription {
+                    let record = RecordOption {
                         source_key: modified.path.clone(),
                         target_key: target_path,
                         list_file_path: list_file_path.to_string(),
@@ -591,7 +591,7 @@ pub struct TransferLocal2LocalExecutor {
 
 #[async_trait]
 impl TransferExecutor for TransferLocal2LocalExecutor {
-    async fn exec_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
+    async fn transfer_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
@@ -630,7 +630,7 @@ impl TransferExecutor for TransferLocal2LocalExecutor {
                 .await
             {
                 // 记录错误记录
-                let recorddesc = RecordDescription {
+                let recorddesc = RecordOption {
                     source_key: s_file_name,
                     target_key: t_file_name,
                     list_file_path: self.list_file_path.clone(),
@@ -677,7 +677,7 @@ impl TransferExecutor for TransferLocal2LocalExecutor {
         Ok(())
     }
 
-    async fn exec_record_descriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
+    async fn transfer_record_options(&self, records: Vec<RecordOption>) -> Result<()> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let mut subffix = records[0].list_file_position.offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
@@ -756,7 +756,7 @@ impl TransferLocal2LocalExecutor {
         )
     }
 
-    pub async fn record_description_handler(&self, record: &RecordDescription) -> Result<()> {
+    pub async fn record_description_handler(&self, record: &RecordOption) -> Result<()> {
         match record.option {
             Opt::PUT => {
                 copy_file(

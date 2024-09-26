@@ -60,7 +60,7 @@ impl Default for FilePosition {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct RecordDescription {
+pub struct RecordOption {
     pub source_key: String,
     pub target_key: String,
     pub list_file_path: String,
@@ -68,7 +68,7 @@ pub struct RecordDescription {
     pub option: Opt,
 }
 
-impl FromStr for RecordDescription {
+impl FromStr for RecordOption {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self> {
         let r = serde_json::from_str::<Self>(s)?;
@@ -76,7 +76,7 @@ impl FromStr for RecordDescription {
     }
 }
 
-impl RecordDescription {
+impl RecordOption {
     pub fn handle_error(
         &self,
         stop_mark: Arc<AtomicBool>,

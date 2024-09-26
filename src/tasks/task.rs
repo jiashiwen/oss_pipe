@@ -99,7 +99,7 @@ impl Task {
                     "Compare Task Start:\n{}",
                     struct_to_yaml_string(compare).unwrap()
                 );
-                match compare.execute() {
+                match compare.start_compare() {
                     Ok(_) => {
                         let log_info = LogInfo {
                             task_id: compare.task_id.clone(),

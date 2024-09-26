@@ -1,3 +1,4 @@
+use super::task_actions::CompareExecutor;
 use super::task_actions::CompareTaskActions;
 use super::CompareCheckOption;
 use super::CompareTaskAttributes;
@@ -30,11 +31,12 @@ use std::{
     io::Write,
 };
 use tokio::io::AsyncReadExt;
+use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
-pub struct CompareOss2Local {
+pub struct TaskCompareOss2Local {
     pub source: OSSDescription,
     pub target: String,
     pub check_option: CompareCheckOption,
@@ -42,7 +44,7 @@ pub struct CompareOss2Local {
 }
 
 #[async_trait]
-impl CompareTaskActions for CompareOss2Local {
+impl CompareTaskActions for TaskCompareOss2Local {
     async fn gen_list_file(&self, object_list_file: &str) -> Result<FileDescription> {
         let client_source = self.source.gen_oss_client()?;
         let regex_filter =
@@ -59,28 +61,23 @@ impl CompareTaskActions for CompareOss2Local {
             .await
     }
 
-    async fn listed_records_comparator(
+    fn gen_compare_executor(
         &self,
-        joinset: &mut JoinSet<()>,
-        records: Vec<ListedRecord>,
         stop_mark: Arc<AtomicBool>,
+        err_occur: Arc<AtomicBool>,
+        semaphore: Arc<Semaphore>,
         offset_map: Arc<DashMap<String, FilePosition>>,
-    ) {
+    ) -> Arc<dyn CompareExecutor + Send + Sync> {
         let comparator = Oss2LocalRecordsComparator {
             source: self.source.clone(),
             target: self.target.clone(),
-            stop_mark: stop_mark.clone(),
+            stop_mark,
+            err_occur,
             offset_map,
             check_option: self.check_option.clone(),
             attributes: self.attributes.clone(),
         };
-
-        joinset.spawn(async move {
-            if let Err(e) = comparator.compare_listed_records(records).await {
-                stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{:?}", e);
-            };
-        });
+        Arc::new(comparator)
     }
 }
 
@@ -89,9 +86,76 @@ pub struct Oss2LocalRecordsComparator {
     pub source: OSSDescription,
     pub target: String,
     pub stop_mark: Arc<AtomicBool>,
+    pub err_occur: Arc<AtomicBool>,
+    // pub semaphore: Arc<Semaphore>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
     pub check_option: CompareCheckOption,
     pub attributes: CompareTaskAttributes,
+}
+
+#[async_trait]
+impl CompareExecutor for Oss2LocalRecordsComparator {
+    async fn compare_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
+        let subffix = records[0].offset.to_string();
+        let mut offset_key = OFFSET_PREFIX.to_string();
+        offset_key.push_str(&subffix);
+
+        let compare_result_file_name =
+            gen_file_path(&self.attributes.meta_dir, COMPARE_RESULT_PREFIX, &subffix);
+
+        let mut compare_result_file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(compare_result_file_name.as_str())?;
+
+        let c_s = self.source.gen_oss_client()?;
+
+        for record in records {
+            if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+                return Ok(());
+            }
+            self.offset_map.insert(
+                offset_key.clone(),
+                FilePosition {
+                    offset: record.offset,
+                    line_num: record.line_num,
+                },
+            );
+
+            let t_key = gen_file_path(self.target.as_str(), record.key.as_str(), "");
+
+            match self.compare_listed_record(&record, &c_s, &t_key).await {
+                Ok(r) => {
+                    if let Some(diff) = r {
+                        let _ = diff.save_json_to_file(&mut compare_result_file);
+                    }
+                }
+                Err(e) => {
+                    self.stop_mark
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                    log::error!("{:?}", e);
+                }
+            };
+        }
+
+        let _ = compare_result_file.flush();
+        self.offset_map.remove(&offset_key);
+        if let Ok(m) = compare_result_file.metadata() {
+            if m.len().eq(&0) {
+                let _ = fs::remove_file(compare_result_file_name.as_str());
+            }
+        };
+
+        Ok(())
+    }
+
+    fn error_occur(&self) {
+        self.err_occur
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.stop_mark
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 impl Oss2LocalRecordsComparator {

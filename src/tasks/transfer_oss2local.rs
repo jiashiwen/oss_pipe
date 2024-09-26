@@ -6,7 +6,7 @@ use super::{
 };
 use crate::{
     checkpoint::{
-        get_task_checkpoint, FileDescription, FilePosition, ListedRecord, Opt, RecordDescription,
+        get_task_checkpoint, FileDescription, FilePosition, ListedRecord, Opt, RecordOption,
     },
     commons::{
         json_to_struct, merge_file, prompt_processbar, read_lines, struct_to_json_string,
@@ -21,7 +21,6 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use aws_sdk_s3::types::Object;
 use dashmap::DashMap;
-use futures::executor;
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
 use std::{
@@ -35,7 +34,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::{
-    sync::{Mutex, RwLock, Semaphore},
+    sync::{Mutex, Semaphore},
     task::JoinSet,
 };
 use walkdir::WalkDir;
@@ -104,7 +103,7 @@ impl TransferTaskActions for TransferOss2Local {
                     for line in lines {
                         match line {
                             Ok(content) => {
-                                let record = json_to_struct::<RecordDescription>(content.as_str())?;
+                                let record = json_to_struct::<RecordOption>(content.as_str())?;
                                 record_vec.push(record);
                             }
                             Err(e) => {
@@ -123,7 +122,7 @@ impl TransferTaskActions for TransferOss2Local {
                             Arc::new(DashMap::<String, FilePosition>::new()),
                             p.to_string(),
                         );
-                        executor.exec_record_descriptions(record_vec).await;
+                        executor.transfer_record_options(record_vec).await;
                         // let download = TransferOss2LocalRecordsExecutor {
                         //     target: self.target.clone(),
                         //     source: self.source.clone(),
@@ -238,7 +237,7 @@ impl TransferTaskActions for TransferOss2Local {
                     .object_exists(&self.source.bucket, &source_key)
                     .await?
                 {
-                    let record = RecordDescription {
+                    let record = RecordOption {
                         source_key,
                         target_key: p.to_string(),
                         list_file_path: "".to_string(),
@@ -260,7 +259,7 @@ impl TransferTaskActions for TransferOss2Local {
                         // if last_modify_filter.filter(i128::from(d.secs())) {
                         if last_modify_filter.filter(usize::try_from(d.secs()).unwrap()) {
                             let target_key_str = gen_file_path(&self.target, source_key, "");
-                            let record = RecordDescription {
+                            let record = RecordOption {
                                 source_key: source_key.to_string(),
                                 target_key: target_key_str,
                                 list_file_path: "".to_string(),
@@ -442,7 +441,7 @@ impl TransferTaskActions for TransferOss2Local {
                 }
                 if let Result::Ok(line_str) = line {
                     let len = line_str.bytes().len() + "\n".bytes().len();
-                    let mut record = match from_str::<RecordDescription>(&line_str) {
+                    let mut record = match from_str::<RecordOption>(&line_str) {
                         Ok(r) => r,
                         Err(e) => {
                             log::error!("{:?}", e);
@@ -478,7 +477,7 @@ impl TransferTaskActions for TransferOss2Local {
                         offset_map.clone(),
                         modified.path.clone(),
                     );
-                    executor.exec_record_descriptions(vk).await;
+                    executor.transfer_record_options(vk).await;
                     // self.record_discriptions_excutor(
                     //     &mut execute_set,
                     //     vk,
@@ -512,7 +511,7 @@ impl TransferTaskActions for TransferOss2Local {
                     offset_map.clone(),
                     modified.path.clone(),
                 );
-                executor.exec_record_descriptions(vk).await;
+                executor.transfer_record_options(vk).await;
                 // self.record_discriptions_excutor(
                 //     &mut execute_set,
                 //     vk,
@@ -610,7 +609,7 @@ pub struct TransferOss2LocalRecordsExecutor {
 
 #[async_trait]
 impl TransferExecutor for TransferOss2LocalRecordsExecutor {
-    async fn exec_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
+    async fn transfer_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
@@ -639,7 +638,7 @@ impl TransferExecutor for TransferOss2LocalRecordsExecutor {
                 .listed_record_handler(&record, &c_s, t_file_name.as_str())
                 .await
             {
-                let record_desc = RecordDescription {
+                let record_desc = RecordOption {
                     source_key: record.key.clone(),
                     target_key: t_file_name.clone(),
                     list_file_path: self.list_file_path.clone(),
@@ -686,7 +685,7 @@ impl TransferExecutor for TransferOss2LocalRecordsExecutor {
         Ok(())
     }
 
-    async fn exec_record_descriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
+    async fn transfer_record_options(&self, records: Vec<RecordOption>) -> Result<()> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let mut subffix = records[0].list_file_position.offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
@@ -839,7 +838,7 @@ impl TransferOss2LocalRecordsExecutor {
     async fn record_description_handler(
         &self,
         source_oss_client: &OssClient,
-        record: &RecordDescription,
+        record: &RecordOption,
     ) -> Result<()> {
         match record.option {
             Opt::PUT => {

@@ -6,7 +6,7 @@ use super::{
 };
 use crate::{
     checkpoint::{
-        get_task_checkpoint, FileDescription, FilePosition, ListedRecord, Opt, RecordDescription,
+        get_task_checkpoint, FileDescription, FilePosition, ListedRecord, Opt, RecordOption,
     },
     commons::{
         json_to_struct, merge_file, prompt_processbar, read_lines, struct_to_json_string,
@@ -103,7 +103,7 @@ impl TransferTaskActions for TransferOss2Oss {
                     for line in lines {
                         match line {
                             Ok(content) => {
-                                let record = json_to_struct::<RecordDescription>(content.as_str())?;
+                                let record = json_to_struct::<RecordOption>(content.as_str())?;
                                 record_vec.push(record);
                             }
                             Err(e) => {
@@ -122,7 +122,7 @@ impl TransferTaskActions for TransferOss2Oss {
                             Arc::new(DashMap::<String, FilePosition>::new()),
                             p.to_string(),
                         );
-                        let _ = executor.exec_record_descriptions(record_vec);
+                        let _ = executor.transfer_record_options(record_vec);
                     }
                 }
 
@@ -235,7 +235,7 @@ impl TransferTaskActions for TransferOss2Oss {
                             }
                             target_key.push_str(source_key);
 
-                            let record = RecordDescription {
+                            let record = RecordOption {
                                 source_key: source_key.to_string(),
                                 target_key,
                                 list_file_path: "".to_string(),
@@ -284,7 +284,7 @@ impl TransferTaskActions for TransferOss2Oss {
                         .object_exists(&self.source.bucket, &source_key)
                         .await?
                     {
-                        let record = RecordDescription {
+                        let record = RecordOption {
                             source_key,
                             target_key: target_key.to_string(),
                             list_file_path: "".to_string(),
@@ -328,7 +328,7 @@ impl TransferTaskActions for TransferOss2Oss {
                             .object_exists(&self.source.bucket, &source_key)
                             .await?
                         {
-                            let record = RecordDescription {
+                            let record = RecordOption {
                                 source_key,
                                 target_key: target_key.to_string(),
                                 list_file_path: "".to_string(),
@@ -428,7 +428,6 @@ impl TransferTaskActions for TransferOss2Oss {
     ) {
         // 循环执行获取lastmodify 大于checkpoint指定的时间戳的对象
         let lock = assistant.lock().await;
-
         let checkpoint_path = lock.check_point_path.clone();
         let mut checkpoint = match get_task_checkpoint(&lock.check_point_path) {
             Ok(c) => c,
@@ -499,7 +498,7 @@ impl TransferTaskActions for TransferOss2Oss {
                 if let Result::Ok(line_str) = line {
                     let len = line_str.bytes().len() + "\n".bytes().len();
 
-                    let record = match from_str::<RecordDescription>(&line_str) {
+                    let record = match from_str::<RecordOption>(&line_str) {
                         Ok(r) => r,
                         Err(e) => {
                             log::error!("{:?}", e);
@@ -524,7 +523,7 @@ impl TransferTaskActions for TransferOss2Oss {
                     while execute_set.len() >= self.attributes.task_parallelism {
                         execute_set.join_next().await;
                     }
-                    let vk: Vec<RecordDescription> = vec_keys.clone();
+                    let vk: Vec<RecordOption> = vec_keys.clone();
                     let executor = self.gen_transfer_executor(
                         stop_mark.clone(),
                         err_occur.clone(),
@@ -535,7 +534,7 @@ impl TransferTaskActions for TransferOss2Oss {
                     );
 
                     execute_set.spawn(async move {
-                        executor.exec_record_descriptions(vk).await;
+                        executor.transfer_record_options(vk).await;
                     });
 
                     // 清理临时key vec
@@ -563,7 +562,7 @@ impl TransferTaskActions for TransferOss2Oss {
                 );
 
                 execute_set.spawn(async move {
-                    executor.exec_record_descriptions(vk).await;
+                    executor.transfer_record_options(vk).await;
                 });
             }
 
@@ -627,7 +626,7 @@ pub struct TransferOss2OssRecordsExecutor {
 
 #[async_trait]
 impl TransferExecutor for TransferOss2OssRecordsExecutor {
-    async fn exec_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
+    async fn transfer_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
@@ -662,7 +661,7 @@ impl TransferExecutor for TransferOss2OssRecordsExecutor {
                 .listed_record_handler(&record, &s_c, &t_c, &target_key)
                 .await
             {
-                let recorddesc = RecordDescription {
+                let recorddesc = RecordOption {
                     source_key: record.key.clone(),
                     target_key: target_key.clone(),
                     list_file_path: self.list_file_path.clone(),
@@ -709,7 +708,7 @@ impl TransferExecutor for TransferOss2OssRecordsExecutor {
         Ok(())
     }
 
-    async fn exec_record_descriptions(&self, records: Vec<RecordDescription>) -> Result<()> {
+    async fn transfer_record_options(&self, records: Vec<RecordOption>) -> Result<()> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let mut subffix = records[0].list_file_position.offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
@@ -859,7 +858,7 @@ impl TransferOss2OssRecordsExecutor {
         // target_oss: &OssClient,
         source_oss: &Arc<OssClient>,
         target_oss: &Arc<OssClient>,
-        record: &RecordDescription,
+        record: &RecordOption,
     ) -> Result<()> {
         // 目标object存在则不推送
         if self.attributes.target_exists_skip {
