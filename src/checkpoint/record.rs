@@ -91,15 +91,7 @@ impl RecordOption {
             self.list_file_position.clone(),
         );
 
-        // err_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        // if err_counter
-        //     .load(std::sync::atomic::Ordering::SeqCst)
-        //     .ge(&max_errors)
-        // {
-        //     stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-        // }
         stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-
         let _ = self.save_json_to_file(save_to);
     }
 

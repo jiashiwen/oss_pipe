@@ -31,9 +31,11 @@ use std::{
 };
 use tokio::{
     io::AsyncReadExt,
-    sync::{Mutex, RwLock, Semaphore},
-    task::{self, JoinSet},
+    sync::{Mutex, Semaphore},
+    task::JoinSet,
 };
+
+use super::oss_option_errors::OssError;
 
 #[derive(Debug, Clone)]
 pub struct ObjectRange {
@@ -74,14 +76,19 @@ impl OssClient {
             .create(true)
             .write(true)
             .append(true)
-            .open(file_path)?;
+            .open(file_path)
+            .context(format!("{}:{}", file!(), line!()))?;
         let mut line_writer = LineWriter::new(&file);
 
         let mut process_objects = |objects: Vec<Object>| -> Result<()> {
             for obj in objects {
                 if let Some(f) = last_modify_filter {
                     if let Some(d) = obj.last_modified() {
-                        if !f.filter(usize::try_from(d.secs())?) {
+                        if !f.filter(usize::try_from(d.secs()).context(format!(
+                            "{}:{}",
+                            file!(),
+                            line!()
+                        ))?) {
                             continue;
                         }
                     }
@@ -99,8 +106,10 @@ impl OssClient {
                     total_lines += 1;
                 }
             }
-            let _ = line_writer.flush()?;
-            log::info!("get objects list ok");
+            let _ = line_writer
+                .flush()
+                .context(format!("{}:{}", file!(), line!()))?;
+
             Ok(())
         };
 
@@ -111,7 +120,7 @@ impl OssClient {
         let mut token = resp.next_token;
 
         if let Some(objects) = resp.object_list {
-            process_objects(objects)?
+            process_objects(objects).context(format!("{}:{}", file!(), line!()))?;
         }
 
         while token.is_some() {
@@ -120,11 +129,14 @@ impl OssClient {
                 .await
                 .context(format!("{}:{}", file!(), line!()))?;
             if let Some(objects) = resp.object_list {
-                process_objects(objects)?
+                process_objects(objects).context(format!("{}:{}", file!(), line!()))?;
             }
             token = resp.next_token;
         }
-        let size = file.metadata()?.len();
+        let size = file
+            .metadata()
+            .context(format!("{}:{}", file!(), line!()))?
+            .len();
         let execute_file = FileDescription {
             path: file_path.to_string(),
             size,
@@ -161,12 +173,17 @@ impl OssClient {
                 .create(true)
                 .write(true)
                 .append(true)
-                .open(file_path)?;
+                .open(file_path)
+                .context(format!("{}:{}", file!(), line!()))?;
             let mut line_writer = LineWriter::new(&file);
             for obj in objects {
                 if let Some(f) = last_modify_filter {
                     if let Some(d) = obj.last_modified() {
-                        if !f.filter(usize::try_from(d.secs())?) {
+                        if !f.filter(usize::try_from(d.secs()).context(format!(
+                            "{}:{}",
+                            file!(),
+                            line!()
+                        ))?) {
                             continue;
                         }
                     }
@@ -178,8 +195,13 @@ impl OssClient {
                     total_lines += 1;
                 }
             }
-            let _ = line_writer.flush()?;
-            let size = file.metadata()?.len();
+            let _ = line_writer
+                .flush()
+                .context(format!("{}:{}", file!(), line!()))?;
+            let size = file
+                .metadata()
+                .context(format!("{}:{}", file!(), line!()))?
+                .len();
 
             let file_desc = FileDescription {
                 path: file_path.to_string(),
@@ -264,7 +286,10 @@ impl OssClient {
             Some(l) => l,
             None => return Err(anyhow!("content length is None")),
         };
-        let content_len_usize: usize = content_len.try_into()?;
+        let content_len_usize: usize =
+            content_len
+                .try_into()
+                .context(format!("{}:{}", file!(), line!()))?;
         let expr = match object.expires() {
             Some(d) => Some(*d),
             None => None,
@@ -384,7 +409,7 @@ impl OssClient {
         let vec_obj_range = gen_object_part_plan(&s_obj, multi_part_chunk_size)?;
         let content_len = match s_obj.content_length() {
             Some(l) => l,
-            None => return Err(anyhow!("content length is None")),
+            None => return Err(anyhow!(OssError::ObjectContentLenghtIsNone)),
         };
         let filling_file_size = TryInto::<usize>::try_into(content_len)?;
         fill_file_with_zero(filling_file_size, multi_part_chunk_size, &filling_file)?;
@@ -432,13 +457,13 @@ impl OssClient {
 
         while joinset.len() > 0 {
             if err_occur.load(std::sync::atomic::Ordering::SeqCst) {
-                return Err(anyhow!("upload error"));
+                return Err(anyhow!(OssError::UpLoadError));
             }
             joinset.join_next().await;
         }
 
         if err_occur.load(std::sync::atomic::Ordering::SeqCst) {
-            return Err(anyhow!("upload error"));
+            return Err(anyhow!(OssError::UpLoadError));
         }
         fs::rename(filling_file, file_path)?;
 
@@ -583,7 +608,7 @@ impl OssClient {
         let upload_id = match multipart_upload_res.upload_id() {
             Some(id) => id,
             None => {
-                return Err(anyhow!("upload id is None"));
+                return Err(anyhow!(OssError::UpLoadIdIsNone));
             }
         };
 
@@ -657,7 +682,7 @@ impl OssClient {
         let upload_id = match multipart_upload_res.upload_id() {
             Some(id) => id,
             None => {
-                return Err(anyhow!("upload id is None"));
+                return Err(anyhow!(OssError::UpLoadIdIsNone));
             }
         };
 
@@ -706,7 +731,7 @@ impl OssClient {
         let upload_id = match multipart_upload_res.upload_id() {
             Some(id) => id,
             None => {
-                return Err(anyhow!("upload id is None"));
+                return Err(anyhow!(OssError::UpLoadIdIsNone));
             }
         };
 
@@ -1074,7 +1099,6 @@ pub async fn multipart_transfer_obj_paralle_by_range(
     t_key: &str,
     expires: Option<aws_smithy_types::DateTime>,
     semaphore: Arc<Semaphore>,
-
     multi_part_chunk_size: usize,
     multi_part_chunks_per_batch: usize,
     multi_part_parallelism: usize,
@@ -1300,7 +1324,13 @@ pub async fn download_object(
         .open(file_path)?;
     let content_len = match get_object.content_length() {
         Some(l) => l,
-        None => return Err(anyhow!("content length is None")),
+        None => {
+            return Err(anyhow::Error::new(OssError::UpLoadIdIsNone)).context(format!(
+                "{}:{}",
+                file!(),
+                line!()
+            ));
+        }
     };
     let mut content_len_usize: usize = content_len.try_into()?;
     if content_len_usize.le(&splite_size) {

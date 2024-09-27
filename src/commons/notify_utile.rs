@@ -53,7 +53,7 @@ impl Modified {
 
 #[derive(Debug)]
 pub struct NotifyWatcher {
-    pub watcher: RecommendedWatcher,
+    watcher: RecommendedWatcher,
     reciver: Receiver<Result<Event, Error>>,
     writing_file_status: bool,
     pub watched_dir: String,

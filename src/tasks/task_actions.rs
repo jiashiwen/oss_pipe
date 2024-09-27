@@ -85,14 +85,6 @@ pub trait CompareTaskActions {
         semaphore: Arc<Semaphore>,
         offset_map: Arc<DashMap<String, FilePosition>>,
     ) -> Arc<dyn CompareExecutor + Send + Sync>;
-
-    // async fn listed_records_comparator(
-    //     &self,
-    //     joinset: &mut JoinSet<()>,
-    //     records: Vec<ListedRecord>,
-    //     stop_mark: Arc<AtomicBool>,
-    //     offset_map: Arc<DashMap<String, FilePosition>>,
-    // );
 }
 
 #[async_trait]

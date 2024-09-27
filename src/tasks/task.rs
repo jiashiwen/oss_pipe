@@ -131,7 +131,7 @@ impl TaskDefaultParameters {
     }
 
     pub fn task_parallelism_default() -> usize {
-        num_cpus::get() * 3
+        num_cpus::get() * 4
     }
 
     pub fn max_errors_default() -> usize {
@@ -151,7 +151,7 @@ impl TaskDefaultParameters {
     }
     pub fn large_file_size_default() -> usize {
         // 64M
-        10485760 * 64
+        1048576 * 64
     }
     pub fn multi_part_chunk_size_default() -> usize {
         // 8M
@@ -159,7 +159,7 @@ impl TaskDefaultParameters {
     }
 
     pub fn multi_part_chunks_per_batch_default() -> usize {
-        10
+        16
     }
 
     pub fn multi_part_parallelism_default() -> usize {
@@ -209,6 +209,7 @@ pub fn task_id_generator() -> i64 {
     id
 }
 
+#[cfg(target_family = "unix")]
 pub fn gen_file_path(dir: &str, file_prefix: &str, file_subffix: &str) -> String {
     let mut file_name = dir.to_string();
     if dir.ends_with("/") {
@@ -216,6 +217,20 @@ pub fn gen_file_path(dir: &str, file_prefix: &str, file_subffix: &str) -> String
         file_name.push_str(file_subffix);
     } else {
         file_name.push_str("/");
+        file_name.push_str(file_prefix);
+        file_name.push_str(file_subffix);
+    }
+    file_name
+}
+
+#[cfg(target_family = "windows")]
+pub fn gen_file_path(dir: &str, file_prefix: &str, file_subffix: &str) -> String {
+    let mut file_name = dir.to_string();
+    if dir.ends_with("\\") {
+        file_name.push_str(file_prefix);
+        file_name.push_str(file_subffix);
+    } else {
+        file_name.push_str("\\");
         file_name.push_str(file_prefix);
         file_name.push_str(file_subffix);
     }

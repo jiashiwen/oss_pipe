@@ -3,7 +3,7 @@ use crate::{
     commons::{read_yaml_file, struct_to_yaml_string},
     tasks::{TaskDefaultParameters, TransferStage},
 };
-use anyhow::{Error, Result};
+use anyhow::{Context, Error, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{File, OpenOptions},
@@ -65,56 +65,52 @@ impl Default for CheckPoint {
 impl FromStr for CheckPoint {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self> {
-        let r = serde_yaml::from_str::<Self>(s)?;
+        let r = serde_yaml::from_str::<Self>(s).context(format!("{}:{}", file!(), line!()))?;
         Ok(r)
     }
 }
 
 impl CheckPoint {
     pub fn seeked_execute_file(&self) -> Result<File> {
-        let mut file = File::open(&self.executed_file.path)?;
-        let seek_offset = TryInto::<u64>::try_into(self.executed_file_position.offset)?;
-        file.seek(SeekFrom::Start(seek_offset))?;
+        let mut file =
+            File::open(&self.executed_file.path).context(format!("{}:{}", file!(), line!()))?;
+        let seek_offset = TryInto::<u64>::try_into(self.executed_file_position.offset)
+            .context(format!("{}:{}", file!(), line!()))?;
+        file.seek(SeekFrom::Start(seek_offset))
+            .context(format!("{}:{}", file!(), line!()))?;
         Ok(file)
     }
     pub fn save_to(&mut self, path: &str) -> Result<()> {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .context(format!("{}:{}", file!(), line!()))?;
         self.modify_checkpoint_timestamp = i128::from(now.as_secs());
         let mut file = OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
-            .open(path)?;
-        let constent = struct_to_yaml_string(self)?;
+            .open(path)
+            .context(format!("{}:{}", file!(), line!()))?;
+        let constent = struct_to_yaml_string(self).context(format!("{}:{}", file!(), line!()))?;
         file.write_all(constent.as_bytes())?;
         file.flush()?;
         Ok(())
     }
 
     pub fn save_to_file(&mut self, file: &mut File) -> Result<()> {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .context(format!("{}:{}", file!(), line!()))?;
+
         self.modify_checkpoint_timestamp = i128::from(now.as_secs());
-        let constent = struct_to_yaml_string(self)?;
-        file.write_all(constent.as_bytes())?;
+        let constent = struct_to_yaml_string(self).context(format!("{}:{}", file!(), line!()))?;
+        file.write_all(constent.as_bytes())
+            .context(format!("{}:{}", file!(), line!()))?;
         file.flush()?;
         Ok(())
     }
-
-    // pub fn save_to_rocksdb_cf(&mut self) -> Result<()> {
-    //     let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
-    //     self.modify_checkpoint_timestamp = i128::from(now.as_secs());
-    //     let cf = match GLOBAL_ROCKSDB.cf_handle(CF_TASK_CHECKPOINTS) {
-    //         Some(cf) => cf,
-    //         None => return Err(anyhow!("content length is None")),
-    //     };
-    //     let encoded: Vec<u8> = bincode::serialize(self)?;
-    //     GLOBAL_ROCKSDB.put_cf(&cf, self.task_id.as_bytes(), encoded)?;
-
-    //     Ok(())
-    // }
 }
 
-// pub fn get_task_checkpoint(checkpoint_file: &str, meta_dir: &str) -> Result<CheckPoint> {
 pub fn get_task_checkpoint(checkpoint_file: &str) -> Result<CheckPoint> {
     let checkpoint = read_yaml_file::<CheckPoint>(checkpoint_file)?;
     Ok(checkpoint)
@@ -122,7 +118,6 @@ pub fn get_task_checkpoint(checkpoint_file: &str) -> Result<CheckPoint> {
 
 #[cfg(test)]
 mod test {
-
     use std::time::SystemTime;
     use std::time::UNIX_EPOCH;
     use std::{

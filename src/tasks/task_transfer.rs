@@ -21,6 +21,7 @@ use dashmap::DashMap;
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs::OpenOptions;
+use std::time::Duration;
 use std::{
     fs::{self, File},
     io::{self, BufRead},
@@ -271,7 +272,8 @@ impl TransferTask {
         let rt = runtime::Builder::new_multi_thread()
             .worker_threads(num_cpus::get())
             .enable_all()
-            .max_io_events_per_tick(self.attributes.task_parallelism)
+            .thread_keep_alive(Duration::from_millis(1000))
+            // .max_io_events_per_tick(self.attributes.task_parallelism)
             .build()?;
         // sys_set 用于执行checkpoint、notify等辅助任务
         let mut sys_set = JoinSet::new();
@@ -571,7 +573,11 @@ impl TransferTask {
                     TransferStage::Stock => {
                         let list_file_desc = checkpoint.executed_file.clone();
                         let list_file_position = checkpoint.executed_file_position;
-                        let list_file = checkpoint.seeked_execute_file()?;
+                        let list_file = checkpoint.seeked_execute_file().context(format!(
+                            "{}:{}",
+                            file!(),
+                            line!()
+                        ))?;
                         Ok((
                             list_file,
                             list_file_desc,
@@ -603,6 +609,7 @@ impl TransferTask {
                 }
             }
             false => {
+                log::info!("generate objects list beging");
                 let pd = prompt_processbar("Generating object list ...");
                 // 清理 meta 目录
                 // 重新生成object list file
@@ -631,8 +638,8 @@ impl TransferTask {
                 let list_file =
                     File::open(&list_file_desc.path).context(format!("{}:{}", file!(), line!()))?;
                 let list_file_position = FilePosition::default();
-
                 pd.finish_with_message("object list generated");
+                log::info!("generate objects list ok");
                 Ok((
                     list_file,
                     list_file_desc,

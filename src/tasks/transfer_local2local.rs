@@ -28,7 +28,7 @@ use std::{
     path::Path,
     sync::{atomic::AtomicUsize, Arc},
 };
-use tokio::sync::{Mutex, RwLock, Semaphore};
+use tokio::sync::{Mutex, Semaphore};
 use tokio::task::{self, JoinSet};
 use walkdir::WalkDir;
 

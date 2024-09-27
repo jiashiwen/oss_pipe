@@ -2,7 +2,6 @@ use crate::checkpoint::{get_task_checkpoint, FilePosition};
 use dashmap::DashMap;
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use std::{
-    cmp::min,
     fmt::Write,
     sync::{atomic::AtomicBool, Arc},
     time::Duration,
@@ -43,19 +42,7 @@ pub async fn quantify_processbar(
             total,
             checkpoint.executed_file_position.line_num
         );
-        // let line_num = status_map
-        //     .iter()
-        //     .filter(|f| f.key().starts_with(key_prefix))
-        //     .map(|m| m.line_num)
-        //     .min();
-        // match line_num {
-        //     Some(current) => {
-        //         let new = min(current, total);
-        //         pb.set_position(new);
-        //         log::info!("total:{},executed:{}", total, new)
-        //     }
-        //     None => {}
-        // }
+
         yield_now().await;
     }
     log::info!("total:{},executed:{}", total, total);

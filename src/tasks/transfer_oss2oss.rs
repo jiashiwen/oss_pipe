@@ -34,7 +34,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::{
-    sync::{Mutex, RwLock, Semaphore},
+    sync::{Mutex, Semaphore},
     task::JoinSet,
 };
 use walkdir::WalkDir;
@@ -422,7 +422,7 @@ impl TransferTaskActions for TransferOss2Oss {
         err_occur: Arc<AtomicBool>,
         semaphore: Arc<Semaphore>,
         err_counter: Arc<AtomicUsize>,
-        mut execute_set: &mut JoinSet<()>,
+        execute_set: &mut JoinSet<()>,
         assistant: Arc<Mutex<IncrementAssistant>>,
         offset_map: Arc<DashMap<String, FilePosition>>,
     ) {
@@ -648,7 +648,7 @@ impl TransferExecutor for TransferOss2OssRecordsExecutor {
         let t_c = Arc::new(target_client);
         for record in records {
             if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
-                return Ok(());
+                break;
             }
 
             let mut target_key = match self.target.prefix.clone() {
@@ -661,7 +661,7 @@ impl TransferExecutor for TransferOss2OssRecordsExecutor {
                 .listed_record_handler(&record, &s_c, &t_c, &target_key)
                 .await
             {
-                let recorddesc = RecordOption {
+                let record_option = RecordOption {
                     source_key: record.key.clone(),
                     target_key: target_key.clone(),
                     list_file_path: self.list_file_path.clone(),
@@ -671,7 +671,7 @@ impl TransferExecutor for TransferOss2OssRecordsExecutor {
                     },
                     option: Opt::PUT,
                 };
-                recorddesc.handle_error(
+                record_option.handle_error(
                     self.stop_mark.clone(),
                     &self.err_counter,
                     self.attributes.max_errors,
@@ -681,7 +681,9 @@ impl TransferExecutor for TransferOss2OssRecordsExecutor {
                 );
                 self.err_occur
                     .store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{:?}", e);
+                self.stop_mark
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                log::error!("{:?} {:?}", e, record_option);
             }
 
             // 文件位置记录后置，避免中断时已记录而传输未完成，续传时丢记录

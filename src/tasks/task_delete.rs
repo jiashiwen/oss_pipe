@@ -248,7 +248,7 @@ impl TaskDeleteBucket {
                     }
                     Err(e) => {
                         log::error!("{:?}", e);
-                        // stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+                        stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
                     }
                 }
 
@@ -261,6 +261,9 @@ impl TaskDeleteBucket {
                         .eq(&TryInto::<u64>::try_into(num + 1).unwrap())
                         && vec_record.len() > 0)
                 {
+                    if stop_mark.load(std::sync::atomic::Ordering::Relaxed) {
+                        return;
+                    };
                     while execut_set.len() >= self.attributes.task_parallelism {
                         execut_set.join_next().await;
                     }
@@ -272,7 +275,17 @@ impl TaskDeleteBucket {
                         offset_map: offset_map.clone(),
                     };
                     let keys = vec_record.clone();
-                    execut_set.spawn(async move { del.delete_listed_records(keys).await });
+                    let sm: Arc<AtomicBool> = stop_mark.clone();
+
+                    execut_set.spawn(async move {
+                        match del.delete_listed_records(keys).await {
+                            Ok(_) => log::info!("records removed"),
+                            Err(e) => {
+                                log::error!("{}", e);
+                                sm.store(true, std::sync::atomic::Ordering::Relaxed);
+                            }
+                        }
+                    });
 
                     vec_record.clear();
                 }
@@ -304,18 +317,12 @@ pub struct DeleteBucketExecutor {
 }
 
 impl DeleteBucketExecutor {
-    pub async fn delete_listed_records(&self, records: Vec<ListedRecord>) {
+    pub async fn delete_listed_records(&self, records: Vec<ListedRecord>) -> Result<()> {
         let subffix = records[0].offset.to_string();
         let mut offset_key = OFFSET_PREFIX.to_string();
         offset_key.push_str(&subffix);
 
-        let source_client = match self.source.gen_oss_client() {
-            Ok(c) => c,
-            Err(e) => {
-                log::error!("{:?}", e);
-                return;
-            }
-        };
+        let source_client = self.source.gen_oss_client()?;
         let s_c = Arc::new(source_client);
 
         // 插入文件offset记录
@@ -330,26 +337,17 @@ impl DeleteBucketExecutor {
         let mut del_objs = vec![];
 
         for record in records {
-            match ObjectIdentifier::builder().key(record.key).build() {
-                Ok(k) => del_objs.push(k),
-                Err(e) => {
-                    log::error!("{:?}", e);
-                    continue;
-                }
-            };
+            let obj_identifier = ObjectIdentifier::builder().key(record.key).build()?;
+            del_objs.push(obj_identifier);
         }
 
-        if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
-            return;
-        }
+        // if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+        //     return;
+        // }
 
-        match s_c.remove_objects(&self.source.bucket, del_objs).await {
-            Ok(_) => {
-                log::info!("removed objects")
-            }
-            Err(e) => log::error!("{:?}", e),
-        };
+        s_c.remove_objects(&self.source.bucket, del_objs).await?;
 
         self.offset_map.remove(&offset_key);
+        Ok(())
     }
 }

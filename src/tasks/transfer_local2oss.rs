@@ -23,10 +23,8 @@ use crate::{checkpoint::ListedRecord, s3::OSSDescription};
 use anyhow::Context;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-// use aws_sdk_s3::model::Object;
 use aws_sdk_s3::types::Object;
 use dashmap::DashMap;
-use futures::executor;
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
 use std::io::{BufRead, Seek, SeekFrom};
@@ -38,7 +36,6 @@ use std::{
     sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
-use tokio::sync::RwLock;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tokio::{sync::Mutex, task};
@@ -674,21 +671,26 @@ impl TransferExecutor for TransferLocal2OssExecuter {
             }
         };
 
-        let target_oss_client = match self.target.gen_oss_client() {
-            Ok(c) => c,
-            Err(e) => {
-                self.err_occur
-                    .store(true, std::sync::atomic::Ordering::SeqCst);
-                self.stop_mark
-                    .store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{:?}", e);
-                return Err(anyhow!(e));
-            }
-        };
+        let target_oss_client =
+            match self
+                .target
+                .gen_oss_client()
+                .context(format!("{}:{}", file!(), line!()))
+            {
+                Ok(c) => c,
+                Err(e) => {
+                    self.err_occur
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                    self.stop_mark
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                    log::error!("{:?}", e);
+                    return Err(anyhow!(e));
+                }
+            };
 
         for record in records {
             if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
-                return Ok(());
+                break;
             }
 
             let source_file_path = gen_file_path(self.source.as_str(), &record.key.as_str(), "");
@@ -703,7 +705,7 @@ impl TransferExecutor for TransferLocal2OssExecuter {
                 .listed_record_handler(&source_file_path, &target_oss_client, &target_key)
                 .await
             {
-                let record_desc = RecordOption {
+                let record_option = RecordOption {
                     source_key: source_file_path.clone(),
                     target_key: target_key.clone(),
                     list_file_path: self.list_file_path.clone(),
@@ -713,7 +715,7 @@ impl TransferExecutor for TransferLocal2OssExecuter {
                     },
                     option: Opt::PUT,
                 };
-                record_desc.handle_error(
+                record_option.handle_error(
                     self.stop_mark.clone(),
                     &self.err_counter,
                     self.attributes.max_errors,
@@ -723,7 +725,9 @@ impl TransferExecutor for TransferLocal2OssExecuter {
                 );
                 self.err_occur
                     .store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{:?}", e);
+                self.stop_mark
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                log::error!("{:?} {:?}", e, record_option);
             }
 
             // 文件位置记录后置，避免中断时已记录而传输未完成，续传时丢记录

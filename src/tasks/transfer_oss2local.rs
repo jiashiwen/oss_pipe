@@ -362,7 +362,7 @@ impl TransferTaskActions for TransferOss2Local {
         err_occur: Arc<AtomicBool>,
         semaphore: Arc<Semaphore>,
         err_counter: Arc<AtomicUsize>,
-        mut execute_set: &mut JoinSet<()>,
+        execute_set: &mut JoinSet<()>,
         assistant: Arc<Mutex<IncrementAssistant>>,
         offset_map: Arc<DashMap<String, FilePosition>>,
     ) {
@@ -591,7 +591,7 @@ impl TransferExecutor for TransferOss2LocalRecordsExecutor {
         let c_s = self.source.gen_oss_client()?;
         for record in records {
             if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
-                return Ok(());
+                break;
             }
 
             let t_file_name = gen_file_path(self.target.as_str(), &record.key.as_str(), "");
@@ -600,7 +600,7 @@ impl TransferExecutor for TransferOss2LocalRecordsExecutor {
                 .listed_record_handler(&record, &c_s, t_file_name.as_str())
                 .await
             {
-                let record_desc = RecordOption {
+                let record_option = RecordOption {
                     source_key: record.key.clone(),
                     target_key: t_file_name.clone(),
                     list_file_path: self.list_file_path.clone(),
@@ -610,7 +610,7 @@ impl TransferExecutor for TransferOss2LocalRecordsExecutor {
                     },
                     option: Opt::PUT,
                 };
-                record_desc.handle_error(
+                record_option.handle_error(
                     self.stop_mark.clone(),
                     &self.err_counter,
                     self.attributes.max_errors,
@@ -620,7 +620,9 @@ impl TransferExecutor for TransferOss2LocalRecordsExecutor {
                 );
                 self.err_occur
                     .store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{:?}", e);
+                self.stop_mark
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                log::error!("{:?} {:?}", e, record_option);
             }
 
             // 文件位置记录后置，避免中断时已记录而传输未完成，续传时丢记录

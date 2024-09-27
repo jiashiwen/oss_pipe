@@ -1,13 +1,12 @@
-use std::time::Duration;
-
 use super::{jd_s3::OssJdClient, oss_client::OssClient};
-use anyhow::{Ok, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use aws_config::{timeout::TimeoutConfig, BehaviorVersion, SdkConfig};
 use aws_credential_types::{provider::SharedCredentialsProvider, Credentials};
 use aws_sdk_s3::config::{Region, StalledStreamProtectionConfig};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 #[async_trait]
 pub trait OSSActions {
