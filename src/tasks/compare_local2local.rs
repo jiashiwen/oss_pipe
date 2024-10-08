@@ -68,30 +68,6 @@ impl CompareTaskActions for TaskCompareLocal2Local {
         };
         Arc::new(comparator)
     }
-
-    // async fn listed_records_comparator(
-    //     &self,
-    //     joinset: &mut JoinSet<()>,
-    //     records: Vec<ListedRecord>,
-    //     stop_mark: Arc<AtomicBool>,
-    //     offset_map: Arc<DashMap<String, FilePosition>>,
-    // ) {
-    //     let comparator = Local2LocalRecordsComparator {
-    //         source: self.source.clone(),
-    //         target: self.target.clone(),
-    //         stop_mark: stop_mark.clone(),
-    //         offset_map,
-    //         check_option: self.check_option.clone(),
-    //         attributes: self.attributes.clone(),
-    //     };
-
-    //     joinset.spawn(async move {
-    //         if let Err(e) = comparator.compare_listed_records(records).await {
-    //             stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-    //             log::error!("{:?}", e);
-    //         };
-    //     });
-    // }
 }
 
 #[derive(Debug, Clone)]

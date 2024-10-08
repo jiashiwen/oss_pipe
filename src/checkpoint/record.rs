@@ -1,5 +1,6 @@
 use anyhow::{Error, Result};
 use dashmap::DashMap;
+use log4rs::append;
 use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
@@ -10,6 +11,8 @@ use std::{
         Arc,
     },
 };
+
+use crate::commons::append_line_to_file;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ListedRecord {
@@ -80,19 +83,16 @@ impl RecordOption {
     pub fn handle_error(
         &self,
         stop_mark: Arc<AtomicBool>,
-        err_counter: &Arc<AtomicUsize>,
-        max_errors: usize,
-        offset_map: &Arc<DashMap<String, FilePosition>>,
-        save_to: &mut File,
-        file_position_key: &str,
+        err_occur: Arc<AtomicBool>,
+        append_to: &str,
     ) {
-        offset_map.insert(
-            file_position_key.to_string(),
-            self.list_file_position.clone(),
-        );
-
+        // offset_map.insert(
+        //     file_position_key.to_string(),
+        //     self.list_file_position.clone(),
+        // );
+        err_occur.store(true, std::sync::atomic::Ordering::SeqCst);
         stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-        let _ = self.save_json_to_file(save_to);
+        let _ = self.append_json_to_file(append_to);
     }
 
     pub fn save_json_to_file(&self, mut file: &File) -> Result<()> {
@@ -101,6 +101,11 @@ impl RecordOption {
         file.write_all(json.as_bytes())?;
         file.flush()?;
         Ok(())
+    }
+
+    pub fn append_json_to_file(&self, file_name: &str) -> Result<()> {
+        let json = serde_json::to_string(self)?;
+        append_line_to_file(file_name, &json)
     }
 }
 

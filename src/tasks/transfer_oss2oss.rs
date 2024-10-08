@@ -27,10 +27,7 @@ use serde_json::from_str;
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, BufRead, Write},
-    sync::{
-        atomic::{AtomicBool, AtomicUsize},
-        Arc,
-    },
+    sync::{atomic::AtomicBool, Arc},
     time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::{
@@ -118,7 +115,7 @@ impl TransferTaskActions for TransferOss2Oss {
                             stop_mark.clone(),
                             Arc::new(AtomicBool::new(false)),
                             semaphore.clone(),
-                            Arc::new(AtomicUsize::new(0)),
+                            // Arc::new(AtomicUsize::new(0)),
                             Arc::new(DashMap::<String, FilePosition>::new()),
                             p.to_string(),
                         );
@@ -138,7 +135,6 @@ impl TransferTaskActions for TransferOss2Oss {
         stop_mark: Arc<AtomicBool>,
         err_occur: Arc<AtomicBool>,
         semaphore: Arc<Semaphore>,
-        err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file_path: String,
     ) -> Arc<dyn TransferExecutor + Send + Sync> {
@@ -148,7 +144,6 @@ impl TransferTaskActions for TransferOss2Oss {
             stop_mark,
             err_occur,
             semaphore,
-            err_counter,
             offset_map,
             attributes: self.attributes.clone(),
             list_file_path,
@@ -159,8 +154,8 @@ impl TransferTaskActions for TransferOss2Oss {
     // 生成对象列表
     async fn gen_source_object_list_file(&self, object_list_file: &str) -> Result<FileDescription> {
         let client_source = self.source.gen_oss_client()?;
-        // 若为持续同步模式，且 last_modify_timestamp 大于 0，则将 last_modify 属性大于last_modify_timestamp变量的对象加入执行列表
 
+        // 若为持续同步模式，且 last_modify_timestamp 大于 0，则将 last_modify 属性大于last_modify_timestamp变量的对象加入执行列表
         let regex_filter =
             RegexFilter::from_vec_option(&self.attributes.exclude, &self.attributes.include)?;
 
@@ -421,7 +416,6 @@ impl TransferTaskActions for TransferOss2Oss {
         stop_mark: Arc<AtomicBool>,
         err_occur: Arc<AtomicBool>,
         semaphore: Arc<Semaphore>,
-        err_counter: Arc<AtomicUsize>,
         execute_set: &mut JoinSet<()>,
         assistant: Arc<Mutex<IncrementAssistant>>,
         offset_map: Arc<DashMap<String, FilePosition>>,
@@ -452,12 +446,7 @@ impl TransferTaskActions for TransferOss2Oss {
         let pd = prompt_processbar("executing increment:waiting for data...");
         let mut finished_total_objects = 0;
 
-        while !stop_mark.load(std::sync::atomic::Ordering::SeqCst)
-            && self
-                .attributes
-                .max_errors
-                .ge(&err_counter.load(std::sync::atomic::Ordering::SeqCst))
-        {
+        while !stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
             let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
             let modified = match self
                 .changed_object_capture_based_target(
@@ -479,8 +468,9 @@ impl TransferTaskActions for TransferOss2Oss {
                 Ok(f) => f,
                 Err(e) => {
                     log::error!("{:?}", e);
-                    err_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    continue;
+                    err_occur.store(true, std::sync::atomic::Ordering::SeqCst);
+                    stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+                    return;
                 }
             };
 
@@ -489,12 +479,6 @@ impl TransferTaskActions for TransferOss2Oss {
             // 按列表传输object from source to target
             let lines: io::Lines<io::BufReader<File>> = io::BufReader::new(modified_file).lines();
             for line in lines {
-                // 若错误达到上限，则停止任务
-                if err_counter.load(std::sync::atomic::Ordering::SeqCst)
-                    >= self.attributes.max_errors
-                {
-                    return;
-                }
                 if let Result::Ok(line_str) = line {
                     let len = line_str.bytes().len() + "\n".bytes().len();
 
@@ -502,8 +486,9 @@ impl TransferTaskActions for TransferOss2Oss {
                         Ok(r) => r,
                         Err(e) => {
                             log::error!("{:?}", e);
-                            err_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                            continue;
+                            err_occur.store(true, std::sync::atomic::Ordering::SeqCst);
+                            stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+                            return;
                         }
                     };
                     list_file_position.offset += len;
@@ -528,7 +513,6 @@ impl TransferTaskActions for TransferOss2Oss {
                         stop_mark.clone(),
                         err_occur.clone(),
                         semaphore.clone(),
-                        err_counter.clone(),
                         offset_map.clone(),
                         modified.path.clone(),
                     );
@@ -543,10 +527,8 @@ impl TransferTaskActions for TransferOss2Oss {
             }
 
             // 处理集合中的剩余数据，若错误达到上限，则不执行后续操作
-            if vec_keys.len() > 0
-                && err_counter.load(std::sync::atomic::Ordering::SeqCst)
-                    < self.attributes.max_errors
-            {
+
+            if vec_keys.len() > 0 {
                 while execute_set.len() >= self.attributes.task_parallelism {
                     execute_set.join_next().await;
                 }
@@ -556,7 +538,6 @@ impl TransferTaskActions for TransferOss2Oss {
                     stop_mark.clone(),
                     err_occur.clone(),
                     semaphore.clone(),
-                    err_counter.clone(),
                     offset_map.clone(),
                     modified.path.clone(),
                 );
@@ -618,7 +599,6 @@ pub struct TransferOss2OssRecordsExecutor {
     pub stop_mark: Arc<AtomicBool>,
     pub err_occur: Arc<AtomicBool>,
     pub semaphore: Arc<Semaphore>,
-    pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
     pub attributes: TransferTaskAttributes,
     pub list_file_path: String,
@@ -636,11 +616,13 @@ impl TransferExecutor for TransferOss2OssRecordsExecutor {
             &subffix,
         );
 
-        let mut error_file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(error_file_name.as_str())?;
+        {
+            let _ = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(error_file_name.as_str())?;
+        }
 
         let source_client = self.source.gen_oss_client()?;
         let target_client = self.target.gen_oss_client()?;
@@ -657,47 +639,52 @@ impl TransferExecutor for TransferOss2OssRecordsExecutor {
             };
             target_key.push_str(&record.key);
 
-            if let Err(e) = self
+            match self
                 .listed_record_handler(&record, &s_c, &t_c, &target_key)
                 .await
             {
-                let record_option = RecordOption {
-                    source_key: record.key.clone(),
-                    target_key: target_key.clone(),
-                    list_file_path: self.list_file_path.clone(),
-                    list_file_position: FilePosition {
-                        offset: record.offset,
-                        line_num: record.line_num,
-                    },
-                    option: Opt::PUT,
-                };
-                record_option.handle_error(
-                    self.stop_mark.clone(),
-                    &self.err_counter,
-                    self.attributes.max_errors,
-                    &self.offset_map,
-                    &mut error_file,
-                    offset_key.as_str(),
-                );
-                self.err_occur
-                    .store(true, std::sync::atomic::Ordering::SeqCst);
-                self.stop_mark
-                    .store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{:?} {:?}", e, record_option);
+                Ok(_) => {
+                    // 文件位置记录后置，避免中断时已记录而传输未完成，续传时丢记录
+                    self.offset_map.insert(
+                        offset_key.clone(),
+                        FilePosition {
+                            offset: record.offset,
+                            line_num: record.line_num,
+                        },
+                    );
+                }
+                Err(e) => {
+                    let record_option = RecordOption {
+                        source_key: record.key.clone(),
+                        target_key: target_key.clone(),
+                        list_file_path: self.list_file_path.clone(),
+                        list_file_position: FilePosition {
+                            offset: record.offset,
+                            line_num: record.line_num,
+                        },
+                        option: Opt::PUT,
+                    };
+                    record_option.handle_error(
+                        self.stop_mark.clone(),
+                        self.err_occur.clone(),
+                        &error_file_name,
+                    );
+                    log::error!("{:?} {:?}", e, record_option);
+                }
             }
-
-            // 文件位置记录后置，避免中断时已记录而传输未完成，续传时丢记录
-            self.offset_map.insert(
-                offset_key.clone(),
-                FilePosition {
-                    offset: record.offset,
-                    line_num: record.line_num,
-                },
-            );
         }
 
         self.offset_map.remove(&offset_key);
-        let _ = error_file.flush();
+
+        let error_file = match File::open(&error_file_name) {
+            Ok(f) => f,
+            Err(e) => {
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                log::error!("{:?}", e);
+                return Err(anyhow!(e));
+            }
+        };
         match error_file.metadata() {
             Ok(meta) => {
                 if meta.len() == 0 {
@@ -725,11 +712,13 @@ impl TransferExecutor for TransferOss2OssRecordsExecutor {
             &subffix,
         );
 
-        let mut error_file = OpenOptions::new()
+        let error_file = OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
             .open(error_file_name.as_str())?;
+
+        drop(error_file);
 
         let s_client = self.source.gen_oss_client()?;
         let t_client = self.target.gen_oss_client()?;
@@ -740,26 +729,35 @@ impl TransferExecutor for TransferOss2OssRecordsExecutor {
             if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
                 return Ok(());
             }
-            // 记录执行文件位置
-            self.offset_map
-                .insert(offset_key.clone(), record.list_file_position.clone());
 
             if let Err(e) = self.record_description_handler(&s_c, &t_c, &record).await {
                 record.handle_error(
                     self.stop_mark.clone(),
-                    &self.err_counter,
-                    self.attributes.max_errors,
-                    &self.offset_map,
-                    &mut error_file,
-                    offset_key.as_str(),
+                    self.err_occur.clone(),
+                    &error_file_name,
                 );
                 self.err_occur
                     .store(true, std::sync::atomic::Ordering::SeqCst);
+                self.stop_mark
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
                 log::error!("{:?}", e);
+
+                // 记录执行文件位置
+                self.offset_map
+                    .insert(offset_key.clone(), record.list_file_position.clone());
             };
         }
         self.offset_map.remove(&offset_key);
-        let _ = error_file.flush();
+
+        let error_file = match File::open(&error_file_name) {
+            Ok(f) => f,
+            Err(e) => {
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                log::error!("{:?}", e);
+                return Err(anyhow!(e));
+            }
+        };
         match error_file.metadata() {
             Ok(meta) => {
                 if meta.len() == 0 {

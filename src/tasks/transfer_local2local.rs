@@ -26,7 +26,7 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::Path,
-    sync::{atomic::AtomicUsize, Arc},
+    sync::Arc,
 };
 use tokio::sync::{Mutex, Semaphore};
 use tokio::task::{self, JoinSet};
@@ -100,7 +100,6 @@ impl TransferTaskActions for TransferLocal2Local {
                             target: self.target.clone(),
                             stop_mark: stop_mark.clone(),
                             err_occur: Arc::new(AtomicBool::new(false)),
-                            err_counter: Arc::new(AtomicUsize::new(0)),
                             offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
                             attributes: self.attributes.clone(),
                             list_file_path: p.to_string(),
@@ -120,7 +119,6 @@ impl TransferTaskActions for TransferLocal2Local {
         stop_mark: Arc<AtomicBool>,
         err_occur: Arc<AtomicBool>,
         semaphore: Arc<Semaphore>,
-        err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file_path: String,
     ) -> Arc<dyn TransferExecutor + Send + Sync> {
@@ -129,7 +127,6 @@ impl TransferTaskActions for TransferLocal2Local {
             target: self.target.clone(),
             stop_mark,
             err_occur,
-            err_counter,
             offset_map,
             attributes: self.attributes.clone(),
             list_file_path,
@@ -156,7 +153,6 @@ impl TransferTaskActions for TransferLocal2Local {
         // 获取target object 列表 和removed 列表
         // 根据时间戳生成增量列表
         // 合并删除及新增列表
-
         let last_modify_filter = LastModifyFilter {
             filter_type: crate::commons::LastModifyFilterType::Greater,
             timestamp,
@@ -327,7 +323,6 @@ impl TransferTaskActions for TransferLocal2Local {
         stop_mark: Arc<AtomicBool>,
         err_occur: Arc<AtomicBool>,
         semaphore: Arc<Semaphore>,
-        err_counter: Arc<AtomicUsize>,
         _joinset: &mut JoinSet<()>,
         assistant: Arc<Mutex<IncrementAssistant>>,
         offset_map: Arc<DashMap<String, FilePosition>>,
@@ -389,6 +384,20 @@ impl TransferTaskActions for TransferLocal2Local {
                     return;
                 }
             };
+        let error_file = match OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(error_file_name.as_str())
+        {
+            Ok(f) => f,
+            Err(e) => {
+                log::error!("{:?}", e);
+                return;
+            }
+        };
+
+        drop(error_file);
 
         loop {
             if local_notify
@@ -399,39 +408,20 @@ impl TransferTaskActions for TransferLocal2Local {
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                 continue;
             }
-            if self
-                .attributes
-                .max_errors
-                .le(&err_counter.load(std::sync::atomic::Ordering::Relaxed))
-            {
-                stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
-                return;
-            }
 
             let mut file = match File::open(&local_notify.notify_file_path) {
                 Ok(f) => f,
                 Err(e) => {
                     log::error!("{:?}", e);
+                    stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
                     return;
                 }
             };
 
             if let Err(e) = file.seek(SeekFrom::Start(offset)) {
                 log::error!("{:?}", e);
+                stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
                 continue;
-            };
-
-            let mut error_file = match OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(error_file_name.as_str())
-            {
-                Ok(f) => f,
-                Err(e) => {
-                    log::error!("{:?}", e);
-                    return;
-                }
             };
 
             let lines = BufReader::new(file).lines();
@@ -468,15 +458,7 @@ impl TransferTaskActions for TransferLocal2Local {
                                 },
                                 option: Opt::UNKOWN,
                             };
-                            r.handle_error(
-                                stop_mark.clone(),
-                                &err_counter,
-                                self.attributes.max_errors,
-                                &offset_map,
-                                &mut error_file,
-                                offset_key.as_str(),
-                            );
-                            err_occur.store(true, std::sync::atomic::Ordering::SeqCst);
+                            r.handle_error(stop_mark.clone(), err_occur.clone(), &error_file_name);
                             log::error!("{:?}", e);
                         }
                     }
@@ -489,7 +471,6 @@ impl TransferTaskActions for TransferLocal2Local {
                     target: self.target.clone(),
                     stop_mark: stop_mark.clone(),
                     err_occur: Arc::new(AtomicBool::new(false)),
-                    err_counter: Arc::clone(&err_counter),
                     offset_map: Arc::clone(&offset_map),
                     attributes: self.attributes.clone(),
                     list_file_path: local_notify.notify_file_path.clone(),
@@ -497,7 +478,15 @@ impl TransferTaskActions for TransferLocal2Local {
                 let _ = copy.transfer_record_options(records).await;
             }
 
-            let _ = error_file.flush();
+            let error_file = match File::open(&error_file_name) {
+                Ok(f) => f,
+                Err(e) => {
+                    log::error!("{:?}", e);
+                    err_occur.store(true, std::sync::atomic::Ordering::SeqCst);
+                    return;
+                }
+            };
+
             match error_file.metadata() {
                 Ok(meta) => {
                     if meta.len() == 0 {
@@ -583,7 +572,6 @@ pub struct TransferLocal2LocalExecutor {
     pub target: String,
     pub stop_mark: Arc<AtomicBool>,
     pub err_occur: Arc<AtomicBool>,
-    pub err_counter: Arc<AtomicUsize>,
     pub offset_map: Arc<DashMap<String, FilePosition>>,
     pub attributes: TransferTaskAttributes,
     pub list_file_path: String,
@@ -601,7 +589,7 @@ impl TransferExecutor for TransferLocal2LocalExecutor {
             &subffix,
         );
 
-        let mut error_file = match OpenOptions::new()
+        let error_file = match OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
@@ -617,6 +605,8 @@ impl TransferExecutor for TransferLocal2LocalExecutor {
             }
         };
 
+        drop(error_file);
+
         for record in records {
             if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
                 return Ok(());
@@ -625,46 +615,54 @@ impl TransferExecutor for TransferLocal2LocalExecutor {
             let s_file_name = gen_file_path(self.source.as_str(), record.key.as_str(), "");
             let t_file_name = gen_file_path(self.target.as_str(), record.key.as_str(), "");
 
-            if let Err(e) = self
+            match self
                 .listed_record_handler(s_file_name.as_str(), t_file_name.as_str())
                 .await
             {
-                // 记录错误记录
-                let recorddesc = RecordOption {
-                    source_key: s_file_name,
-                    target_key: t_file_name,
-                    list_file_path: self.list_file_path.clone(),
-                    list_file_position: FilePosition {
-                        offset: record.offset,
-                        line_num: record.line_num,
-                    },
-                    option: Opt::PUT,
-                };
-                recorddesc.handle_error(
-                    self.stop_mark.clone(),
-                    &self.err_counter,
-                    self.attributes.max_errors,
-                    &self.offset_map,
-                    &mut error_file,
-                    offset_key.as_str(),
-                );
-                self.err_occur
-                    .store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{:?}", e);
+                Ok(_) => {
+                    // 文件位置记录后置，避免中断时已记录而传输未完成，续传时丢记录
+                    self.offset_map.insert(
+                        offset_key.clone(),
+                        FilePosition {
+                            offset: record.offset,
+                            line_num: record.line_num,
+                        },
+                    );
+                }
+                Err(e) => {
+                    // 记录错误记录
+                    let opt = RecordOption {
+                        source_key: s_file_name,
+                        target_key: t_file_name,
+                        list_file_path: self.list_file_path.clone(),
+                        list_file_position: FilePosition {
+                            offset: record.offset,
+                            line_num: record.line_num,
+                        },
+                        option: Opt::PUT,
+                    };
+                    opt.handle_error(
+                        self.stop_mark.clone(),
+                        self.err_occur.clone(),
+                        &error_file_name,
+                    );
+                    log::error!("{:?},{:?}", e, opt);
+                }
             };
-
-            // 文件位置记录后置，避免中断时已记录而传输未完成，续传时丢记录
-            self.offset_map.insert(
-                offset_key.clone(),
-                FilePosition {
-                    offset: record.offset,
-                    line_num: record.line_num,
-                },
-            );
         }
 
         self.offset_map.remove(&offset_key);
-        let _ = error_file.flush();
+
+        let error_file = match File::open(&error_file_name) {
+            Ok(f) => f,
+            Err(e) => {
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                log::error!("{:?}", e);
+                return Err(anyhow!(e));
+            }
+        };
+
         match error_file.metadata() {
             Ok(meta) => {
                 if meta.len() == 0 {
@@ -692,21 +690,23 @@ impl TransferExecutor for TransferLocal2LocalExecutor {
             &subffix,
         );
 
-        let mut error_file = OpenOptions::new()
+        let error_file = OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
             .open(error_file_name.as_str())?;
 
+        drop(error_file);
+
         for record in records {
+            if self.stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
+            }
             if let Err(e) = self.record_description_handler(&record).await {
                 record.handle_error(
                     self.stop_mark.clone(),
-                    &self.err_counter,
-                    self.attributes.max_errors,
-                    &self.offset_map,
-                    &mut error_file,
-                    offset_key.as_str(),
+                    self.err_occur.clone(),
+                    &error_file_name,
                 );
                 self.err_occur
                     .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -714,7 +714,15 @@ impl TransferExecutor for TransferLocal2LocalExecutor {
             }
         }
 
-        let _ = error_file.flush();
+        let error_file = match File::open(&error_file_name) {
+            Ok(f) => f,
+            Err(e) => {
+                self.err_occur
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                log::error!("{:?}", e);
+                return Err(anyhow!(e));
+            }
+        };
         match error_file.metadata() {
             Ok(meta) => {
                 if meta.len() == 0 {

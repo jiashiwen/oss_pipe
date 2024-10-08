@@ -118,23 +118,10 @@ impl TransferTaskActions for TransferOss2Local {
                             stop_mark.clone(),
                             Arc::new(AtomicBool::new(false)),
                             semaphore.clone(),
-                            Arc::new(AtomicUsize::new(0)),
                             Arc::new(DashMap::<String, FilePosition>::new()),
                             p.to_string(),
                         );
                         executor.transfer_record_options(record_vec).await;
-                        // let download = TransferOss2LocalRecordsExecutor {
-                        //     target: self.target.clone(),
-                        //     source: self.source.clone(),
-                        //     stop_mark: stop_mark.clone(),
-                        //     err_occur: Arc::new(AtomicBool::new(false)),
-                        //     semaphore: semaphore.clone(),
-                        //     err_counter: Arc::new(AtomicUsize::new(0)),
-                        //     offset_map: Arc::new(DashMap::<String, FilePosition>::new()),
-                        //     attributes: self.attributes.clone(),
-                        //     list_file_path: p.to_string(),
-                        // };
-                        // let _ = download.exec_record_descriptions(record_vec);
                     }
                 }
 
@@ -323,7 +310,6 @@ impl TransferTaskActions for TransferOss2Local {
         stop_mark: Arc<AtomicBool>,
         err_occur: Arc<AtomicBool>,
         semaphore: Arc<Semaphore>,
-        err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file_path: String,
     ) -> Arc<dyn TransferExecutor + Send + Sync> {
@@ -333,7 +319,6 @@ impl TransferTaskActions for TransferOss2Local {
             stop_mark,
             err_occur,
             semaphore,
-            err_counter,
             offset_map,
             attributes: self.attributes.clone(),
             list_file_path,
@@ -361,7 +346,7 @@ impl TransferTaskActions for TransferOss2Local {
         stop_mark: Arc<AtomicBool>,
         err_occur: Arc<AtomicBool>,
         semaphore: Arc<Semaphore>,
-        err_counter: Arc<AtomicUsize>,
+        // err_counter: Arc<AtomicUsize>,
         execute_set: &mut JoinSet<()>,
         assistant: Arc<Mutex<IncrementAssistant>>,
         offset_map: Arc<DashMap<String, FilePosition>>,
@@ -392,12 +377,7 @@ impl TransferTaskActions for TransferOss2Local {
         let pd = prompt_processbar("executing increment:waiting for data...");
         let mut finished_total_objects = 0;
 
-        while !stop_mark.load(std::sync::atomic::Ordering::SeqCst)
-            && self
-                .attributes
-                .max_errors
-                .ge(&err_counter.load(std::sync::atomic::Ordering::SeqCst))
-        {
+        while !stop_mark.load(std::sync::atomic::Ordering::SeqCst) {
             let modified = match self
                 .changed_object_capture_based_target(
                     usize::try_from(checkpoint.modify_checkpoint_timestamp).unwrap(),
@@ -418,8 +398,9 @@ impl TransferTaskActions for TransferOss2Local {
                 Ok(f) => f,
                 Err(e) => {
                     log::error!("{:?}", e);
-                    err_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    continue;
+                    err_occur.store(true, std::sync::atomic::Ordering::SeqCst);
+                    stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+                    return;
                 }
             };
 
@@ -428,20 +409,15 @@ impl TransferTaskActions for TransferOss2Local {
             // 按列表传输object from source to target
             let lines: io::Lines<io::BufReader<File>> = io::BufReader::new(modified_file).lines();
             for line in lines {
-                // 若错误达到上限，则停止任务
-                if err_counter.load(std::sync::atomic::Ordering::SeqCst)
-                    >= self.attributes.max_errors
-                {
-                    return;
-                }
                 if let Result::Ok(line_str) = line {
                     let len = line_str.bytes().len() + "\n".bytes().len();
                     let mut record = match from_str::<RecordOption>(&line_str) {
                         Ok(r) => r,
                         Err(e) => {
                             log::error!("{:?}", e);
-                            err_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                            continue;
+                            err_occur.store(true, std::sync::atomic::Ordering::SeqCst);
+                            stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+                            return;
                         }
                     };
 
@@ -468,7 +444,6 @@ impl TransferTaskActions for TransferOss2Local {
                         stop_mark.clone(),
                         err_occur.clone(),
                         semaphore.clone(),
-                        err_counter.clone(),
                         offset_map.clone(),
                         modified.path.clone(),
                     );
@@ -488,11 +463,7 @@ impl TransferTaskActions for TransferOss2Local {
                 }
             }
 
-            // 处理集合中的剩余数据，若错误达到上限，则不执行后续操作
-            if vec_keys.len() > 0
-                && err_counter.load(std::sync::atomic::Ordering::SeqCst)
-                    < self.attributes.max_errors
-            {
+            if vec_keys.len() > 0 {
                 while execute_set.len() >= self.attributes.task_parallelism {
                     execute_set.join_next().await;
                 }
@@ -502,20 +473,10 @@ impl TransferTaskActions for TransferOss2Local {
                     stop_mark.clone(),
                     err_occur.clone(),
                     semaphore.clone(),
-                    err_counter.clone(),
                     offset_map.clone(),
                     modified.path.clone(),
                 );
                 executor.transfer_record_options(vk).await;
-                // self.record_discriptions_excutor(
-                //     &mut execute_set,
-                //     vk,
-                //     stop_mark.clone(),
-                //     Arc::clone(&err_counter),
-                //     Arc::clone(&offset_map),
-                //     modified.path.clone(),
-                // )
-                // .await;
             }
 
             while execute_set.len() > 0 {
@@ -563,7 +524,7 @@ pub struct TransferOss2LocalRecordsExecutor {
     pub stop_mark: Arc<AtomicBool>,
     pub err_occur: Arc<AtomicBool>,
     pub semaphore: Arc<Semaphore>,
-    pub err_counter: Arc<AtomicUsize>,
+
     pub offset_map: Arc<DashMap<String, FilePosition>>,
     pub attributes: TransferTaskAttributes,
     pub list_file_path: String,
@@ -612,11 +573,8 @@ impl TransferExecutor for TransferOss2LocalRecordsExecutor {
                 };
                 record_option.handle_error(
                     self.stop_mark.clone(),
-                    &self.err_counter,
-                    self.attributes.max_errors,
-                    &self.offset_map,
-                    &mut error_file,
-                    offset_key.as_str(),
+                    self.err_occur.clone(),
+                    &error_file_name,
                 );
                 self.err_occur
                     .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -673,10 +631,6 @@ impl TransferExecutor for TransferOss2LocalRecordsExecutor {
         let source_client = self.source.gen_oss_client()?;
 
         for record in records {
-            // 记录执行文件位置
-            self.offset_map
-                .insert(offset_key.clone(), record.list_file_position.clone());
-
             let t_path = Path::new(&record.target_key);
             if let Some(p) = t_path.parent() {
                 std::fs::create_dir_all(p)?
@@ -689,21 +643,23 @@ impl TransferExecutor for TransferOss2LocalRecordsExecutor {
                 }
             }
 
-            if let Err(e) = self
+            match self
                 .record_description_handler(&source_client, &record)
                 .await
             {
-                record.handle_error(
-                    self.stop_mark.clone(),
-                    &self.err_counter,
-                    self.attributes.max_errors,
-                    &self.offset_map,
-                    &mut error_file,
-                    offset_key.as_str(),
-                );
-                self.err_occur
-                    .store(true, std::sync::atomic::Ordering::SeqCst);
-                log::error!("{:?}", e);
+                Ok(_) => {
+                    // 记录执行文件位置
+                    self.offset_map
+                        .insert(offset_key.clone(), record.list_file_position.clone());
+                }
+                Err(e) => {
+                    record.handle_error(
+                        self.stop_mark.clone(),
+                        self.err_occur.clone(),
+                        &error_file_name,
+                    );
+                    log::error!("{:?},{:?}", e, record);
+                }
             };
         }
         self.offset_map.remove(&offset_key);

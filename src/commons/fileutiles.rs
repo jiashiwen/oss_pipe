@@ -203,8 +203,11 @@ pub fn scan_folder_files_to_file(
     Ok(executed_file)
 }
 
-pub fn append_file_line(file_name: &str, content: &str) -> Result<()> {
-    let append_file = OpenOptions::new().append(true).open(file_name)?;
+pub fn append_line_to_file(file_name: &str, content: &str) -> Result<()> {
+    let append_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(file_name)?;
     let mut append_linewiter = LineWriter::new(&append_file);
     append_linewiter.write_all(content.as_bytes())?;
     append_linewiter.write_all("\n".as_bytes())?;

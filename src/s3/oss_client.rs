@@ -78,8 +78,8 @@ impl OssClient {
             .append(true)
             .open(file_path)
             .context(format!("{}:{}", file!(), line!()))?;
-        let mut line_writer = LineWriter::new(&file);
 
+        let mut line_writer = LineWriter::new(&file);
         let mut process_objects = |objects: Vec<Object>| -> Result<()> {
             for obj in objects {
                 if let Some(f) = last_modify_filter {
@@ -133,6 +133,7 @@ impl OssClient {
             }
             token = resp.next_token;
         }
+
         let size = file
             .metadata()
             .context(format!("{}:{}", file!(), line!()))?

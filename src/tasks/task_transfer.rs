@@ -95,8 +95,8 @@ pub struct TransferTaskAttributes {
     pub objects_per_batch: i32,
     #[serde(default = "TaskDefaultParameters::task_parallelism_default")]
     pub task_parallelism: usize,
-    #[serde(default = "TaskDefaultParameters::max_errors_default")]
-    pub max_errors: usize,
+    // #[serde(default = "TaskDefaultParameters::max_errors_default")]
+    // pub max_errors: usize,
     #[serde(default = "TaskDefaultParameters::meta_dir_default")]
     pub meta_dir: String,
     #[serde(default = "TaskDefaultParameters::target_exists_skip_default")]
@@ -132,7 +132,7 @@ impl Default for TransferTaskAttributes {
         Self {
             objects_per_batch: TaskDefaultParameters::objects_per_batch_default(),
             task_parallelism: TaskDefaultParameters::task_parallelism_default(),
-            max_errors: TaskDefaultParameters::max_errors_default(),
+            // max_errors: TaskDefaultParameters::max_errors_default(),
             meta_dir: TaskDefaultParameters::meta_dir_default(),
             target_exists_skip: TaskDefaultParameters::target_exists_skip_default(),
             start_from_checkpoint: TaskDefaultParameters::target_exists_skip_default(),
@@ -175,7 +175,6 @@ impl Default for TransferTask {
 }
 
 impl TransferTask {
-    // pub fn gen_transfer_actions(&self) -> Box<dyn TransferTaskActions + Send + Sync> {
     pub fn gen_transfer_actions(&self) -> Arc<dyn TransferTaskActions + Send + Sync> {
         match &self.source {
             ObjectStorage::Local(path_s) => match &self.target {
@@ -282,8 +281,6 @@ impl TransferTask {
         // 正在执行的任务数量，用于控制分片上传并行度
         let task = self.gen_transfer_actions();
 
-        // 执行过程中错误数统计
-        let err_counter = Arc::new(AtomicUsize::new(0));
         // 任务停止标准，用于通知所有协程任务结束
         let execute_stop_mark = Arc::new(AtomicBool::new(false));
         let notify_stop_mark = Arc::new(AtomicBool::new(false));
@@ -390,10 +387,8 @@ impl TransferTask {
                         execute_stop_mark.clone(),
                         err_occur.clone(),
                         multi_part_semaphore.clone(),
-                        err_counter.clone(),
                         &mut exec_set,
                         offset_map.clone(),
-                        // list_file_position,
                         object_list_file,
                         executed_file,
                     )
@@ -433,7 +428,6 @@ impl TransferTask {
                                 execute_stop_mark.clone(),
                                 err_occur.clone(),
                                 multi_part_semaphore.clone(),
-                                err_counter.clone(),
                                 &mut exec_set,
                                 offset_map.clone(),
                                 &mut list_file_position,
@@ -508,14 +502,11 @@ impl TransferTask {
                         Arc::clone(&stop_mark),
                         err_occur.clone(),
                         multi_part_semaphore.clone(),
-                        Arc::clone(&err_counter),
                         &mut exec_set,
                         Arc::clone(&increment_assistant),
                         Arc::clone(&offset_map),
                     )
                     .await;
-                // 配置停止 offset save 标识为 true
-                // stop_mark.store(true, std::sync::atomic::Ordering::Relaxed);
             }
             while sys_set.len() > 0 {
                 task::yield_now().await;
@@ -656,7 +647,6 @@ impl TransferTask {
         stop_mark: Arc<AtomicBool>,
         err_occur: Arc<AtomicBool>,
         semaphore: Arc<Semaphore>,
-        err_counter: Arc<AtomicUsize>,
         exec_set: &mut JoinSet<()>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         file_position: &mut FilePosition,
@@ -728,7 +718,6 @@ impl TransferTask {
                     stop_mark.clone(),
                     err_occur.clone(),
                     semaphore.clone(),
-                    err_counter.clone(),
                     offset_map.clone(),
                     executing_file.path.to_string(),
                 );
@@ -755,7 +744,6 @@ impl TransferTask {
         stop_mark: Arc<AtomicBool>,
         err_occur: Arc<AtomicBool>,
         semaphore: Arc<Semaphore>,
-        err_counter: Arc<AtomicUsize>,
         exec_set: &mut JoinSet<()>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         records_desc_file: File,
@@ -778,8 +766,9 @@ impl TransferTask {
                     Ok(r) => r,
                     Err(e) => {
                         log::error!("{:?}", e);
-                        err_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                        continue;
+                        err_occur.store(true, std::sync::atomic::Ordering::SeqCst);
+                        stop_mark.store(true, std::sync::atomic::Ordering::SeqCst);
+                        return;
                     }
                 };
                 vec_keys.push(record);
@@ -800,7 +789,6 @@ impl TransferTask {
                     stop_mark.clone(),
                     err_occur.clone(),
                     semaphore.clone(),
-                    err_counter.clone(),
                     offset_map.clone(),
                     executing_file.path.to_string(),
                 );

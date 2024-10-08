@@ -440,8 +440,6 @@ impl CompareTask {
                     execut_set.spawn(async move {
                         if let Err(e) = comparator.compare_listed_records(vk).await {
                             log::error!("{:?}", e);
-
-                            // comparator.
                         }
                     });
 

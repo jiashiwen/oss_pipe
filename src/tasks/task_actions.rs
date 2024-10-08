@@ -3,10 +3,7 @@ use crate::checkpoint::{FileDescription, FilePosition, ListedRecord, RecordOptio
 use anyhow::Result;
 use async_trait::async_trait;
 use dashmap::DashMap;
-use std::sync::{
-    atomic::{AtomicBool, AtomicUsize},
-    Arc,
-};
+use std::sync::{atomic::AtomicBool, Arc};
 use tokio::{
     sync::{Mutex, Semaphore},
     task::JoinSet,
@@ -31,7 +28,6 @@ pub trait TransferTaskActions {
         stop_mark: Arc<AtomicBool>,
         err_occur: Arc<AtomicBool>,
         semaphore: Arc<Semaphore>,
-        err_counter: Arc<AtomicUsize>,
         offset_map: Arc<DashMap<String, FilePosition>>,
         list_file_path: String,
     ) -> Arc<dyn TransferExecutor + Send + Sync>;
@@ -61,7 +57,6 @@ pub trait TransferTaskActions {
         stop_mark: Arc<AtomicBool>,
         err_occur: Arc<AtomicBool>,
         semaphore: Arc<Semaphore>,
-        err_counter: Arc<AtomicUsize>,
         execute_set: &mut JoinSet<()>,
         assistant: Arc<Mutex<IncrementAssistant>>,
         offset_map: Arc<DashMap<String, FilePosition>>,
